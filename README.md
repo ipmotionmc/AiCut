@@ -1,12 +1,17 @@
 <div align="center">
 
-# AiCut
+# 🎬 AiCut
 
-**A drop-in video editor component for React and Vue — canvas-rendered timeline, plain JSON project, export to mp4 via your own backend.**
+### A drop-in video editor component for **React** and **Vue**
+Canvas-rendered timeline · plain JSON projects · real export to mp4
 
-[![pnpm workspace](https://img.shields.io/badge/pnpm-workspace-f69220.svg?style=flat-square)](https://pnpm.io/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6.svg?style=flat-square)](https://www.typescriptlang.org/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](#license)
+<br />
+
+[![npm core](https://img.shields.io/npm/v/@aicut/core?label=%40aicut%2Fcore&style=flat-square&logo=npm&color=cb3837)](https://www.npmjs.com/package/@aicut/core)
+[![npm react](https://img.shields.io/npm/v/@aicut/react?label=%40aicut%2Freact&style=flat-square&logo=react&color=149eca)](https://www.npmjs.com/package/@aicut/react)
+[![npm vue](https://img.shields.io/npm/v/@aicut/vue?label=%40aicut%2Fvue&style=flat-square&logo=vuedotjs&color=42b883)](https://www.npmjs.com/package/@aicut/vue)
+[![License](https://img.shields.io/npm/l/@aicut/core?style=flat-square&color=4c1)](./LICENSE)
+[![Stars](https://img.shields.io/github/stars/ziqiangai/AiCut?style=flat-square&logo=github)](https://github.com/ziqiangai/AiCut/stargazers)
 
 ![AiCut editor](./docs/screenshots/editor-dark.png)
 
@@ -14,19 +19,34 @@
 
 ---
 
-## Why AiCut
+## ✨ Why AiCut
 
-Most "video editor in the browser" projects are either a finished SaaS (you can't embed them) or a single demo file you'd have to fork to ship. **AiCut is a publishable component library.** One framework-agnostic engine, thin React and Vue shells over the same canvas timeline, and a JSON project format so your host app owns the data.
+Most "video editor in the browser" projects are either a finished SaaS (you can't embed them) or a single demo file you'd have to fork to ship. **AiCut is a publishable component library.** One framework-agnostic engine, thin React and Vue shells, JSON projects so your host app owns the data.
 
-- **One engine, multiple frontends** — `@aicut/core` does all the work; `@aicut/react` / `@aicut/vue` are <100 line shells. Same shape as ag-Grid.
-- **Canvas timeline, zero DOM clip nodes** — hundreds of clips render in under 2 ms; smooth pan / zoom / drag-snap.
-- **Plain JSON projects** — millisecond timing, no framework or runtime coupling. Save to your DB, diff in git, ship to a backend.
-- **First-class theming + i18n** — CSS variables, an English default with bundled `zh` pack, host-overridable per-key.
-- **Bring-your-own export backend** — reference Fastify (TS) and `net/http` (Go) implementations with **real-time SSE progress**.
+<table>
+  <tr>
+    <td>🧠</td><td><b>One engine, multiple frontends</b><br/><code>@aicut/core</code> does all the work; the React / Vue wrappers are &lt;100&nbsp;LOC shells. Same shape as ag-Grid.</td>
+  </tr>
+  <tr>
+    <td>🚀</td><td><b>Canvas timeline, zero DOM clip nodes</b><br/>Hundreds of clips render in &lt;2&nbsp;ms; smooth pan, zoom, drag-snap, edge auto-scroll.</td>
+  </tr>
+  <tr>
+    <td>📦</td><td><b>Plain JSON projects</b><br/>Millisecond timing, no framework or runtime coupling. Save to your DB, diff in git, ship to a backend.</td>
+  </tr>
+  <tr>
+    <td>🎨</td><td><b>First-class theming + i18n</b><br/>CSS variables for chrome + letterbox; English default with bundled <code>zh</code> pack, host-overridable per-key.</td>
+  </tr>
+  <tr>
+    <td>🛰️</td><td><b>BYO export backend with progress</b><br/>Reference <b>Fastify</b> (TypeScript) and <b>net/http</b> (Go) services with real-time <b>SSE progress</b> over ffmpeg.</td>
+  </tr>
+  <tr>
+    <td>🧩</td><td><b>Custom toolbar slots</b><br/>Bookend <code>toolbarLeft</code> / <code>toolbarRight</code> on both the editor and the standalone <code>&lt;Timeline&gt;</code>. The library renders nothing into them.</td>
+  </tr>
+</table>
 
 ---
 
-## Quick start (React)
+## 🚀 Quick start (React)
 
 ```bash
 pnpm add @aicut/react @aicut/core
@@ -60,16 +80,18 @@ export function MyApp() {
       apiRef={apiRef}
       defaultProject={project}
       onChange={(p) => console.log("autosave", p)}
-      onExport={(p) => fetch("/export", { method: "POST", body: JSON.stringify({ project: p }) })}
+      onExport={(p) =>
+        fetch("/export", { method: "POST", body: JSON.stringify({ project: p }) })
+      }
       style={{ height: 600 }}
     />
   );
 }
 ```
 
-That's it — the editor is mounted, the timeline paints, undo/redo/zoom/snap all work. The `apiRef` exposes imperative methods (`split`, `seek`, `setProject`, `requestExport`, …) for keyboard shortcuts or external controls.
+The `apiRef` exposes imperative methods (`split`, `seek`, `setProject`, `requestExport`, …) for keyboard shortcuts or external controls.
 
-### Vue 3
+### 🟢 Vue 3
 
 ```bash
 pnpm add @aicut/vue @aicut/core
@@ -90,12 +112,12 @@ const project: Project = { /* same shape */ };
     ref="editor"
     :default-project="project"
     @change="(p) => console.log('autosave', p)"
-    @export="(p) => onExport(p)"
+    @export="onExport"
   />
 </template>
 ```
 
-### Vanilla JS
+### 🟡 Vanilla JS
 
 ```ts
 import { Editor } from "@aicut/core";
@@ -105,12 +127,13 @@ const editor = Editor.create({
   container: document.getElementById("app")!,
   project: { /* … */ },
 });
+
 editor.on("change", ({ project }) => console.log("autosave", project));
 ```
 
 ---
 
-## Theming
+## 🎨 Theming
 
 Two CSS-variable swaps and you have a totally different look. Defaults to a pro-NLE charcoal; pass `theme={...}` to switch.
 
@@ -130,9 +153,8 @@ Two CSS-variable swaps and you have a totally different look. Defaults to a pro-
     controlsBorder: "rgba(0, 0, 0, 0.08)",
     controlsHover: "rgba(0, 0, 0, 0.06)",
     controlsActive: "rgba(0, 0, 0, 0.08)",
-    previewBg: "#e4e4e7", // letterbox colour around the video
+    previewBg: "#e4e4e7",                 // letterbox colour
   }}
-  /* … */
 />
 ```
 
@@ -140,7 +162,7 @@ Every variable is also writeable as plain CSS — `.aicut-root { --aicut-control
 
 ---
 
-## Internationalisation
+## 🌐 Internationalisation
 
 English by default. The bundled `localeZh` covers the editor end-to-end (toolbar tooltips, canvas track headers, exit-fullscreen overlay). Hosts can override any subset of keys, and runtime switching is supported.
 
@@ -148,17 +170,17 @@ English by default. The bundled `localeZh` covers the editor end-to-end (toolbar
 import { VideoEditor, localeZh } from "@aicut/react";
 
 // Whole-locale swap
-<VideoEditor locale={localeZh} /* … */ />
+<VideoEditor locale={localeZh} />
 
 // Partial override
-<VideoEditor locale={{ undo: "Annuler", redo: "Refaire" }} /* … */ />
+<VideoEditor locale={{ undo: "Annuler", redo: "Refaire" }} />
 ```
 
 Switching at runtime is a regular prop change — the toolbar re-titles and the timeline canvas re-paints in place.
 
 ---
 
-## Custom toolbar slots
+## 🧩 Custom toolbar slots
 
 The editor's top toolbar reserves bookend slots (`toolbarLeft`, `toolbarRight`) for host-supplied controls — aspect ratios, export buttons, branding, AI badges, anything. The library paints nothing into them and renders no separator until they're populated.
 
@@ -176,24 +198,23 @@ The editor's top toolbar reserves bookend slots (`toolbarLeft`, `toolbarRight`) 
   toolbarRight={
     <button onClick={() => apiRef.current?.requestExport()}>Export</button>
   }
-  /* … */
 />
 ```
 
-Same prop shape exists on the standalone `<Timeline>` — pass `toolbar` plus your slot content.
+The same prop shape exists on the standalone `<Timeline>` — pass `toolbar` plus your slot content.
 
 ---
 
-## Export backends + live progress
+## 🛰️ Export backends + live progress
 
 The editor never calls a backend on its own. `onExport` hands the host a JSON `Project`; from there your app POSTs it wherever. We ship two **reference backends** that produce a real mp4 via ffmpeg:
 
-| Backend | Language | Port |
-| --- | --- | --- |
-| `backends/ts` | TypeScript + Fastify | 8787 |
-| `backends/go` | Go + net/http | 8788 |
+| Backend | Stack | Port |
+| :--- | :--- | :--- |
+| [`backends/ts`](./backends/ts) | TypeScript + Fastify | 8787 |
+| [`backends/go`](./backends/go) | Go + net/http | 8788 |
 
-Both implement the same contract:
+Both implement the same wire contract:
 
 ```
 POST /export                                    Content-Type: application/json
@@ -206,13 +227,15 @@ POST /export                                    Content-Type: application/json
 GET  /files/<uuid>.mp4                          → video/mp4
 ```
 
-`out_time_us` from ffmpeg's `-progress` stream is aggregated across the per-clip encode passes, so the overall fraction is honest end-to-end. Aborting the client connection (or AbortController on the fetch) kills the in-flight ffmpeg. The demo's React-side parsing + UI is in `examples/react-demo/src/App.tsx`:
+`out_time_us` from ffmpeg's `-progress` stream is aggregated across the per-clip encode passes, so the overall fraction is honest end-to-end. Aborting the client connection (or AbortController on the fetch) kills the in-flight ffmpeg.
 
 <div align="center">
 
 ![export progress](./docs/screenshots/export-progress.png)
 
 </div>
+
+The demo's React-side parser + UI lives in [`examples/react-demo/src/App.tsx`](./examples/react-demo/src/App.tsx).
 
 ### Bringing your own ffmpeg
 
@@ -224,7 +247,7 @@ Each backend resolves an ffmpeg binary in this order:
 
 ---
 
-## Standalone Timeline (frame picker)
+## 🎯 Standalone Timeline (frame picker)
 
 The `<Timeline>` component works without the rest of the editor — useful for a frame-picker, a thumbnail strip, or a read-only preview.
 
@@ -249,7 +272,7 @@ import { Timeline } from "@aicut/react";
 
 ---
 
-## Architecture
+## 📐 Architecture
 
 ```
 packages/
@@ -275,7 +298,7 @@ Library packages (`packages/*`) publish to npm. Everything else exists to exerci
 
 ---
 
-## Development
+## 🛠 Development
 
 ```bash
 pnpm install                       # workspace install
@@ -296,15 +319,17 @@ pnpm --filter @aicut/e2e exec playwright test screenshots.spec.ts
 ### Release
 
 ```bash
-pnpm changeset       # record version bump
-pnpm release         # build + changeset publish
+# Bump versions in packages/*/package.json then:
+NPM_TOKEN=npm_xxx ./scripts/publish.sh
+# Or with 2FA:
+NPM_TOKEN=npm_xxx ./scripts/publish.sh --otp 123456
 ```
 
-The three library packages (`@aicut/core`, `@aicut/react`, `@aicut/vue`) are pinned together via the `fixed` group in `.changeset/config.json`.
+The script is idempotent — already-published versions are skipped, so a re-run after a network blip only ships what's missing. Tags `v<core-version>` on full success.
 
 ---
 
-## Roadmap
+## 🗺 Roadmap
 
 - [x] Multi-track timeline with drag / trim / split / snap
 - [x] In-canvas scrollbars + edge auto-scroll while dragging
@@ -318,6 +343,30 @@ The three library packages (`@aicut/core`, `@aicut/react`, `@aicut/vue`) are pin
 
 ---
 
-## License
+## 🧑‍💻 Tech stack
 
-MIT
+<p>
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" />
+  <img alt="React" src="https://img.shields.io/badge/React-149ECA?style=for-the-badge&logo=react&logoColor=white" />
+  <img alt="Vue.js" src="https://img.shields.io/badge/Vue-42B883?style=for-the-badge&logo=vuedotjs&logoColor=white" />
+  <img alt="Node.js" src="https://img.shields.io/badge/Node.js-5FA04E?style=for-the-badge&logo=nodedotjs&logoColor=white" />
+  <img alt="Go" src="https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white" />
+  <img alt="ffmpeg" src="https://img.shields.io/badge/ffmpeg-007808?style=for-the-badge&logo=ffmpeg&logoColor=white" />
+  <img alt="Vite" src="https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white" />
+  <img alt="Fastify" src="https://img.shields.io/badge/Fastify-000000?style=for-the-badge&logo=fastify&logoColor=white" />
+  <img alt="pnpm" src="https://img.shields.io/badge/pnpm-F69220?style=for-the-badge&logo=pnpm&logoColor=white" />
+  <img alt="Playwright" src="https://img.shields.io/badge/Playwright-2EAD33?style=for-the-badge&logo=playwright&logoColor=white" />
+</p>
+
+---
+
+<div align="center">
+
+**[npm — @aicut/core](https://www.npmjs.com/package/@aicut/core)** ·
+**[@aicut/react](https://www.npmjs.com/package/@aicut/react)** ·
+**[@aicut/vue](https://www.npmjs.com/package/@aicut/vue)** ·
+**[Issues](https://github.com/ziqiangai/AiCut/issues)**
+
+Made with ❤️ for browser-based video editing · MIT License
+
+</div>
