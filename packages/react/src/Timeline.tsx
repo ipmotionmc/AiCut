@@ -2,12 +2,16 @@ import {
   useEffect,
   useImperativeHandle,
   useRef,
+  useState,
   type CSSProperties,
+  type ReactNode,
   type Ref,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   Timeline as CoreTimeline,
   type Clip,
+  type Locale,
   type Ms,
   type Project,
   type TimelineOptions,
@@ -46,6 +50,18 @@ export interface TimelineProps {
   snap?: boolean;
   /** Apply fit-to-window on mount once duration is known. Default true. */
   autoFit?: boolean;
+  /** UI string overrides (English default). */
+  locale?: Partial<Locale>;
+  /**
+   * Render a 36px top toolbar strip with empty left/right flex slots
+   * for host-supplied controls. Default false. Pair with `toolbarLeft`
+   * / `toolbarRight` to inject content.
+   */
+  toolbar?: boolean;
+  /** Rendered into the left slot of the timeline toolbar (toolbar must be true). */
+  toolbarLeft?: ReactNode;
+  /** Rendered into the right slot of the timeline toolbar. */
+  toolbarRight?: ReactNode;
 
   className?: string;
   style?: CSSProperties;
@@ -81,6 +97,10 @@ export interface TimelineProps {
 export function Timeline(props: TimelineProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const tlRef = useRef<CoreTimeline | null>(null);
+  const [slots, setSlots] = useState<{
+    left: HTMLElement;
+    right: HTMLElement;
+  } | null>(null);
 
   // Latest-callback ref so the create-once effect doesn't tear the
   // timeline down on every render just because callback identities
@@ -101,6 +121,8 @@ export function Timeline(props: TimelineProps) {
       readOnly: cbRef.current.readOnly,
       snap: cbRef.current.snap,
       autoFit: cbRef.current.autoFit,
+      locale: cbRef.current.locale,
+      toolbar: cbRef.current.toolbar,
       onSeek: (t) => cbRef.current.onSeek?.(t),
       onSelectClip: (id) => cbRef.current.onSelectClip?.(id),
       onScaleChange: (s) => cbRef.current.onScaleChange?.(s),
@@ -109,12 +131,20 @@ export function Timeline(props: TimelineProps) {
       onChange: (p) => cbRef.current.onChange?.(p),
     });
     tlRef.current = tl;
+    if (tl.toolbarLeft && tl.toolbarRight) {
+      setSlots({ left: tl.toolbarLeft, right: tl.toolbarRight });
+    }
     return () => {
       tl.destroy();
       tlRef.current = null;
+      setSlots(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (props.locale) tlRef.current?.setLocale(props.locale);
+  }, [props.locale]);
 
   useImperativeHandle<TimelineApi | null, TimelineApi | null>(
     props.apiRef,
@@ -135,7 +165,11 @@ export function Timeline(props: TimelineProps) {
         getDebugInfo: () => tl.getDebugInfo(),
       };
     },
-    [],
+    // Same caveat as VideoEditor.tsx — factory must re-run once the
+    // timeline is created in useEffect, otherwise apiRef.current is
+    // null forever. `slots` flips from null to a real value the
+    // instant the timeline is ready, so it's the cleanest trigger.
+    [slots],
   );
 
   return (
@@ -144,7 +178,14 @@ export function Timeline(props: TimelineProps) {
       className={props.className}
       style={{ width: "100%", height: 240, ...props.style }}
       data-aicut-timeline-host=""
-    />
+    >
+      {slots && props.toolbarLeft != null
+        ? createPortal(props.toolbarLeft, slots.left)
+        : null}
+      {slots && props.toolbarRight != null
+        ? createPortal(props.toolbarRight, slots.right)
+        : null}
+    </div>
   );
 
   // Type-only re-export used to keep React/Vue prop typings in lockstep

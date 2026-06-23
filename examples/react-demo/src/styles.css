@@ -62,6 +62,42 @@ body,
   background: rgba(0, 0, 0, 0.04);
 }
 
+.demo-checkbox-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.demo-export-error {
+  color: var(--color-error, #ff0909);
+  font-size: 12px;
+  margin-top: 4px;
+  word-break: break-word;
+}
+
+/* Controls slotted into the editor / timeline toolbars. Mirror the
+   icon-btn chrome (transparent → hover tint) so they read as siblings
+   to the built-in icons. Inline styles are kept on the elements for
+   metric stability; this rule only adds the hover/focus interactions
+   which can't live inline. */
+.aicut-toolbar-extras .demo-slot-btn:hover,
+.aicut-timeline-toolbar .demo-slot-btn:hover,
+.aicut-toolbar-extras .demo-slot-select:hover,
+.aicut-timeline-toolbar .demo-slot-select:hover {
+  background-color: var(--aicut-controls-hover);
+}
+
+.aicut-toolbar-extras .demo-slot-btn:focus-visible,
+.aicut-timeline-toolbar .demo-slot-btn:focus-visible,
+.aicut-toolbar-extras .demo-slot-select:focus-visible,
+.aicut-timeline-toolbar .demo-slot-select:focus-visible {
+  outline: 2px solid var(--color-info);
+  outline-offset: 1px;
+}
+
 .demo-json {
   flex: 1;
   min-height: 180px;

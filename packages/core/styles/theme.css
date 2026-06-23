@@ -81,7 +81,11 @@
 
 .aicut-preview-host {
   position: relative;
-  background: #000;
+  /* Letterbox color around the video. Defaults to black (the "film
+     editor" convention — videos look cleanest on neutral dark), but
+     hosts can override via `theme.previewBg` to follow their UI
+     surface in light themes. */
+  background: var(--aicut-preview-bg, #000);
   border-radius: 0;
   overflow: hidden;
   min-height: 220px;
@@ -158,6 +162,29 @@
   gap: 10px;
 }
 
+/* Host-supplied bookend slots — empty until populated. The library
+   paints nothing into either; we only reserve the layout box and add
+   a subtle separator once the host puts something in. */
+.aicut-toolbar-extras {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.aicut-toolbar-extras-left:not(:empty) {
+  padding-right: 8px;
+  margin-right: 4px;
+  border-right: 1px solid var(--aicut-controls-border);
+}
+
+.aicut-toolbar-extras-right:not(:empty) {
+  padding-left: 8px;
+  margin-left: 4px;
+  border-left: 1px solid var(--aicut-controls-border);
+}
+
 .aicut-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -171,6 +198,12 @@
   color: var(--aicut-controls-text);
   cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
+  /* Without this, the flex parent will horizontally squash the
+     icon-btns when the row gets crowded (e.g. both extras slots
+     populated). Keeping shrink at 0 means the zoom slider takes
+     the pressure instead, which is the right call — it has
+     legitimate flex range; icons are atomic. */
+  flex-shrink: 0;
 }
 
 .aicut-icon-btn:hover:not(:disabled) {
@@ -187,6 +220,16 @@
   color: var(--color-brand);
 }
 
+/* Toggle-on hover keeps the brand-state visible — without this, the
+   generic icon-btn :hover rule above overrides toggle-on's background
+   back to controls-hover, which reads as the toggle *dimming* on
+   hover (opposite direction from the non-toggled trim/zoom buttons,
+   which lighten on hover). Brand-tinted bg makes both feel
+   consistently "lights up on hover". */
+.aicut-icon-btn.aicut-toggle-on:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-brand) 18%, transparent);
+}
+
 .aicut-play-btn {
   display: inline-flex;
   align-items: center;
@@ -199,15 +242,39 @@
   color: var(--aicut-controls-text);
   cursor: pointer;
   transition: background-color 120ms ease;
+  flex-shrink: 0;
 }
 
-.aicut-play-btn:hover {
+/* The play button wraps its SVG in a <span> (so play↔pause swaps can
+   re-set innerHTML without losing the click target identity). A bare
+   span is inline-flow → the SVG inside aligns to font baseline,
+   which leaves a couple of px of font-descender space below the
+   icon and shifts it visually up-and-right inside the circle. Make
+   the span its own flex centring box so the SVG sits at geometric
+   center of the button regardless of inherited font metrics. */
+.aicut-play-btn > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+/* Hover ONLY in the paused state. Restricting by attribute means
+   the playing state has no competing background-on-hover rule at
+   equal specificity — eliminates any cascade-order surprises that
+   could leak `controls-hover` (near-white in light themes) over the
+   white pause icon. */
+.aicut-play-btn:not([data-state="playing"]):hover {
   background: var(--aicut-controls-hover);
 }
 
 .aicut-play-btn[data-state="playing"] {
-  background: var(--color-brand);
+  background: var(--color-brand, #ff3386);
   color: #fff;
+}
+
+.aicut-play-btn[data-state="playing"]:hover {
+  background: color-mix(in srgb, var(--color-brand, #ff3386) 88%, black);
 }
 
 .aicut-time-current,
@@ -217,6 +284,7 @@
   min-width: 44px;
   text-align: center;
   color: var(--aicut-controls-text);
+  flex-shrink: 0;
 }
 
 .aicut-time-total {
@@ -225,16 +293,26 @@
 
 /* Slider track. Two solid stops in one gradient — brand color for
    the filled portion, a dedicated `--aicut-track-unfilled` for the
-   rest. We expose it as a CSS var so theme overrides can adjust it
-   for light mode without rewriting the gradient. Defaults intentionally
-   use opaque rgba rather than `currentColor` / `color-mix` (which
-   silently collapse to transparent in some Chromium builds when the
-   element has no resolved `color` yet). */
+   rest. The unfilled tone derives from `--aicut-controls-text` (the
+   chrome text color, which is light-on-dark or dark-on-light), so
+   the rail auto-contrasts against any host theme without a brittle
+   "is the theme light?" attribute selector. Hosts can still override
+   `--aicut-track-unfilled` directly for full control. */
 .aicut-zoom-slider {
-  --aicut-track-unfilled: rgba(255, 255, 255, 0.18);
+  --aicut-track-unfilled: color-mix(
+    in srgb,
+    var(--aicut-controls-text) 22%,
+    transparent
+  );
   appearance: none;
   -webkit-appearance: none;
   width: 140px;
+  /* Allow the slider to absorb horizontal pressure when extras
+     populate the toolbar — it's the only element here with
+     legitimate flex-stretch semantics. Hard floor at 60px keeps
+     the thumb grabbable. */
+  min-width: 60px;
+  flex-shrink: 1;
   height: 6px;
   border-radius: 999px;
   background: linear-gradient(
@@ -242,21 +320,11 @@
     var(--color-brand) 0 var(--aicut-zoom-fill, 50%),
     var(--aicut-track-unfilled) var(--aicut-zoom-fill, 50%) 100%
   );
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--aicut-controls-text) 10%, transparent);
   border: none;
   cursor: pointer;
   outline: none;
-}
-
-/* In light mode the white track-unfilled is invisible against the
-   light controls bg — flip it to a dark tint via the same root
-   selector pattern. Hosts that switch themes only need to override
-   `--aicut-controls-bg`; we infer "is light" by comparing luminance
-   via CSS isn't possible, so we let host themes override this var. */
-.aicut-root[style*="controls-bg"] .aicut-zoom-slider,
-.aicut-root.aicut-theme-light .aicut-zoom-slider {
-  --aicut-track-unfilled: rgba(0, 0, 0, 0.18);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
 
 /* Hide the chromium default track since we paint via background. */
@@ -312,4 +380,35 @@
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* ===== Timeline toolbar (opt-in slot for host-supplied controls) ===== */
+
+.aicut-timeline-toolbar {
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  gap: 12px;
+  background: var(--aicut-controls-bg);
+  border-bottom: 1px solid var(--aicut-controls-border);
+  color: var(--aicut-controls-text);
+  font-size: 13px;
+  /* Sit above the canvas in stacking so popovers/dropdowns spawned
+     from buttons can render over the timeline area instead of behind it. */
+  position: relative;
+  z-index: 1;
+}
+
+.aicut-timeline-toolbar-left,
+.aicut-timeline-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.aicut-timeline-toolbar-right {
+  margin-left: auto;
 }

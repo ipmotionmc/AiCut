@@ -36,20 +36,45 @@ export interface FfmpegRunResult {
   stderr: string;
 }
 
+export interface FfmpegRunOpts {
+  signal?: AbortSignal;
+  /**
+   * Called for each newline-terminated chunk on ffmpeg's STDOUT.
+   * We use this to consume ffmpeg's `-progress pipe:1` output — a
+   * stream of `key=value` lines terminated by `progress=continue` or
+   * `progress=end` after each report block.
+   */
+  onStdoutLine?: (line: string) => void;
+}
+
 export function runFfmpeg(
   bin: string,
   args: string[],
-  signal?: AbortSignal,
+  opts: FfmpegRunOpts = {},
 ): Promise<FfmpegRunResult> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(bin, args, { stdio: ["ignore", "ignore", "pipe"] });
+    // We want stdout when progress is being parsed; without an
+    // onStdoutLine consumer, draining it costs nothing meaningful but
+    // keeps the contract uniform.
+    const proc = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stderr = "";
+    let stdoutBuf = "";
+    proc.stdout.on("data", (b: Buffer) => {
+      if (!opts.onStdoutLine) return;
+      stdoutBuf += b.toString();
+      let nl: number;
+      while ((nl = stdoutBuf.indexOf("\n")) >= 0) {
+        const line = stdoutBuf.slice(0, nl).trimEnd();
+        stdoutBuf = stdoutBuf.slice(nl + 1);
+        if (line) opts.onStdoutLine(line);
+      }
+    });
     proc.stderr.on("data", (b: Buffer) => {
       stderr += b.toString();
     });
     proc.once("error", (err) => reject(err));
     proc.once("close", (code) => resolve({ code: code ?? -1, stderr }));
-    signal?.addEventListener(
+    opts.signal?.addEventListener(
       "abort",
       () => {
         proc.kill("SIGTERM");

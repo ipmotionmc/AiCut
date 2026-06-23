@@ -9,5 +9,6 @@ export type {
   Theme,
   EditorApi,
   TimelineOptions,
+  Locale,
 } from "@aicut/core";
-export { createEmptyProject, createId } from "@aicut/core";
+export { createEmptyProject, createId, localeEn, localeZh } from "@aicut/core";

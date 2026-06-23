@@ -33,7 +33,9 @@ test("play, split, and export round-trip", async ({ page }) => {
   await page.getByTestId("aicut-split").click();
   await expect.poll(() => clipCount(page)).toBe(before + 1);
 
-  await page.getByTestId("aicut-export").click();
+  // Demo's host-supplied export button — calls editor.requestExport()
+  // which still fires the `export` event the demo listens to.
+  await page.getByTestId("demo-export").click();
   const exportJson = await page.getByTestId("demo-export-json").inputValue();
   expect(exportJson.length).toBeGreaterThan(0);
   const parsed = JSON.parse(exportJson) as {

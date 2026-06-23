@@ -1,3 +1,4 @@
+import { type Locale, mergeLocale } from "../i18n.js";
 import { normalizeProject, projectDuration } from "../model.js";
 import type { Clip, Ms, Project } from "../types.js";
 import { ThumbnailRibbon } from "../ui/thumbnails.js";
@@ -49,6 +50,17 @@ export interface TimelineOptions {
   snap?: boolean;
   /** Compute and apply fit-to-window on first project change. Default true. */
   autoFit?: boolean;
+  /** UI string overrides (English defaults). Use `localeZh` for Chinese. */
+  locale?: Partial<Locale>;
+  /**
+   * Render an empty 36px toolbar strip at the top of the host element
+   * with `toolbarLeft` / `toolbarRight` flex slots. The library paints
+   * NOTHING into either slot — hosts append their own controls (an
+   * export button, a size/aspect dropdown, etc.). Default false; the
+   * canvas takes the full host height when the toolbar is off, so
+   * adopting the slot later is a non-breaking opt-in.
+   */
+  toolbar?: boolean;
 
   onSeek?: (timeMs: Ms) => void;
   onSelectClip?: (clipId: string | null) => void;
@@ -120,6 +132,15 @@ export class Timeline {
   private ctx: CanvasRenderingContext2D;
   private thumbs: ThumbnailRibbon;
   private hiddenHost: HTMLDivElement;
+  private toolbarEl: HTMLDivElement | null = null;
+  /**
+   * Public flex slot at the left of the top toolbar. `null` when
+   * `toolbar` is disabled. Hosts append their own elements (e.g. a
+   * size/aspect dropdown). React/Vue wrappers portal children here.
+   */
+  readonly toolbarLeft: HTMLDivElement | null = null;
+  /** Right-side counterpart — conventionally used for export/save. */
+  readonly toolbarRight: HTMLDivElement | null = null;
 
   private project: Project;
   private pxPerSec: number;
@@ -129,6 +150,7 @@ export class Timeline {
   private showHeader: boolean;
   private readOnly: boolean;
   private autoFitEnabled: boolean;
+  private locale: Locale;
 
   private scrollLeft = 0;
   private scrollTop = 0;
@@ -196,15 +218,44 @@ export class Timeline {
     this.showHeader = opts.showHeader !== false;
     this.readOnly = opts.readOnly === true;
     this.autoFitEnabled = opts.autoFit !== false;
+    this.locale = mergeLocale(opts.locale);
 
     this.root.classList.add("aicut-timeline-canvas");
     this.root.innerHTML = "";
     this.root.style.position = this.root.style.position || "relative";
 
+    // Toolbar strip — opt-in. When enabled the root becomes a flex
+    // column so the toolbar reserves vertical space and the canvas
+    // gets whatever's left via flex:1. When off, the canvas keeps
+    // its old 100%-height layout — zero-cost for existing callers.
+    if (opts.toolbar) {
+      this.root.style.display = "flex";
+      this.root.style.flexDirection = "column";
+      const bar = document.createElement("div");
+      bar.className = "aicut-timeline-toolbar";
+      const left = document.createElement("div");
+      left.className = "aicut-timeline-toolbar-left";
+      const right = document.createElement("div");
+      right.className = "aicut-timeline-toolbar-right";
+      bar.appendChild(left);
+      bar.appendChild(right);
+      this.root.appendChild(bar);
+      this.toolbarEl = bar;
+      (this as { toolbarLeft: HTMLDivElement | null }).toolbarLeft = left;
+      (this as { toolbarRight: HTMLDivElement | null }).toolbarRight = right;
+    }
+
     this.canvas = document.createElement("canvas");
     this.canvas.style.display = "block";
     this.canvas.style.width = "100%";
-    this.canvas.style.height = "100%";
+    if (opts.toolbar) {
+      // Flex child: take remaining height; min-height:0 lets us shrink
+      // below content size when the host is constrained.
+      this.canvas.style.flex = "1 1 0";
+      this.canvas.style.minHeight = "0";
+    } else {
+      this.canvas.style.height = "100%";
+    }
     this.canvas.style.touchAction = "none";
     // No data-testid on the canvas itself — both the editor's and a
     // standalone frame-picker timeline would collide. Tests select via
@@ -303,6 +354,11 @@ export class Timeline {
     return this.snapEnabled;
   }
 
+  setLocale(locale: Partial<Locale>): void {
+    this.locale = mergeLocale(locale);
+    this.scheduleRender();
+  }
+
   /** Fit the project's full duration into the current viewport width. */
   fitToWindow(): void {
     const fit = this.computeFitScale();
@@ -378,17 +434,21 @@ export class Timeline {
     this.thumbs.destroy();
     this.root.innerHTML = "";
     this.root.classList.remove("aicut-timeline-canvas");
+    if (this.opts.toolbar) {
+      this.root.style.display = "";
+      this.root.style.flexDirection = "";
+    }
   }
 
   // ---- size / layout --------------------------------------------------
 
   private resizeCanvas(): void {
-    const rect = this.root.getBoundingClientRect();
+    // Read the canvas's own box, not the root's — when the toolbar
+    // strip is enabled the root flex-allots part of its height to it,
+    // and the canvas's rect is the only honest source of the drawing
+    // area. With no toolbar, canvas fills root, so this still matches.
+    const rect = this.canvas.getBoundingClientRect();
     this.viewportWidth = Math.max(1, Math.floor(rect.width));
-    // Canvas is now strictly viewport-sized. Track overflow is handled
-    // by internal scrollTop + the in-canvas scrollbar — host CSS sets
-    // the container's height and we just fill it. Previously we grew
-    // the canvas with the track count, which conflicted with scroll.
     this.viewportHeight = Math.max(
       Math.floor(rect.height) || RULER_HEIGHT + TRACK_HEIGHT + SCROLLBAR_THICKNESS,
       RULER_HEIGHT + TRACK_HEIGHT + SCROLLBAR_THICKNESS,
@@ -535,6 +595,7 @@ export class Timeline {
       scrollbarOpacityX: this.scrollbarOpacity("h"),
       scrollbarActiveY: this.scrollbarDrag?.axis === "v",
       scrollbarActiveX: this.scrollbarDrag?.axis === "h",
+      locale: this.locale,
     };
   }
 

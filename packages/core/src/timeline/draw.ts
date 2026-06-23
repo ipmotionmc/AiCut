@@ -1,3 +1,4 @@
+import { formatLabel, type Locale } from "../i18n.js";
 import type { Clip, MediaSource, Project, Track } from "../types.js";
 import { fmtClockMs } from "../ui/format.js";
 import type { ThumbnailRibbon } from "../ui/thumbnails.js";
@@ -54,6 +55,8 @@ export interface DrawState {
   /** Active = currently being dragged → render at full opacity + emphasized. */
   scrollbarActiveY: boolean;
   scrollbarActiveX: boolean;
+  /** Resolved locale used for canvas-painted labels. */
+  locale: Locale;
   /**
    * In-flight drag preview. While set, the clip with `clipId` is
    * drawn faded at its real position AND a fully-opaque "ghost" of it
@@ -109,15 +112,7 @@ export function drawAll(
   if (state.dragGhost) drawDragGhost(ctx, state, style, thumbs);
   ctx.restore();
 
-  // --- Pass 2: Coverage-gap warning columns (scrolls X, full height) ---
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(baseX, 0, trackAreaW, H - SCROLLBAR_THICKNESS);
-  ctx.clip();
-  drawCoverageGaps(ctx, state, style);
-  ctx.restore();
-
-  // --- Pass 3: Headers column (sticky X, scrolls Y) -------------------
+  // --- Pass 2: Headers column (sticky X, scrolls Y) -------------------
   if (state.showHeader) {
     ctx.save();
     ctx.beginPath();
@@ -128,12 +123,24 @@ export function drawAll(
     ctx.restore();
   }
 
-  // --- Pass 4: Ruler (sticky Y, scrolls X) ----------------------------
+  // --- Pass 3: Ruler (sticky Y, scrolls X) ----------------------------
   ctx.save();
   ctx.beginPath();
   ctx.rect(baseX, 0, trackAreaW, RULER_HEIGHT);
   ctx.clip();
   drawRuler(ctx, state, style);
+  ctx.restore();
+
+  // --- Pass 4: Coverage-gap warning (scrolls X, full visible height) --
+  // Painted AFTER both tracks and the ruler so the amber tint + the
+  // diagonal "broken teeth" hatch sit on top of timecode markings —
+  // that's what makes a missing segment instantly catchable when the
+  // user is scanning the ruler row.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(baseX, 0, trackAreaW, H - SCROLLBAR_THICKNESS);
+  ctx.clip();
+  drawCoverageGaps(ctx, state, style);
   ctx.restore();
 
   // --- Pass 5: Snap guide + playhead (scroll X, full visible track Y) -
@@ -327,7 +334,7 @@ function drawPhantomRow(
     ctx.fillStyle = withAlpha(style.info, 0.7);
     ctx.font = "10px system-ui, -apple-system, sans-serif";
     ctx.textBaseline = "middle";
-    ctx.fillText("+ 新轨道", 12, y + TRACK_HEIGHT / 2);
+    ctx.fillText(state.locale.newTrack, 12, y + TRACK_HEIGHT / 2);
   }
   ctx.restore();
 }
@@ -587,7 +594,11 @@ function drawHeaders(
     ctx.stroke();
 
     ctx.fillStyle = withAlpha(style.text, 0.7);
-    const label = t.kind === "video" ? `视频 ${i + 1}` : `音频 ${i + 1}`;
+    const template =
+      t.kind === "video"
+        ? state.locale.videoTrackLabel
+        : state.locale.audioTrackLabel;
+    const label = formatLabel(template, { n: i + 1 });
     ctx.fillText(label, 12, y + TRACK_HEIGHT / 2);
 
     // Delete-track button — × icon at the right edge. Only painted

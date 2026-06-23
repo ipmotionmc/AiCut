@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   Timeline as CoreTimeline,
   type Clip,
+  type Locale,
   type Ms,
   type Project,
 } from "@aicut/core";
@@ -21,6 +22,7 @@ const props = defineProps<{
   readOnly?: boolean;
   snap?: boolean;
   autoFit?: boolean;
+  locale?: Partial<Locale>;
 }>();
 
 const emit = defineEmits<{
@@ -51,6 +53,7 @@ onMounted(() => {
     readOnly: props.readOnly,
     snap: props.snap,
     autoFit: props.autoFit,
+    locale: props.locale,
     onSeek: (t) => emit("seek", t),
     onSelectClip: (id) => emit("selectClip", id),
     onScaleChange: (s) => emit("scaleChange", s),
@@ -59,6 +62,13 @@ onMounted(() => {
     onChange: (p) => emit("change", p),
   });
 });
+
+watch(
+  () => props.locale,
+  (locale) => {
+    if (locale && timeline) timeline.setLocale(locale);
+  },
+);
 
 onBeforeUnmount(() => {
   timeline?.destroy();

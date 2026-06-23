@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,11 +47,40 @@ func isExecutable(p string) bool {
 	return info.Mode().Perm()&0o111 != 0
 }
 
-func runFfmpeg(ctx context.Context, bin string, args []string) error {
+// runFfmpeg invokes ffmpeg with the given args. When onStdoutLine is
+// non-nil we pipe and consume ffmpeg's STDOUT line-by-line — that's
+// how `-progress pipe:1` reports `key=value` events.
+func runFfmpeg(ctx context.Context, bin string, args []string, onStdoutLine func(string)) error {
 	cmd := exec.CommandContext(ctx, bin, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+
+	var stdout io.ReadCloser
+	if onStdoutLine != nil {
+		pipe, err := cmd.StdoutPipe()
+		if err != nil {
+			return err
+		}
+		stdout = pipe
+	}
+
+	if err := cmd.Start(); err != nil {
+		return errors.New(err.Error() + ": " + tailString(stderr.String(), 2000))
+	}
+
+	// Drain stdout in this goroutine so we don't block the ffmpeg
+	// process on a full pipe buffer.
+	if stdout != nil {
+		scanner := bufio.NewScanner(stdout)
+		// Progress lines are short (`out_time_us=12345678`); the bigger
+		// buffer is paranoia against unexpected -progress formats.
+		scanner.Buffer(make([]byte, 0, 4096), 64*1024)
+		for scanner.Scan() {
+			onStdoutLine(scanner.Text())
+		}
+	}
+
+	if err := cmd.Wait(); err != nil {
 		return errors.New(err.Error() + ": " + tailString(stderr.String(), 2000))
 	}
 	return nil

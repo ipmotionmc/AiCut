@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   Editor,
   type EditorApi,
+  type Locale,
   type Ms,
   type Project,
   type Theme,
@@ -16,6 +17,8 @@ import {
 const props = defineProps<{
   defaultProject?: Project;
   theme?: Theme;
+  /** UI string overrides (English default). Reactive — swap to `localeZh` for Chinese. */
+  locale?: Partial<Locale>;
 }>();
 
 const emit = defineEmits<{
@@ -39,6 +42,7 @@ onMounted(() => {
     container: host.value,
     project: props.defaultProject,
     theme: props.theme,
+    locale: props.locale,
   });
 
   offs.push(
@@ -60,6 +64,13 @@ watch(
   () => props.theme,
   (theme) => {
     if (theme && editor) editor.setTheme(theme);
+  },
+);
+
+watch(
+  () => props.locale,
+  (locale) => {
+    if (locale && editor) editor.setLocale(locale);
   },
 );
 

@@ -1,3 +1,4 @@
+import type { Locale } from "../i18n.js";
 import { fmtClock } from "./format.js";
 import { ICONS, type IconName } from "./icons.js";
 
@@ -12,7 +13,6 @@ export interface ToolbarCallbacks {
   onTrimRight: () => void;
   onPlayToggle: () => void;
   onFullscreen: () => void;
-  onExport: () => void;
   onReset: () => void;
   onSnapToggle: () => void;
   onScaleChange: (pxPerSec: number) => void;
@@ -26,7 +26,6 @@ interface ToolbarState {
   canRedo: boolean;
   canSplit: boolean;
   canTrim: boolean;
-  canExport: boolean;
   snap: boolean;
   pxPerSec: number;
 }
@@ -35,16 +34,28 @@ interface ToolbarState {
  * Top toolbar — three groups laid out per the reference:
  *   left: [undo] [redo] [split] [trim-left] [trim-right] [speed]
  *   center: [time]  ▶  [duration]  [fullscreen]
- *   right: [snap] [zoom-out] [zoom-slider] [zoom-in] [export]
+ *   right: [snap] [zoom-out] [zoom-slider] [zoom-in] [reset]
  *
- * The Speed and Collapse buttons in the reference toolbar are present
- * but disabled — they correspond to features deferred past v2. The
- * Export button replaces the "collapse preview" slot since it's the
- * primary v1 affordance the host hooks into.
+ * Export is intentionally NOT built-in — every host has its own
+ * pipeline (download, server pipeline, etc.). Drop a custom button
+ * into `editor.toolbarRight` or call `editor.requestExport()` from
+ * any host UI to fire the `export` event.
  */
 export class Toolbar {
   private root: HTMLDivElement;
   private cb: ToolbarCallbacks;
+  private locale: Locale;
+
+  /**
+   * Bookend slots reserved for host-supplied controls. The library
+   * paints nothing into either — hosts (React/Vue wrappers or plain
+   * JS) append their own buttons / dropdowns. `extrasLeft` sits at
+   * the very start of the toolbar; `extrasRight` at the very end.
+   * Empty by default and visually hidden (no separator) until they
+   * actually contain children.
+   */
+  readonly extrasLeft: HTMLDivElement;
+  readonly extrasRight: HTMLDivElement;
 
   private undoBtn!: HTMLButtonElement;
   private redoBtn!: HTMLButtonElement;
@@ -60,23 +71,26 @@ export class Toolbar {
   private zoomOutBtn!: HTMLButtonElement;
   private zoomSlider!: HTMLInputElement;
   private zoomInBtn!: HTMLButtonElement;
-  private exportBtn!: HTMLButtonElement;
   private resetBtn!: HTMLButtonElement;
   private lastState: ToolbarState | null = null;
 
-  constructor(host: HTMLElement, cb: ToolbarCallbacks) {
+  constructor(host: HTMLElement, cb: ToolbarCallbacks, locale: Locale) {
     this.cb = cb;
+    this.locale = locale;
     this.root = document.createElement("div");
     this.root.className = "aicut-toolbar";
     this.root.setAttribute("data-testid", "aicut-toolbar");
 
+    this.extrasLeft = mkGroup("aicut-toolbar-extras aicut-toolbar-extras-left");
+    this.extrasRight = mkGroup("aicut-toolbar-extras aicut-toolbar-extras-right");
+
     const left = mkGroup("aicut-toolbar-left");
-    this.undoBtn = mkIconButton("undo", "撤销", () => cb.onUndo(), "aicut-undo");
-    this.redoBtn = mkIconButton("redo", "重做", () => cb.onRedo(), "aicut-redo");
-    this.splitBtn = mkIconButton("split", "分割", () => cb.onSplit(), "aicut-split");
-    this.trimLeftBtn = mkIconButton("trimLeft", "向左裁剪", () => cb.onTrimLeft(), "aicut-trim-left");
-    this.trimRightBtn = mkIconButton("trimRight", "向右裁剪", () => cb.onTrimRight(), "aicut-trim-right");
-    const speedBtn = mkIconButton("speed", "变速（即将到来）", () => undefined, "aicut-speed");
+    this.undoBtn = mkIconButton("undo", locale.undo, () => cb.onUndo(), "aicut-undo");
+    this.redoBtn = mkIconButton("redo", locale.redo, () => cb.onRedo(), "aicut-redo");
+    this.splitBtn = mkIconButton("split", locale.split, () => cb.onSplit(), "aicut-split");
+    this.trimLeftBtn = mkIconButton("trimLeft", locale.trimLeft, () => cb.onTrimLeft(), "aicut-trim-left");
+    this.trimRightBtn = mkIconButton("trimRight", locale.trimRight, () => cb.onTrimRight(), "aicut-trim-right");
+    const speedBtn = mkIconButton("speed", locale.speedComingSoon, () => undefined, "aicut-speed");
     speedBtn.disabled = true;
     left.append(this.undoBtn, this.redoBtn, this.splitBtn, this.trimLeftBtn, this.trimRightBtn, speedBtn);
 
@@ -85,19 +99,19 @@ export class Toolbar {
     this.playBtn = document.createElement("button");
     this.playBtn.type = "button";
     this.playBtn.className = "aicut-play-btn";
-    this.playBtn.title = "播放 / 暂停 (Space)";
+    this.playBtn.title = locale.playPause;
     this.playBtn.setAttribute("data-testid", "aicut-play");
     this.playIcon = document.createElement("span");
     this.playIcon.innerHTML = ICONS.play;
     this.playBtn.appendChild(this.playIcon);
     this.playBtn.addEventListener("click", () => cb.onPlayToggle());
     this.durationLabel = mkSpan("aicut-time-total", "00:00", "aicut-time-total");
-    this.fullscreenBtn = mkIconButton("fullscreen", "全屏预览", () => cb.onFullscreen(), "aicut-fullscreen");
+    this.fullscreenBtn = mkIconButton("fullscreen", locale.fullscreen, () => cb.onFullscreen(), "aicut-fullscreen");
     center.append(this.timeLabel, this.playBtn, this.durationLabel, this.fullscreenBtn);
 
     const right = mkGroup("aicut-toolbar-right");
-    this.snapBtn = mkIconButton("snap", "吸附", () => cb.onSnapToggle(), "aicut-snap");
-    this.zoomOutBtn = mkIconButton("zoomOut", "缩小", () => this.nudgeZoom(-1), "aicut-zoom-out");
+    this.snapBtn = mkIconButton("snap", locale.snap, () => cb.onSnapToggle(), "aicut-snap");
+    this.zoomOutBtn = mkIconButton("zoomOut", locale.zoomOut, () => this.nudgeZoom(-1), "aicut-zoom-out");
     this.zoomSlider = document.createElement("input");
     this.zoomSlider.type = "range";
     this.zoomSlider.min = "0";
@@ -108,12 +122,11 @@ export class Toolbar {
       const ratio = Number(this.zoomSlider.value) / 100;
       cb.onScaleChange(sliderToScale(ratio));
     });
-    this.zoomInBtn = mkIconButton("zoomIn", "放大", () => this.nudgeZoom(1), "aicut-zoom-in");
-    this.exportBtn = mkIconButton("export", "导出", () => cb.onExport(), "aicut-export");
-    this.resetBtn = mkIconButton("reset", "重置编辑（保留视频源）", () => cb.onReset(), "aicut-reset");
-    right.append(this.snapBtn, this.zoomOutBtn, this.zoomSlider, this.zoomInBtn, this.exportBtn, this.resetBtn);
+    this.zoomInBtn = mkIconButton("zoomIn", locale.zoomIn, () => this.nudgeZoom(1), "aicut-zoom-in");
+    this.resetBtn = mkIconButton("reset", locale.reset, () => cb.onReset(), "aicut-reset");
+    right.append(this.snapBtn, this.zoomOutBtn, this.zoomSlider, this.zoomInBtn, this.resetBtn);
 
-    this.root.append(left, center, right);
+    this.root.append(this.extrasLeft, left, center, right, this.extrasRight);
     host.appendChild(this.root);
   }
 
@@ -161,13 +174,12 @@ export class Toolbar {
       this.trimLeftBtn.disabled = !state.canTrim;
       this.trimRightBtn.disabled = !state.canTrim;
     }
-    if (!this.lastState || this.lastState.canExport !== state.canExport) {
-      this.exportBtn.disabled = !state.canExport;
-    }
     if (!this.lastState || this.lastState.snap !== state.snap) {
       this.snapBtn.setAttribute("aria-pressed", state.snap ? "true" : "false");
       this.snapBtn.classList.toggle("aicut-toggle-on", state.snap);
-      this.snapBtn.title = state.snap ? "关闭吸附" : "开启吸附";
+      this.snapBtn.title = state.snap
+        ? this.locale.snapOnTitle
+        : this.locale.snapOffTitle;
     }
     if (!this.lastState || this.lastState.pxPerSec !== state.pxPerSec) {
       const ratio = scaleToSlider(state.pxPerSec);
@@ -183,6 +195,41 @@ export class Toolbar {
 
   destroy(): void {
     this.root.remove();
+  }
+
+  /**
+   * Apply a new locale to all already-mounted controls. Re-uses the
+   * same DOM elements (so event listeners and pointer-capture state
+   * stay intact) — only writes `title` / `aria-label`. Snap toggle
+   * title is then refreshed via the next render pass.
+   */
+  setLocale(locale: Locale): void {
+    this.locale = locale;
+    const applyTitle = (
+      el: HTMLElement | undefined,
+      title: string,
+    ): void => {
+      if (!el) return;
+      el.title = title;
+      el.setAttribute("aria-label", title);
+    };
+    applyTitle(this.undoBtn, locale.undo);
+    applyTitle(this.redoBtn, locale.redo);
+    applyTitle(this.splitBtn, locale.split);
+    applyTitle(this.trimLeftBtn, locale.trimLeft);
+    applyTitle(this.trimRightBtn, locale.trimRight);
+    applyTitle(this.playBtn, locale.playPause);
+    applyTitle(this.fullscreenBtn, locale.fullscreen);
+    applyTitle(this.snapBtn, locale.snap);
+    applyTitle(this.zoomOutBtn, locale.zoomOut);
+    applyTitle(this.zoomInBtn, locale.zoomIn);
+    applyTitle(this.resetBtn, locale.reset);
+    // Force snap title re-evaluation on next render.
+    if (this.lastState) {
+      this.snapBtn.title = this.lastState.snap
+        ? locale.snapOnTitle
+        : locale.snapOffTitle;
+    }
   }
 
   private nudgeZoom(dir: -1 | 1): void {

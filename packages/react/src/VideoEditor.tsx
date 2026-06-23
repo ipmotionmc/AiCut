@@ -2,12 +2,16 @@ import {
   useEffect,
   useImperativeHandle,
   useRef,
+  useState,
   type CSSProperties,
+  type ReactNode,
   type Ref,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   Editor,
   type EditorApi,
+  type Locale,
   type Ms,
   type Project,
   type Theme,
@@ -24,6 +28,12 @@ export interface VideoEditorProps {
   defaultProject?: Project;
   /** CSS variable overrides applied on mount and whenever this ref changes. */
   theme?: Theme;
+  /**
+   * UI string overrides (English default). Mirror prop — switching the
+   * value calls `editor.setLocale` and the toolbar / canvas labels
+   * update in place. Use `localeZh` from `@aicut/core` for Chinese.
+   */
+  locale?: Partial<Locale>;
 
   className?: string;
   style?: CSSProperties;
@@ -39,6 +49,16 @@ export interface VideoEditorProps {
   onPause?: () => void;
   onSelectionChange?: (clipId: string | null) => void;
   onError?: (error: Error) => void;
+
+  /**
+   * Rendered into the very left of the editor's top toolbar — host
+   * adds anything here (size dropdown, branding, status badge). The
+   * library reserves no space for it; if you pass nothing, no
+   * separator appears.
+   */
+  toolbarLeft?: ReactNode;
+  /** Same as `toolbarLeft` but at the very right of the toolbar. */
+  toolbarRight?: ReactNode;
 }
 
 /**
@@ -53,6 +73,14 @@ export interface VideoEditorProps {
 export function VideoEditor(props: VideoEditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<Editor | null>(null);
+  // Toolbar slot DOM nodes don't exist until the editor mounts; we
+  // hold them in state so React re-runs the render after mount and
+  // the portals attach. Tracked separately for left + right because
+  // each is independently controlled by host props.
+  const [slots, setSlots] = useState<{
+    left: HTMLElement;
+    right: HTMLElement;
+  } | null>(null);
 
   // Latest-callback refs so the effect that creates the editor doesn't
   // re-run on every parent render just because props.onChange is a new
@@ -67,8 +95,10 @@ export function VideoEditor(props: VideoEditorProps) {
       container: host,
       project: cbRef.current.defaultProject,
       theme: cbRef.current.theme,
+      locale: cbRef.current.locale,
     });
     editorRef.current = editor;
+    setSlots({ left: editor.toolbarLeft, right: editor.toolbarRight });
 
     const offs = [
       editor.on("change", ({ project }) => cbRef.current.onChange?.(project)),
@@ -88,6 +118,7 @@ export function VideoEditor(props: VideoEditorProps) {
       for (const off of offs) off();
       editor.destroy();
       editorRef.current = null;
+      setSlots(null);
     };
     // Editor lifecycle is tied to mount; we deliberately don't list
     // any reactive deps. `theme` changes are pushed through the
@@ -99,10 +130,19 @@ export function VideoEditor(props: VideoEditorProps) {
     if (props.theme) editorRef.current?.setTheme(props.theme);
   }, [props.theme]);
 
+  useEffect(() => {
+    if (props.locale) editorRef.current?.setLocale(props.locale);
+  }, [props.locale]);
+
+  // Deps must include `slots`. Without it, the factory ran once during
+  // the first commit — BEFORE the useEffect above had a chance to
+  // create the editor — so `apiRef.current` was permanently locked to
+  // null. `slots` flips from null to a real value the same instant
+  // the editor is created, so it's the cleanest re-run trigger.
   useImperativeHandle<VideoEditorApi | null, VideoEditorApi | null>(
     props.apiRef,
     () => editorRef.current,
-    [],
+    [slots],
   );
 
   return (
@@ -111,6 +151,13 @@ export function VideoEditor(props: VideoEditorProps) {
       className={props.className}
       style={props.style}
       data-aicut-host=""
-    />
+    >
+      {slots && props.toolbarLeft != null
+        ? createPortal(props.toolbarLeft, slots.left)
+        : null}
+      {slots && props.toolbarRight != null
+        ? createPortal(props.toolbarRight, slots.right)
+        : null}
+    </div>
   );
 }

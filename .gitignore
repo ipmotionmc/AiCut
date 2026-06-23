@@ -18,6 +18,8 @@ coverage
 /backends/go/tmp
 /backends/*/ffmpeg-bin
 /backends/*/ffmpeg.zip
+/backends/*/outputs
+/backends/go/backend-go
 
 # Env
 .env

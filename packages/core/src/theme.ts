@@ -27,6 +27,7 @@ const THEME_VARS: Record<keyof Theme, string> = {
   controlsText: "--aicut-controls-text",
   controlsHover: "--aicut-controls-hover",
   controlsActive: "--aicut-controls-active",
+  previewBg: "--aicut-preview-bg",
   radiusSm: "--aicut-radius-sm",
   radiusMd: "--aicut-radius-md",
   radiusLg: "--aicut-radius-lg",

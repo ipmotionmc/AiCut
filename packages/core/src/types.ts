@@ -65,6 +65,8 @@ export interface Theme {
   controlsText?: string;
   controlsHover?: string;
   controlsActive?: string;
+  /** Letterbox color around the preview video. Defaults to black. */
+  previewBg?: string;
   radiusSm?: string;
   radiusMd?: string;
   radiusLg?: string;

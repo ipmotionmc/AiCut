@@ -1,45 +1,58 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import type { Project } from "@aicut/core";
 import { resolveFfmpeg, runFfmpeg } from "./ffmpeg.js";
 
 export interface RenderOptions {
-  /** Output width — defaults to source width. */
   width?: number;
-  /** Output height — defaults to source height. */
   height?: number;
-  /** Output fps — defaults to source fps. */
   fps?: number;
   signal?: AbortSignal;
+  /**
+   * Final output path. Render writes its mp4 directly here so the
+   * server doesn't have to copy across mount points. Parent dir is
+   * created by the caller; we still place segments in a temp dir
+   * that gets cleaned up regardless.
+   */
+  outputPath: string;
+  /** Granular progress notifications across encode + concat phases. */
+  onProgress?: (e: ProgressEvent) => void;
 }
 
-export interface RenderResult {
-  outputPath: string;
-  cleanup: () => Promise<void>;
+export interface ProgressEvent {
+  /**
+   * `encode`: a per-clip ffmpeg re-encode pass is in flight. Includes
+   *   `clipIndex` so the client can show "Encoding 2/5".
+   * `concat`: stream-copy concat pass; emitted once at start and once
+   *   when complete (no incremental progress — concat is i/o-bound and
+   *   typically takes a tenth of the encode time).
+   */
+  phase: "encode" | "concat";
+  /** 0–1 overall, weighted by clip durations. */
+  overall: number;
+  clipIndex?: number;
+  totalClips?: number;
 }
 
 /**
- * Render a Project's video track to a single mp4 file.
+ * Render a Project's video track to a single mp4 at `opts.outputPath`.
+ * Returns when finished. Caller is responsible for cleaning up the
+ * output file itself if/when it's no longer needed; the temp segments
+ * dir is always cleaned up here.
  *
- * Approach (simplest correct path for v1):
- *   1. For each clip, run ffmpeg with `-ss in -i url -t duration` and
- *      re-encode to a normalized H.264/AAC mp4 segment. Re-encoding (vs
- *      stream copy) sidesteps codec-mismatch / GOP-alignment issues
- *      between clips from different sources.
- *   2. Build a concat-demuxer list file pointing at the segments.
- *   3. Final pass: `ffmpeg -f concat -safe 0 -i list.txt -c copy out.mp4`.
- *
- * Caller is responsible for calling `cleanup()` after streaming the
- * output back to the client.
+ * Strategy unchanged from v0: per-clip re-encode to a normalized
+ * H.264/AAC mp4 segment, then concat-demuxer stream-copy. Progress
+ * is reported by parsing ffmpeg's `-progress pipe:1` output for
+ * `out_time_us` and aggregating against total project duration.
  */
 export async function renderProject(
   project: Project,
-  opts: RenderOptions = {},
-): Promise<RenderResult> {
+  opts: RenderOptions,
+): Promise<void> {
   const bin = await resolveFfmpeg();
   const work = await mkdtemp(path.join(tmpdir(), "aicut-"));
-  const cleanup = async () => {
+  const cleanupWork = async () => {
     try {
       await rm(work, { recursive: true, force: true });
     } catch {
@@ -54,14 +67,22 @@ export async function renderProject(
     }
     const sources = new Map(project.sources.map((s) => [s.id, s]));
 
+    const totalMs = videoTrack.clips.reduce(
+      (acc, c) => acc + (c.out - c.in),
+      0,
+    );
+    const totalClips = videoTrack.clips.length;
+    let accumDoneMs = 0;
+
     const segmentPaths: string[] = [];
     let i = 0;
     for (const clip of videoTrack.clips) {
       const src = sources.get(clip.sourceId);
       if (!src) throw new Error(`Missing source ${clip.sourceId}`);
-      const seg = path.join(work, `seg-${i++}.mp4`);
+      const seg = path.join(work, `seg-${i}.mp4`);
       const inSec = clip.in / 1000;
-      const durSec = (clip.out - clip.in) / 1000;
+      const durMs = clip.out - clip.in;
+      const durSec = durMs / 1000;
       const args = [
         "-y",
         "-ss",
@@ -88,13 +109,39 @@ export async function renderProject(
       if (opts.fps) {
         args.push("-r", opts.fps.toString());
       }
-      args.push(seg);
-      const { code, stderr } = await runFfmpeg(bin, args, opts.signal);
+      // Quiet logging on stderr + key=value progress on stdout so we
+      // can drive the SSE stream without scraping noisy stderr.
+      args.push("-nostats", "-progress", "pipe:1", seg);
+
+      const localI = i;
+      const { code, stderr } = await runFfmpeg(bin, args, {
+        signal: opts.signal,
+        onStdoutLine: (line) => {
+          const us = parseUsLine(line);
+          if (us == null) return;
+          const clipMs = Math.min(durMs, us / 1000);
+          const overall = totalMs > 0 ? (accumDoneMs + clipMs) / totalMs : 0;
+          opts.onProgress?.({
+            phase: "encode",
+            overall: Math.min(0.99, overall),
+            clipIndex: localI,
+            totalClips,
+          });
+        },
+      });
       if (code !== 0) {
         throw new Error(`ffmpeg segment ${i} failed: ${stderr.slice(-2000)}`);
       }
+      accumDoneMs += durMs;
       segmentPaths.push(seg);
+      i++;
     }
+
+    opts.onProgress?.({
+      phase: "concat",
+      overall: 0.99,
+      totalClips,
+    });
 
     const listPath = path.join(work, "concat.txt");
     const listContent = segmentPaths
@@ -102,7 +149,7 @@ export async function renderProject(
       .join("\n");
     await writeFile(listPath, listContent, "utf8");
 
-    const outputPath = path.join(work, "output.mp4");
+    const tmpOut = path.join(work, "output.mp4");
     const concatArgs = [
       "-y",
       "-f",
@@ -115,15 +162,30 @@ export async function renderProject(
       "copy",
       "-movflags",
       "+faststart",
-      outputPath,
+      tmpOut,
     ];
-    const concat = await runFfmpeg(bin, concatArgs, opts.signal);
+    const concat = await runFfmpeg(bin, concatArgs, { signal: opts.signal });
     if (concat.code !== 0) {
       throw new Error(`ffmpeg concat failed: ${concat.stderr.slice(-2000)}`);
     }
-    return { outputPath, cleanup };
-  } catch (err) {
-    await cleanup();
-    throw err;
+    await rename(tmpOut, opts.outputPath);
+    opts.onProgress?.({ phase: "concat", overall: 1, totalClips });
+  } finally {
+    await cleanupWork();
   }
+}
+
+/**
+ * Parse a single `key=value` line from ffmpeg's `-progress` stream.
+ * We only care about `out_time_us` (unambiguous microseconds across
+ * ffmpeg versions — `out_time_ms` has varied between ms and us in
+ * different builds and is unreliable).
+ */
+function parseUsLine(line: string): number | null {
+  const eq = line.indexOf("=");
+  if (eq < 0) return null;
+  const key = line.slice(0, eq);
+  if (key !== "out_time_us") return null;
+  const v = Number(line.slice(eq + 1));
+  return Number.isFinite(v) ? v : null;
 }

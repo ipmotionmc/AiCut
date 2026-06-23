@@ -2,6 +2,7 @@ import { clipDuration, findClipContaining, findTrackOfClip } from "../model.js";
 import type { Editor } from "../editor.js";
 import { Timeline } from "../timeline/index.js";
 import type { Clip, Ms } from "../types.js";
+import type { Locale } from "../i18n.js";
 import { Toolbar, type ToolbarCallbacks } from "./toolbar.js";
 
 /**
@@ -44,6 +45,7 @@ export class EditorUI {
   constructor(root: HTMLElement, editor: Editor, cb: UICallbacks) {
     this.root = root;
     this.editor = editor;
+    const locale = editor.getLocale();
 
     root.classList.add("aicut-root");
     root.innerHTML = "";
@@ -56,15 +58,15 @@ export class EditorUI {
     this.fullscreenExitBtn = document.createElement("button");
     this.fullscreenExitBtn.type = "button";
     this.fullscreenExitBtn.className = "aicut-fullscreen-exit";
-    this.fullscreenExitBtn.title = "退出全屏 (Esc)";
+    this.fullscreenExitBtn.title = locale.exitFullscreenTitle;
     this.fullscreenExitBtn.setAttribute("data-testid", "aicut-fullscreen-exit");
-    this.fullscreenExitBtn.textContent = "退出全屏";
+    this.fullscreenExitBtn.textContent = locale.exitFullscreen;
     this.fullscreenExitBtn.addEventListener("click", () =>
       this.setFullscreen(false),
     );
     this.preview.appendChild(this.fullscreenExitBtn);
 
-    this.toolbar = new Toolbar(root, cb);
+    this.toolbar = new Toolbar(root, cb, locale);
 
     this.timelineHost = document.createElement("div");
     this.timelineHost.className = "aicut-timeline";
@@ -79,6 +81,7 @@ export class EditorUI {
       selectedClipId: editor.getSelection(),
       snap: editor.getSnap(),
       autoFit: true,
+      locale,
       onSeek: cb.onSeek,
       onSelectClip: cb.onSelectClip,
       onMoveClip: cb.onMoveClip,
@@ -143,6 +146,16 @@ export class EditorUI {
     return this.preview;
   }
 
+  /** Host-extensible slot at the very left of the top toolbar. */
+  get toolbarLeft(): HTMLElement {
+    return this.toolbar.extrasLeft;
+  }
+
+  /** Host-extensible slot at the very right of the top toolbar. */
+  get toolbarRight(): HTMLElement {
+    return this.toolbar.extrasRight;
+  }
+
   /** Public for e2e — read-back of timeline canvas state (no DOM clips). */
   getTimelineDebug(): ReturnType<Timeline["getDebugInfo"]> {
     return this.timeline.getDebugInfo();
@@ -165,7 +178,6 @@ export class EditorUI {
       canRedo: this.editor.canRedo(),
       canSplit: this.canSplitAt(time),
       canTrim: this.canTrimAt(time, selectedClipId),
-      canExport: duration > 0,
       snap,
       pxPerSec,
     });
@@ -188,7 +200,6 @@ export class EditorUI {
       canRedo: this.editor.canRedo(),
       canSplit: this.canSplitAt(timeMs),
       canTrim: this.canTrimAt(timeMs, this.editor.getSelection()),
-      canExport: this.editor.getDuration() > 0,
       snap: this.editor.getSnap(),
       pxPerSec: this.editor.getScale(),
     });
@@ -197,6 +208,14 @@ export class EditorUI {
   /** Explicit re-fit — Editor calls this when a brand-new project replaces the current one. */
   resetAutoFit(): void {
     this.timeline.refit();
+  }
+
+  setLocale(locale: Locale): void {
+    this.toolbar.setLocale(locale);
+    this.fullscreenExitBtn.title = locale.exitFullscreenTitle;
+    this.fullscreenExitBtn.textContent = locale.exitFullscreen;
+    this.timeline.setLocale(locale);
+    this.render();
   }
 
   destroy(): void {

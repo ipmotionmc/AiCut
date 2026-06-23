@@ -15,6 +15,7 @@ import {
 import { wouldOverlap } from "./timeline/layout.js";
 import { PlaybackEngine } from "./playback.js";
 import { applyTheme } from "./theme.js";
+import { type Locale, mergeLocale } from "./i18n.js";
 import type {
   Clip,
   MediaSource,
@@ -38,6 +39,12 @@ export interface EditorOptions {
   initialScale?: number;
   /** Initial snap toggle. Defaults to true. */
   initialSnap?: boolean;
+  /**
+   * UI string overrides. Falls back to English (`localeEn`) for any
+   * keys not provided. Use `localeZh` as the value for full Chinese.
+   * Call `editor.setLocale(...)` to switch at runtime.
+   */
+  locale?: Partial<Locale>;
 }
 
 export interface EditorEventMap {
@@ -109,6 +116,20 @@ export interface EditorApi {
   /** Replace the project with a brand-new empty one. */
   reset(): void;
   setTheme(theme: Theme): void;
+  /**
+   * Swap the UI locale at runtime. Partial overrides merge with the
+   * English default. Triggers a re-render so the toolbar tooltips
+   * and timeline canvas labels pick up the new strings immediately.
+   */
+  setLocale(locale: Partial<Locale>): void;
+  /**
+   * Fire the `export` event with the current project JSON. Hosts call
+   * this from their own export button (built into their toolbarRight
+   * slot, a keyboard shortcut, a menu item, etc.) to surface project
+   * data to whatever pipeline they own. The library never invokes
+   * this on its own — it has no UI for export.
+   */
+  requestExport(): void;
 
   // viewport
   getScale(): number;
@@ -125,6 +146,15 @@ export interface EditorApi {
   canRedo(): boolean;
   undo(): boolean;
   redo(): boolean;
+
+  /**
+   * Bookend slot at the very left of the top toolbar — host appends
+   * its own controls (e.g. an aspect-ratio dropdown). Empty by default
+   * and renders no separator until populated.
+   */
+  readonly toolbarLeft: HTMLElement;
+  /** Right-side bookend slot — conventionally export / save / share. */
+  readonly toolbarRight: HTMLElement;
 
   // events
   on<K extends EditorEventName>(
@@ -164,6 +194,7 @@ export class Editor implements EditorApi {
   private selectedClipId: string | null = null;
   private pxPerSec: number;
   private snap: boolean;
+  private locale: Locale;
   private destroyed = false;
 
   constructor(opts: EditorOptions) {
@@ -171,6 +202,7 @@ export class Editor implements EditorApi {
     this.project = normalizeProject(opts.project ?? createEmptyProject());
     this.pxPerSec = clampScale(opts.initialScale ?? DEFAULT_PX_PER_SEC);
     this.snap = opts.initialSnap !== false;
+    this.locale = mergeLocale(opts.locale);
 
     applyTheme(this.container, opts.theme);
 
@@ -181,7 +213,6 @@ export class Editor implements EditorApi {
       onTrimRight: () => this.trimRight(),
       onUndo: () => this.undo(),
       onRedo: () => this.redo(),
-      onExport: () => this.bus.emit("export", { project: this.getProject() }),
       onReset: () => this.reset(),
       onFullscreen: () => this.ui.toggleFullscreen(),
       onSnapToggle: () => this.setSnap(!this.snap),
@@ -210,6 +241,14 @@ export class Editor implements EditorApi {
 
   static create(opts: EditorOptions): Editor {
     return new Editor(opts);
+  }
+
+  get toolbarLeft(): HTMLElement {
+    return this.ui.toolbarLeft;
+  }
+
+  get toolbarRight(): HTMLElement {
+    return this.ui.toolbarRight;
   }
 
   // ---- playback -------------------------------------------------------
@@ -661,6 +700,26 @@ export class Editor implements EditorApi {
 
   setTheme(theme: Theme): void {
     applyTheme(this.container, theme);
+    // The timeline canvas reads CSS vars at paint time and bakes them
+    // into pixels — it has no way to know the vars just changed.
+    // Without this re-render, the chrome (toolbar/headers) flips
+    // immediately via CSS but the canvas keeps its last colours until
+    // the next interaction (wheel, click, etc.). Force a repaint now.
+    this.ui.render();
+  }
+
+  setLocale(locale: Partial<Locale>): void {
+    this.locale = mergeLocale(locale);
+    this.ui.setLocale(this.locale);
+  }
+
+  /** Internal — UI reads the resolved locale here on each render. */
+  getLocale(): Locale {
+    return this.locale;
+  }
+
+  requestExport(): void {
+    this.bus.emit("export", { project: this.getProject() });
   }
 
   // ---- viewport -------------------------------------------------------

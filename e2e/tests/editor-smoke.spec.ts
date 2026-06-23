@@ -17,7 +17,9 @@ test("editor mounts and exposes controls", async ({ page }) => {
   await expect(page.getByTestId("aicut-fullscreen")).toBeVisible();
   await expect(page.getByTestId("aicut-snap")).toBeVisible();
   await expect(page.getByTestId("aicut-zoom-slider")).toBeVisible();
-  await expect(page.getByTestId("aicut-export")).toBeVisible();
+  // Export is no longer built-in; the demo provides its own button via
+  // the editor's toolbarRight slot, asserted by its `demo-export` testid.
+  await expect(page.getByTestId("demo-export")).toBeVisible();
   await expect(page.getByTestId("aicut-timeline")).toBeVisible();
   await expect(page.locator('[data-testid="aicut-timeline"] canvas')).toBeVisible();
   await expect(page.getByTestId("aicut-time-current")).toContainText(":");
@@ -59,5 +61,6 @@ test("reset to empty project clears clips", async ({ page }) => {
     )
     .toBe(0);
   await expect(page.getByTestId("aicut-split")).toBeDisabled();
-  await expect(page.getByTestId("aicut-export")).toBeDisabled();
+  // Note: the demo's host-supplied export button stays enabled
+  // unconditionally — disable logic is now the host's call.
 });

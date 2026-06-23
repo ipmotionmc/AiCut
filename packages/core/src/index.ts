@@ -25,3 +25,8 @@ export {
   RULER_HEIGHT,
   HEADER_WIDTH,
 } from "./timeline/layout.js";
+
+// i18n — pass to `Editor.create({ locale })` to switch the editor's
+// built-in tooltips and canvas labels. Defaults to English.
+export { localeEn, localeZh, mergeLocale, formatLabel } from "./i18n.js";
+export type { Locale } from "./i18n.js";
