@@ -1,0 +1,24 @@
+node_modules
+dist
+.turbo
+.cache
+coverage
+*.log
+.DS_Store
+
+# Playwright
+/e2e/test-results
+/e2e/playwright-report
+/e2e/.playwright
+
+# Backend
+/backends/ts/dist
+/backends/ts/uploads
+/backends/go/bin
+/backends/go/tmp
+/backends/*/ffmpeg-bin
+/backends/*/ffmpeg.zip
+
+# Env
+.env
+.env.local

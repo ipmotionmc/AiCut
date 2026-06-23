@@ -1,0 +1,243 @@
+import { fmtClock } from "./format.js";
+import { ICONS, type IconName } from "./icons.js";
+
+const SCALE_MIN = 10;
+const SCALE_MAX = 400;
+
+export interface ToolbarCallbacks {
+  onUndo: () => void;
+  onRedo: () => void;
+  onSplit: () => void;
+  onTrimLeft: () => void;
+  onTrimRight: () => void;
+  onPlayToggle: () => void;
+  onFullscreen: () => void;
+  onExport: () => void;
+  onReset: () => void;
+  onSnapToggle: () => void;
+  onScaleChange: (pxPerSec: number) => void;
+}
+
+interface ToolbarState {
+  playing: boolean;
+  time: number;
+  duration: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  canSplit: boolean;
+  canTrim: boolean;
+  canExport: boolean;
+  snap: boolean;
+  pxPerSec: number;
+}
+
+/**
+ * Top toolbar — three groups laid out per the reference:
+ *   left: [undo] [redo] [split] [trim-left] [trim-right] [speed]
+ *   center: [time]  ▶  [duration]  [fullscreen]
+ *   right: [snap] [zoom-out] [zoom-slider] [zoom-in] [export]
+ *
+ * The Speed and Collapse buttons in the reference toolbar are present
+ * but disabled — they correspond to features deferred past v2. The
+ * Export button replaces the "collapse preview" slot since it's the
+ * primary v1 affordance the host hooks into.
+ */
+export class Toolbar {
+  private root: HTMLDivElement;
+  private cb: ToolbarCallbacks;
+
+  private undoBtn!: HTMLButtonElement;
+  private redoBtn!: HTMLButtonElement;
+  private splitBtn!: HTMLButtonElement;
+  private trimLeftBtn!: HTMLButtonElement;
+  private trimRightBtn!: HTMLButtonElement;
+  private playBtn!: HTMLButtonElement;
+  private playIcon!: HTMLSpanElement;
+  private timeLabel!: HTMLSpanElement;
+  private durationLabel!: HTMLSpanElement;
+  private fullscreenBtn!: HTMLButtonElement;
+  private snapBtn!: HTMLButtonElement;
+  private zoomOutBtn!: HTMLButtonElement;
+  private zoomSlider!: HTMLInputElement;
+  private zoomInBtn!: HTMLButtonElement;
+  private exportBtn!: HTMLButtonElement;
+  private resetBtn!: HTMLButtonElement;
+  private lastState: ToolbarState | null = null;
+
+  constructor(host: HTMLElement, cb: ToolbarCallbacks) {
+    this.cb = cb;
+    this.root = document.createElement("div");
+    this.root.className = "aicut-toolbar";
+    this.root.setAttribute("data-testid", "aicut-toolbar");
+
+    const left = mkGroup("aicut-toolbar-left");
+    this.undoBtn = mkIconButton("undo", "撤销", () => cb.onUndo(), "aicut-undo");
+    this.redoBtn = mkIconButton("redo", "重做", () => cb.onRedo(), "aicut-redo");
+    this.splitBtn = mkIconButton("split", "分割", () => cb.onSplit(), "aicut-split");
+    this.trimLeftBtn = mkIconButton("trimLeft", "向左裁剪", () => cb.onTrimLeft(), "aicut-trim-left");
+    this.trimRightBtn = mkIconButton("trimRight", "向右裁剪", () => cb.onTrimRight(), "aicut-trim-right");
+    const speedBtn = mkIconButton("speed", "变速（即将到来）", () => undefined, "aicut-speed");
+    speedBtn.disabled = true;
+    left.append(this.undoBtn, this.redoBtn, this.splitBtn, this.trimLeftBtn, this.trimRightBtn, speedBtn);
+
+    const center = mkGroup("aicut-toolbar-center");
+    this.timeLabel = mkSpan("aicut-time-current", "00:00", "aicut-time-current");
+    this.playBtn = document.createElement("button");
+    this.playBtn.type = "button";
+    this.playBtn.className = "aicut-play-btn";
+    this.playBtn.title = "播放 / 暂停 (Space)";
+    this.playBtn.setAttribute("data-testid", "aicut-play");
+    this.playIcon = document.createElement("span");
+    this.playIcon.innerHTML = ICONS.play;
+    this.playBtn.appendChild(this.playIcon);
+    this.playBtn.addEventListener("click", () => cb.onPlayToggle());
+    this.durationLabel = mkSpan("aicut-time-total", "00:00", "aicut-time-total");
+    this.fullscreenBtn = mkIconButton("fullscreen", "全屏预览", () => cb.onFullscreen(), "aicut-fullscreen");
+    center.append(this.timeLabel, this.playBtn, this.durationLabel, this.fullscreenBtn);
+
+    const right = mkGroup("aicut-toolbar-right");
+    this.snapBtn = mkIconButton("snap", "吸附", () => cb.onSnapToggle(), "aicut-snap");
+    this.zoomOutBtn = mkIconButton("zoomOut", "缩小", () => this.nudgeZoom(-1), "aicut-zoom-out");
+    this.zoomSlider = document.createElement("input");
+    this.zoomSlider.type = "range";
+    this.zoomSlider.min = "0";
+    this.zoomSlider.max = "100";
+    this.zoomSlider.className = "aicut-zoom-slider";
+    this.zoomSlider.setAttribute("data-testid", "aicut-zoom-slider");
+    this.zoomSlider.addEventListener("input", () => {
+      const ratio = Number(this.zoomSlider.value) / 100;
+      cb.onScaleChange(sliderToScale(ratio));
+    });
+    this.zoomInBtn = mkIconButton("zoomIn", "放大", () => this.nudgeZoom(1), "aicut-zoom-in");
+    this.exportBtn = mkIconButton("export", "导出", () => cb.onExport(), "aicut-export");
+    this.resetBtn = mkIconButton("reset", "重置编辑（保留视频源）", () => cb.onReset(), "aicut-reset");
+    right.append(this.snapBtn, this.zoomOutBtn, this.zoomSlider, this.zoomInBtn, this.exportBtn, this.resetBtn);
+
+    this.root.append(left, center, right);
+    host.appendChild(this.root);
+  }
+
+  get element(): HTMLDivElement {
+    return this.root;
+  }
+
+  /**
+   * Idempotent render. Critically: only mutates DOM when a state
+   * field actually changed. Without this, `playIcon.innerHTML = ICONS`
+   * re-parsed the SVG every playback tick (~60Hz) — and replacing the
+   * element between a user's mousedown and mouseup meant the browser
+   * never fired `click` (the two events landed on different element
+   * identities). That manifested as "needs 3 clicks to pause".
+   *
+   * Rule of thumb here: any `innerHTML =` / element rebuild MUST be
+   * behind a "did the input change" guard. Plain `.disabled` /
+   * `.textContent` writes are idempotent in browsers and safe to set
+   * unconditionally, but we still diff them for cheap CPU.
+   */
+  render(state: ToolbarState): void {
+    if (!this.lastState || this.lastState.time !== state.time) {
+      this.timeLabel.textContent = fmtClock(state.time);
+    }
+    if (!this.lastState || this.lastState.duration !== state.duration) {
+      this.durationLabel.textContent = fmtClock(state.duration);
+    }
+    if (!this.lastState || this.lastState.playing !== state.playing) {
+      this.playIcon.innerHTML = state.playing ? ICONS.pause : ICONS.play;
+      this.playBtn.setAttribute(
+        "data-state",
+        state.playing ? "playing" : "paused",
+      );
+    }
+    if (!this.lastState || this.lastState.canUndo !== state.canUndo) {
+      this.undoBtn.disabled = !state.canUndo;
+    }
+    if (!this.lastState || this.lastState.canRedo !== state.canRedo) {
+      this.redoBtn.disabled = !state.canRedo;
+    }
+    if (!this.lastState || this.lastState.canSplit !== state.canSplit) {
+      this.splitBtn.disabled = !state.canSplit;
+    }
+    if (!this.lastState || this.lastState.canTrim !== state.canTrim) {
+      this.trimLeftBtn.disabled = !state.canTrim;
+      this.trimRightBtn.disabled = !state.canTrim;
+    }
+    if (!this.lastState || this.lastState.canExport !== state.canExport) {
+      this.exportBtn.disabled = !state.canExport;
+    }
+    if (!this.lastState || this.lastState.snap !== state.snap) {
+      this.snapBtn.setAttribute("aria-pressed", state.snap ? "true" : "false");
+      this.snapBtn.classList.toggle("aicut-toggle-on", state.snap);
+      this.snapBtn.title = state.snap ? "关闭吸附" : "开启吸附";
+    }
+    if (!this.lastState || this.lastState.pxPerSec !== state.pxPerSec) {
+      const ratio = scaleToSlider(state.pxPerSec);
+      const nextVal = String(Math.round(ratio * 100));
+      if (this.zoomSlider.value !== nextVal) this.zoomSlider.value = nextVal;
+      this.zoomSlider.style.setProperty(
+        "--aicut-zoom-fill",
+        `${Math.round(ratio * 100)}%`,
+      );
+    }
+    this.lastState = { ...state };
+  }
+
+  destroy(): void {
+    this.root.remove();
+  }
+
+  private nudgeZoom(dir: -1 | 1): void {
+    const cur = Number(this.zoomSlider.value);
+    const next = Math.max(0, Math.min(100, cur + dir * 8));
+    this.zoomSlider.value = String(next);
+    this.cb.onScaleChange(sliderToScale(next / 100));
+  }
+}
+
+function mkGroup(cls: string): HTMLDivElement {
+  const d = document.createElement("div");
+  d.className = cls;
+  return d;
+}
+
+function mkSpan(cls: string, text: string, testId?: string): HTMLSpanElement {
+  const s = document.createElement("span");
+  s.className = cls;
+  s.textContent = text;
+  if (testId) s.setAttribute("data-testid", testId);
+  return s;
+}
+
+function mkIconButton(
+  icon: IconName,
+  title: string,
+  onClick: () => void,
+  testId?: string,
+): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "aicut-icon-btn";
+  b.title = title;
+  b.setAttribute("aria-label", title);
+  b.innerHTML = ICONS[icon];
+  if (testId) b.setAttribute("data-testid", testId);
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+/**
+ * Slider ↔ scale mapping is exponential so the slider feels uniform
+ * across a wide zoom range. Matches the figma reference (exp-based
+ * zoom step). 0 → SCALE_MIN, 1 → SCALE_MAX.
+ */
+function sliderToScale(ratio: number): number {
+  const lo = Math.log(SCALE_MIN);
+  const hi = Math.log(SCALE_MAX);
+  return Math.exp(lo + (hi - lo) * ratio);
+}
+
+function scaleToSlider(scale: number): number {
+  const lo = Math.log(SCALE_MIN);
+  const hi = Math.log(SCALE_MAX);
+  return (Math.log(Math.max(SCALE_MIN, Math.min(SCALE_MAX, scale))) - lo) /
+    (hi - lo);
+}

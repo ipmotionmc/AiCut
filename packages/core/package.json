@@ -1,0 +1,36 @@
+{
+  "name": "@aicut/core",
+  "version": "0.1.0",
+  "description": "Framework-agnostic core for the AiCut video editor — data model, editor instance, playback engine, vanilla DOM renderer.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": ["./styles/*.css"],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./styles.css": "./styles/theme.css"
+  },
+  "files": [
+    "dist",
+    "styles",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

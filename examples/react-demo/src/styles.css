@@ -1,0 +1,132 @@
+@import "@aicut/core/styles.css";
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #fafafa;
+}
+
+.demo-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+  height: 100vh;
+  padding: 16px;
+}
+
+.demo-editor {
+  height: 100%;
+  min-height: 0;
+}
+
+.demo-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.05);
+  overflow: auto;
+}
+
+.demo-sidebar h2 {
+  font-size: 14px;
+  margin: 4px 0;
+}
+
+.demo-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.demo-row button {
+  padding: 6px 10px;
+  font-size: 12px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.demo-row button:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.demo-json {
+  flex: 1;
+  min-height: 180px;
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 11px;
+  padding: 8px;
+  background: #f4f4f4;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  resize: none;
+}
+
+.demo-state {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #444;
+}
+
+.demo-state code {
+  font-size: 11px;
+  background: #f4f4f4;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.demo-shortcuts {
+  margin: 0;
+  padding: 0 0 0 16px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #444;
+}
+
+.demo-shortcuts kbd {
+  display: inline-block;
+  padding: 0 6px;
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 11px;
+  background: #f0f0f3;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+}
+
+.demo-framepicker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #1f1f22;
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.demo-framepicker h2 {
+  color: rgba(255, 255, 255, 0.85);
+  margin: 0;
+  font-size: 13px;
+}
+
+.demo-framepicker .demo-state {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.demo-framepicker .demo-state code {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.95);
+}

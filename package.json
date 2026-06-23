@@ -1,0 +1,25 @@
+{
+  "name": "aicut",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Video editor component library — framework-agnostic core with React/Vue wrappers.",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter \"./packages/*\" build",
+    "dev": "pnpm --filter \"./examples/react-demo\" dev",
+    "demo:react": "pnpm --filter \"./examples/react-demo\" dev",
+    "demo:vue": "pnpm --filter \"./examples/vue-demo\" dev",
+    "test:e2e": "pnpm --filter \"./e2e\" test",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "pnpm -r exec rm -rf dist node_modules .turbo && rm -rf node_modules",
+    "changeset": "changeset",
+    "release": "pnpm build && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.9",
+    "typescript": "^5.7.2"
+  }
+}

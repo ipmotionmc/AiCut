@@ -1,0 +1,315 @@
+/* AiCut default theme + structural styles.
+ *
+ * Theme variables intentionally share names with iqvise's globals.css
+ * (--color-brand, --color-secondary, --color-card, --color-surface,
+ *  --color-dark, --color-muted, etc.). Two consequences:
+ *   1. Hosting pages that already define those variables (e.g. via
+ *      Tailwind v4 @theme, a global :root block, or a `.dark` class
+ *      toggle) get the editor styled in their palette for free.
+ *   2. We use `var(--color-foo, <fallback>)` everywhere so the
+ *      library still works standalone — the fallback IS the default
+ *      brand palette.
+ *
+ * Editor-chrome-specific variables (`--aicut-controls-*`) keep the
+ * `aicut-` prefix because they have no analogue in the host theme.
+ * They derive from `--color-*` by default so they auto-follow
+ * light/dark when the host flips its palette. */
+
+.aicut-root {
+  /* Brand tokens — same names as iqvise's globals.css. */
+  --color-brand: var(--color-brand, #ff3386);
+  --color-secondary: var(--color-secondary, #9a31f4);
+  --color-surface: var(--color-surface, #f8f7fa);
+  --color-dark: var(--color-dark, #1a1a1a);
+  --color-muted: var(--color-muted, #999999);
+  --color-card: var(--color-card, #ffffff);
+  --color-success: var(--color-success, #00d95e);
+  --color-warning: var(--color-warning, #faa700);
+  --color-info: var(--color-info, #1077ff);
+  --color-error: var(--color-error, #ff0909);
+
+  /* Editor chrome — derived from the brand palette. Defaults pick a
+     pro-NLE charcoal so the editor reads as a tool regardless of the
+     surrounding page; hosts that explicitly want it to follow their
+     light-mode card colour can pass a `theme` prop or set the
+     `--aicut-controls-*` vars themselves. */
+  --aicut-controls-bg: var(--aicut-controls-bg, #1f1f22);
+  --aicut-controls-border: var(--aicut-controls-border, rgba(255, 255, 255, 0.08));
+  --aicut-controls-text: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  --aicut-controls-hover: var(--aicut-controls-hover, rgba(255, 255, 255, 0.08));
+  --aicut-controls-active: var(--aicut-controls-active, rgba(255, 255, 255, 0.12));
+
+  --aicut-radius-sm: var(--aicut-radius-sm, 8px);
+  --aicut-radius-md: var(--aicut-radius-md, 12px);
+  --aicut-radius-lg: var(--aicut-radius-lg, 16px);
+
+  --aicut-clip-bg: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-brand) 80%, transparent),
+    color-mix(in srgb, var(--color-secondary) 70%, transparent)
+  );
+  --aicut-track-bg: color-mix(in srgb, var(--aicut-controls-text) 6%, transparent);
+  --aicut-playhead-color: var(--color-brand);
+
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  width: 100%;
+  height: 100%;
+  min-height: 480px;
+  background: var(--aicut-controls-bg);
+  color: var(--aicut-controls-text);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "PingFang SC",
+    "Microsoft YaHei",
+    sans-serif;
+  outline: none;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.aicut-root *,
+.aicut-root *::before,
+.aicut-root *::after {
+  box-sizing: border-box;
+}
+
+/* ===== Preview ===== */
+
+.aicut-preview-host {
+  position: relative;
+  background: #000;
+  border-radius: 0;
+  overflow: hidden;
+  min-height: 220px;
+}
+
+.aicut-fullscreen-exit {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: none;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  z-index: 2;
+}
+
+.aicut-fullscreen-exit:hover {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* ===== In-tab fullscreen ===== */
+
+.aicut-root.aicut-fullscreen {
+  /* The root itself stays in flow so its parent layout doesn't jump;
+     we lift just the preview to viewport-cover. */
+}
+
+.aicut-root.aicut-fullscreen .aicut-preview-host {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  min-height: 0;
+  background: #000;
+}
+
+.aicut-root.aicut-fullscreen .aicut-fullscreen-exit {
+  display: inline-flex;
+}
+
+/* ===== Toolbar ===== */
+
+.aicut-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 44px;
+  padding: 0 12px;
+  border-top: 1px solid var(--aicut-controls-border);
+  border-bottom: 1px solid var(--aicut-controls-border);
+  background: var(--aicut-controls-bg);
+}
+
+.aicut-toolbar-left,
+.aicut-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.aicut-toolbar-right {
+  justify-content: flex-end;
+}
+
+.aicut-toolbar-center {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.aicut-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--aicut-controls-text);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.aicut-icon-btn:hover:not(:disabled) {
+  background: var(--aicut-controls-hover);
+}
+
+.aicut-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.aicut-icon-btn.aicut-toggle-on {
+  background: var(--aicut-controls-active);
+  color: var(--color-brand);
+}
+
+.aicut-play-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: none;
+  background: var(--aicut-controls-active);
+  color: var(--aicut-controls-text);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.aicut-play-btn:hover {
+  background: var(--aicut-controls-hover);
+}
+
+.aicut-play-btn[data-state="playing"] {
+  background: var(--color-brand);
+  color: #fff;
+}
+
+.aicut-time-current,
+.aicut-time-total {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  min-width: 44px;
+  text-align: center;
+  color: var(--aicut-controls-text);
+}
+
+.aicut-time-total {
+  color: color-mix(in srgb, var(--aicut-controls-text) 60%, transparent);
+}
+
+/* Slider track. Two solid stops in one gradient — brand color for
+   the filled portion, a dedicated `--aicut-track-unfilled` for the
+   rest. We expose it as a CSS var so theme overrides can adjust it
+   for light mode without rewriting the gradient. Defaults intentionally
+   use opaque rgba rather than `currentColor` / `color-mix` (which
+   silently collapse to transparent in some Chromium builds when the
+   element has no resolved `color` yet). */
+.aicut-zoom-slider {
+  --aicut-track-unfilled: rgba(255, 255, 255, 0.18);
+  appearance: none;
+  -webkit-appearance: none;
+  width: 140px;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--color-brand) 0 var(--aicut-zoom-fill, 50%),
+    var(--aicut-track-unfilled) var(--aicut-zoom-fill, 50%) 100%
+  );
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  border: none;
+  cursor: pointer;
+  outline: none;
+}
+
+/* In light mode the white track-unfilled is invisible against the
+   light controls bg — flip it to a dark tint via the same root
+   selector pattern. Hosts that switch themes only need to override
+   `--aicut-controls-bg`; we infer "is light" by comparing luminance
+   via CSS isn't possible, so we let host themes override this var. */
+.aicut-root[style*="controls-bg"] .aicut-zoom-slider,
+.aicut-root.aicut-theme-light .aicut-zoom-slider {
+  --aicut-track-unfilled: rgba(0, 0, 0, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+/* Hide the chromium default track since we paint via background. */
+.aicut-zoom-slider::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 6px;
+  border-radius: 999px;
+}
+
+.aicut-zoom-slider::-moz-range-track {
+  background: transparent;
+  height: 6px;
+  border-radius: 999px;
+}
+
+.aicut-zoom-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.2);
+  cursor: grab;
+}
+
+.aicut-zoom-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* ===== Timeline ===== */
+
+/* The timeline is now a single <canvas> — this rule is the host
+   element that the canvas sizes itself to. Ruler, tracks, clips,
+   thumbnails, playhead, headers, and snap guide are ALL painted on
+   that canvas (see packages/core/src/timeline/). */
+.aicut-timeline {
+  position: relative;
+  flex: 0 0 auto;
+  background: var(--aicut-controls-bg);
+  height: 240px;
+  min-height: 200px;
+  overflow: hidden;
+}
+
+.aicut-timeline-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
