@@ -324,6 +324,7 @@ export class Timeline {
 
     this.attachPointer();
     this.attachWheel();
+    this.attachKeyboard();
     this.attachResize();
     this.resizeCanvas();
     this.scheduleRender();
@@ -1274,6 +1275,39 @@ export class Timeline {
       }
     }
     this.scheduleRender();
+  }
+
+  private attachKeyboard(): void {
+    // Make the canvas focusable so it can receive keydown. Without
+    // tabIndex the browser's accessibility tree refuses to deliver
+    // key events to a <canvas>. -1 means "focusable by click but not
+    // by tab" — the timeline isn't a primary tab stop, but it
+    // accepts focus when the user clicks on it.
+    this.canvas.tabIndex = -1;
+    this.canvas.style.outline = "none"; // suppress the focus ring
+    this.canvas.addEventListener("keydown", (e) => {
+      if (e.code !== "ArrowLeft" && e.code !== "ArrowRight") return;
+      // Frame-stepping nav — same constants as EditorUI's handler.
+      // 30 fps assumption (no fps on Project today). Shift = 10×.
+      e.preventDefault();
+      const STEP_MS = 33;
+      const BIG_STEP_MS = 333;
+      const step = e.shiftKey ? BIG_STEP_MS : STEP_MS;
+      const dir = e.code === "ArrowLeft" ? -1 : 1;
+      const dur = projectDuration(this.project);
+      const next = Math.max(0, Math.min(dur, this.timeMs + dir * step));
+      if (next === this.timeMs) return;
+      this.timeMs = next;
+      this.opts.onSeek?.(next);
+      this.scheduleRender();
+    });
+    // Auto-focus on pointer-down so the very first arrow press after
+    // clicking the timeline actually moves the playhead. Without this
+    // the canvas only gets focus on the second interaction, which
+    // feels broken.
+    this.canvas.addEventListener("pointerdown", () => {
+      if (document.activeElement !== this.canvas) this.canvas.focus();
+    });
   }
 
   private attachWheel(): void {
