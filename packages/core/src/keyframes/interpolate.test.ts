@@ -14,108 +14,124 @@ function clip(overrides?: Partial<Clip>): Clip {
   };
 }
 
-describe("getEffectiveTransform", () => {
-  it("returns identity when keyframes is absent", () => {
+describe("getEffectiveTransform — per-property keyframes", () => {
+  it("returns identity when no keyframes and no static base", () => {
     expect(getEffectiveTransform(clip(), 1000)).toEqual(IDENTITY_TRANSFORM);
   });
 
-  it("returns identity when keyframes is an empty array", () => {
-    expect(
-      getEffectiveTransform(clip({ keyframes: [] }), 1000),
-    ).toEqual(IDENTITY_TRANSFORM);
-  });
-
-  it("with a single keyframe, returns its values constantly", () => {
-    const c = clip({
-      keyframes: [{ id: "kf1", time: 2000, x: 100, y: 50, scale: 1.5 }],
+  it("falls back to the static base for a prop without keyframes", () => {
+    const c = clip({ panX: 50, scale: 1.5 });
+    expect(getEffectiveTransform(c, 1000)).toEqual({
+      panX: 50,
+      panY: 0,
+      scale: 1.5,
     });
-    expect(getEffectiveTransform(c, 0)).toEqual({ x: 100, y: 50, scale: 1.5 });
-    expect(getEffectiveTransform(c, 2000)).toEqual({ x: 100, y: 50, scale: 1.5 });
-    expect(getEffectiveTransform(c, 4999)).toEqual({ x: 100, y: 50, scale: 1.5 });
   });
 
-  it("before the first keyframe, holds the first's values", () => {
+  it("with a single keyframe for a prop, holds that value constantly", () => {
     const c = clip({
-      keyframes: [
-        { id: "kf1", time: 1000, x: 50, y: 0, scale: 1 },
-        { id: "kf2", time: 3000, x: 200, y: 0, scale: 2 },
-      ],
+      keyframes: [{ id: "kf1", prop: "scale", time: 2000, value: 1.5 }],
     });
-    expect(getEffectiveTransform(c, 0)).toEqual({ x: 50, y: 0, scale: 1 });
-    expect(getEffectiveTransform(c, 999)).toEqual({ x: 50, y: 0, scale: 1 });
+    expect(getEffectiveTransform(c, 0)).toEqual({ panX: 0, panY: 0, scale: 1.5 });
+    expect(getEffectiveTransform(c, 4999)).toEqual({
+      panX: 0,
+      panY: 0,
+      scale: 1.5,
+    });
   });
 
-  it("after the last keyframe, holds the last's values", () => {
+  it("before the first keyframe of a prop, holds the first's value", () => {
     const c = clip({
       keyframes: [
-        { id: "kf1", time: 1000, x: 50, scale: 1 },
-        { id: "kf2", time: 3000, x: 200, scale: 2 },
+        { id: "k1", prop: "panX", time: 1000, value: 50 },
+        { id: "k2", prop: "panX", time: 3000, value: 200 },
       ],
     });
-    expect(getEffectiveTransform(c, 3000)).toEqual({ x: 200, y: 0, scale: 2 });
-    expect(getEffectiveTransform(c, 4999)).toEqual({ x: 200, y: 0, scale: 2 });
+    expect(getEffectiveTransform(c, 0).panX).toBe(50);
+    expect(getEffectiveTransform(c, 999).panX).toBe(50);
+  });
+
+  it("after the last keyframe of a prop, holds the last's value", () => {
+    const c = clip({
+      keyframes: [
+        { id: "k1", prop: "panX", time: 1000, value: 50 },
+        { id: "k2", prop: "panX", time: 3000, value: 200 },
+      ],
+    });
+    expect(getEffectiveTransform(c, 3000).panX).toBe(200);
+    expect(getEffectiveTransform(c, 4999).panX).toBe(200);
   });
 
   it("interpolates linearly between two keyframes (midpoint)", () => {
     const c = clip({
       keyframes: [
-        { id: "kf1", time: 1000, x: 0, y: 0, scale: 1 },
-        { id: "kf2", time: 3000, x: 200, y: 100, scale: 2 },
+        { id: "k1", prop: "panX", time: 1000, value: 0 },
+        { id: "k2", prop: "panX", time: 3000, value: 200 },
+        { id: "k3", prop: "scale", time: 1000, value: 1 },
+        { id: "k4", prop: "scale", time: 3000, value: 2 },
       ],
     });
-    // midpoint = 2000ms
-    expect(getEffectiveTransform(c, 2000)).toEqual({ x: 100, y: 50, scale: 1.5 });
+    expect(getEffectiveTransform(c, 2000)).toEqual({
+      panX: 100,
+      panY: 0,
+      scale: 1.5,
+    });
   });
 
-  it("interpolates linearly at arbitrary fractions", () => {
+  it("each prop animates independently", () => {
+    // panX animates 0→100 between t=0..1000; scale stays at static 1.5
+    // because it has no keyframes; panY stays at default 0.
     const c = clip({
+      scale: 1.5,
       keyframes: [
-        { id: "kf1", time: 0, x: 0, scale: 1 },
-        { id: "kf2", time: 1000, x: 100, scale: 2 },
+        { id: "k1", prop: "panX", time: 0, value: 0 },
+        { id: "k2", prop: "panX", time: 1000, value: 100 },
       ],
     });
-    expect(getEffectiveTransform(c, 250)).toEqual({ x: 25, y: 0, scale: 1.25 });
-    expect(getEffectiveTransform(c, 750)).toEqual({ x: 75, y: 0, scale: 1.75 });
+    expect(getEffectiveTransform(c, 500)).toEqual({
+      panX: 50,
+      panY: 0,
+      scale: 1.5,
+    });
   });
 
-  it("treats omitted axes as identity for that keyframe", () => {
-    // First keyframe pins only x; y and scale should be identity (0, 1)
-    // and interpolate to the second's values.
+  it("at an exact keyframe time, returns that keyframe's value", () => {
     const c = clip({
       keyframes: [
-        { id: "kf1", time: 0, x: 100 },
-        { id: "kf2", time: 1000, x: 200, y: 50, scale: 1.5 },
+        { id: "k1", prop: "scale", time: 1000, value: 1 },
+        { id: "k2", prop: "scale", time: 3000, value: 2 },
+        { id: "k3", prop: "scale", time: 5000, value: 3 },
       ],
     });
-    expect(getEffectiveTransform(c, 0)).toEqual({ x: 100, y: 0, scale: 1 });
-    expect(getEffectiveTransform(c, 1000)).toEqual({ x: 200, y: 50, scale: 1.5 });
-    expect(getEffectiveTransform(c, 500)).toEqual({ x: 150, y: 25, scale: 1.25 });
+    expect(getEffectiveTransform(c, 3000).scale).toBe(2);
   });
 
-  it("at an exact keyframe time, returns that keyframe's values", () => {
+  it("three keyframes pick the right bracketing pair", () => {
     const c = clip({
       keyframes: [
-        { id: "kf1", time: 1000, x: 50, scale: 1 },
-        { id: "kf2", time: 3000, x: 200, scale: 2 },
-        { id: "kf3", time: 5000, x: 300, scale: 3 },
+        { id: "k1", prop: "scale", time: 0, value: 1 },
+        { id: "k2", prop: "scale", time: 1000, value: 2 },
+        { id: "k3", prop: "scale", time: 2000, value: 1 },
       ],
     });
-    expect(getEffectiveTransform(c, 3000)).toEqual({ x: 200, y: 0, scale: 2 });
-  });
-
-  it("handles three keyframes, picking the right bracketing pair", () => {
-    const c = clip({
-      keyframes: [
-        { id: "kf1", time: 0, scale: 1 },
-        { id: "kf2", time: 1000, scale: 2 },
-        { id: "kf3", time: 2000, scale: 1 },
-      ],
-    });
-    // Mid of pair (0, 1000) = scale 1.5
     expect(getEffectiveTransform(c, 500).scale).toBeCloseTo(1.5);
-    // Mid of pair (1000, 2000) = scale 1.5
     expect(getEffectiveTransform(c, 1500).scale).toBeCloseTo(1.5);
-    // Right at the middle keyframe
     expect(getEffectiveTransform(c, 1000).scale).toBe(2);
+  });
+
+  it("static + keyframes coexist for different props", () => {
+    // panX has static base 80, panY animates 0→100, scale stays 1.
+    const c = clip({
+      panX: 80,
+      keyframes: [
+        { id: "k1", prop: "panY", time: 0, value: 0 },
+        { id: "k2", prop: "panY", time: 1000, value: 100 },
+      ],
+    });
+    expect(getEffectiveTransform(c, 500)).toEqual({
+      panX: 80,
+      panY: 50,
+      scale: 1,
+    });
   });
 });

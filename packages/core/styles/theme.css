@@ -160,6 +160,23 @@
   background: rgba(255, 255, 255, 0.12);
 }
 
+/* Small dot to the right of each input — filled = prop has keyframes,
+   outlined = static value only. Tiny but a quick visual mode tell. */
+.aicut-keyframe-panel__badge {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 4px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: transparent;
+  flex: 0 0 7px;
+}
+.aicut-keyframe-panel__badge--on {
+  background: #ff3386;
+  border-color: #ff3386;
+}
+
 .aicut-keyframe-panel__delete {
   margin-top: 4px;
   padding: 5px 8px;

@@ -388,33 +388,32 @@ export class CanvasCompositorEngine implements PlaybackEngine {
       // Compose keyframe transform on top of the centered letterbox.
       // Identity transform (no keyframes / disabled) → math reduces to
       // a plain centered drawImage, same as before.
-      // Keyframe X/Y are in CSS pixels (so a "100" reads the same
-      // across DPR=1 and DPR=2 monitors). The canvas paints in DPR-
-      // scaled pixels, so multiply by DPR before translating.
+      // panX/panY are in CSS pixels (so "100" reads the same across
+      // DPR=1 and DPR=2 monitors). Multiply by DPR for the canvas
+      // coordinate space.
       const dpr = window.devicePixelRatio || 1;
       const t = getEffectiveTransform(clip, this.timeMs - clip.start);
       // Output frame in canvas pixels — fixed bounds we clip to so
-      // PiP / pan / zoom show the letterbox bg, not the editor chrome.
+      // pan / zoom show the letterbox bg, not editor chrome.
       const outX = (cw - dw) / 2;
       const outY = (ch - dh) / 2;
       this.ctx.save();
       this.ctx.beginPath();
       this.ctx.rect(outX, outY, dw, dh);
       this.ctx.clip();
-      this.ctx.translate(cx + t.x * dpr, cy + t.y * dpr);
+      this.ctx.translate(cx + t.panX * dpr, cy + t.panY * dpr);
       this.ctx.scale(t.scale, t.scale);
       this.ctx.drawImage(v, -dw / 2, -dh / 2, dw, dh);
       this.ctx.restore();
       this.paintedFrames += 1;
-      // CSS-pixel rects for the overlay.
       this.lastOutputRect = {
         x: outX / dpr,
         y: outY / dpr,
         w: dw / dpr,
         h: dh / dpr,
       };
-      const cssCx = cw / (2 * dpr) + t.x;
-      const cssCy = ch / (2 * dpr) + t.y;
+      const cssCx = cw / (2 * dpr) + t.panX;
+      const cssCy = ch / (2 * dpr) + t.panY;
       const cssW = (dw * t.scale) / dpr;
       const cssH = (dh * t.scale) / dpr;
       this.lastFrameRect = {

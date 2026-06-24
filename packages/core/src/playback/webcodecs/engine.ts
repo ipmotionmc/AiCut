@@ -587,7 +587,7 @@ export class WebCodecsEngine implements PlaybackEngine {
         const baseScale = Math.min(cw / vw, ch / vh);
         const dw = vw * baseScale;
         const dh = vh * baseScale;
-        // Keyframe X/Y are in CSS pixels — multiply by DPR for the
+        // panX/panY are in CSS pixels — multiply by DPR for the
         // DPR-scaled canvas coordinate space.
         const dpr = window.devicePixelRatio || 1;
         const t = getEffectiveTransform(clip, localMs);
@@ -599,19 +599,18 @@ export class WebCodecsEngine implements PlaybackEngine {
         this.ctx.beginPath();
         this.ctx.rect(outX, outY, dw, dh);
         this.ctx.clip();
-        this.ctx.translate(cw / 2 + t.x * dpr, ch / 2 + t.y * dpr);
+        this.ctx.translate(cw / 2 + t.panX * dpr, ch / 2 + t.panY * dpr);
         this.ctx.scale(t.scale, t.scale);
         this.ctx.drawImage(chosenFrame, -dw / 2, -dh / 2, dw, dh);
         this.ctx.restore();
-        // CSS-pixel rects for the overlay.
         this.lastOutputRect = {
           x: outX / dpr,
           y: outY / dpr,
           w: dw / dpr,
           h: dh / dpr,
         };
-        const cssCx = cw / (2 * dpr) + t.x;
-        const cssCy = ch / (2 * dpr) + t.y;
+        const cssCx = cw / (2 * dpr) + t.panX;
+        const cssCy = ch / (2 * dpr) + t.panY;
         const cssW = (dw * t.scale) / dpr;
         const cssH = (dh * t.scale) / dpr;
         this.lastFrameRect = {

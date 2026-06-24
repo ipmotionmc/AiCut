@@ -156,8 +156,8 @@ export class HtmlVideoEngine implements PlaybackEngine {
     const clip = this.clipById(this.currentClipId!);
     if (!clip) return base;
     const t = getEffectiveTransform(clip, this.timeMs - clip.start);
-    const cx = base.x + base.w / 2 + t.x;
-    const cy = base.y + base.h / 2 + t.y;
+    const cx = base.x + base.w / 2 + t.panX;
+    const cy = base.y + base.h / 2 + t.panY;
     const w = base.w * t.scale;
     const h = base.h * t.scale;
     return { x: cx - w / 2, y: cy - h / 2, w, h };
@@ -214,9 +214,9 @@ export class HtmlVideoEngine implements PlaybackEngine {
           height: `${outRect.h}px`,
         });
         const t = getEffectiveTransform(clip, this.timeMs - clip.start);
-        // Identity = video fills wrapper exactly. Translate + scale
-        // move it within the wrapper; overflow clips.
-        s.video.style.transform = `translate(${t.x.toFixed(2)}px, ${t.y.toFixed(2)}px) scale(${t.scale.toFixed(4)})`;
+        // Identity = video fills wrapper exactly. Pan + scale move
+        // it within the wrapper; overflow:hidden clips.
+        s.video.style.transform = `translate(${t.panX.toFixed(2)}px, ${t.panY.toFixed(2)}px) scale(${t.scale.toFixed(4)})`;
       }
     }
     // Inactive sources: reset transforms so stale state doesn't ghost

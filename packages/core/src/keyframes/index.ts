@@ -6,4 +6,9 @@ export {
 export {
   getEffectiveTransform,
   getTransformAtTimelineTime,
+  interpolateProp,
+  keyframesForProp,
+  hasKeyframesForProp,
+  upsertKeyframe,
+  removeKeyframesForProp,
 } from "./interpolate.js";

@@ -1,28 +1,25 @@
 import type { Editor } from "../editor.js";
-import {
-  getEffectiveTransform,
-  type EffectiveTransform,
-} from "../keyframes/index.js";
+import { getEffectiveTransform } from "../keyframes/index.js";
 import type { Clip } from "../types.js";
 
 /**
  * Direct-manipulation overlay on top of the preview area. When
  * keyframes mode is on AND the active engine exposes a frame rect,
- * paints a 1px border around the frame + four corner handles. Pointer
- * gestures:
+ * paints a 1px dashed border around the OUTPUT frame (fixed) + four
+ * corner handles attached to the CONTENT (moves with the transform).
  *
- *   - Drag inside the frame body      → translate (clip X / Y)
- *   - Drag a corner handle             → uniform scale around frame center
+ * Pointer gestures all act on the SELECTED clip's three transform
+ * properties (`panX`, `panY`, `scale`), routed through
+ * `Editor.setValueAtPlayhead` — so a gesture either updates the
+ * clip's static base (no animation track yet) or upserts a keyframe
+ * at the playhead (when the prop is already animated).
  *
- * When no keyframe is selected the gesture auto-creates one at the
- * playhead (CapCut-style). With a keyframe selected, the gesture
- * edits that keyframe's values.
+ *   - Drag inside the frame body            → setValueAtPlayhead(panX, panY)
+ *   - Drag a corner handle (or pinch wheel) → setValueAtPlayhead(scale)
  *
- * The overlay element itself has `pointer-events: none` so non-
- * keyframe clicks pass through to whatever lives below. The frame
- * border + corner handles have `pointer-events: auto` so users can
- * grab them. When keyframe mode is off the whole thing is hidden via
- * `display: none`.
+ * Overlay element has `pointer-events: none` so non-keyframe clicks
+ * pass through to whatever lives below; only the body + handles
+ * capture clicks. Hidden via display: none when keyframe mode is off.
  */
 export class KeyframeOverlay {
   private editor: Editor;
@@ -36,16 +33,14 @@ export class KeyframeOverlay {
     | {
         kind: "translate";
         clipId: string;
-        keyframeId: string;
         pointerStartX: number;
         pointerStartY: number;
-        startX: number;
-        startY: number;
+        startPanX: number;
+        startPanY: number;
       }
     | {
         kind: "scale";
         clipId: string;
-        keyframeId: string;
         centerX: number;
         centerY: number;
         startDistance: number;
@@ -68,9 +63,8 @@ export class KeyframeOverlay {
     this.frameBody.setAttribute("data-testid", "aicut-keyframe-frame");
     this.frameBody.addEventListener("pointerdown", (e) => this.onTransStart(e));
     // Pinch-to-zoom: macOS trackpads fire `wheel` events with
-    // ctrlKey: true. Browser usually scales the whole page on this —
-    // we preventDefault and reinterpret it as a scale change on the
-    // active keyframe (auto-adding one if needed).
+    // ctrlKey: true. We preventDefault the page zoom and reinterpret
+    // as a scale change on the selected clip.
     this.frameBody.addEventListener(
       "wheel",
       (e) => this.onPinchScale(e),
@@ -99,7 +93,7 @@ export class KeyframeOverlay {
 
   private onTransStart(e: PointerEvent): void {
     if (e.button !== 0) return;
-    const ctx = this.ensureDragContext();
+    const ctx = this.ensureSelectedClip();
     if (!ctx) return;
     e.preventDefault();
     e.stopPropagation();
@@ -107,12 +101,11 @@ export class KeyframeOverlay {
     this.capturedPointerId = e.pointerId;
     this.drag = {
       kind: "translate",
-      clipId: ctx.clipId,
-      keyframeId: ctx.keyframeId,
+      clipId: ctx.clip.id,
       pointerStartX: e.clientX,
       pointerStartY: e.clientY,
-      startX: ctx.kfValues.x,
-      startY: ctx.kfValues.y,
+      startPanX: ctx.transform.panX,
+      startPanY: ctx.transform.panY,
     };
     this.frameBody.addEventListener("pointermove", this.onPointerMove);
     this.frameBody.addEventListener("pointerup", this.onPointerUp);
@@ -122,38 +115,32 @@ export class KeyframeOverlay {
   // ---- pinch-to-scale --------------------------------------------------
 
   private onPinchScale(e: WheelEvent): void {
-    // Trackpad pinch → wheel + ctrlKey (synthetic). Plain wheel still
-    // scrolls / zooms the page normally.
     if (!e.ctrlKey) return;
-    const ctx = this.ensureDragContext();
+    const ctx = this.ensureSelectedClip();
     if (!ctx) return;
     e.preventDefault();
     e.stopPropagation();
-    // -e.deltaY because most pinch gestures send negative deltaY for
-    // outward (zoom-in). Clamp the per-tick multiplier so a fast
-    // pinch doesn't jump several stops.
     const step = Math.max(-50, Math.min(50, -e.deltaY));
     const factor = Math.exp(step * 0.01);
     const next = Math.max(
       0.05,
-      Math.min(16, ctx.kfValues.scale * factor),
+      Math.min(16, ctx.transform.scale * factor),
     );
-    this.editor.setKeyframeValues(ctx.clipId, ctx.keyframeId, {
-      scale: Math.round(next * 100) / 100,
-    });
+    this.editor.setValueAtPlayhead(
+      ctx.clip.id,
+      "scale",
+      Math.round(next * 100) / 100,
+    );
   }
 
   // ---- corner-handle drag (scale) --------------------------------------
 
   private onScaleStart(corner: "tl" | "tr" | "bl" | "br", e: PointerEvent): void {
     if (e.button !== 0) return;
-    const ctx = this.ensureDragContext();
+    const ctx = this.ensureSelectedClip();
     if (!ctx) return;
     e.preventDefault();
     e.stopPropagation();
-    // Scale around the OUTPUT frame center, not the content center
-    // — that way dragging a handle outward grows the content
-    // symmetrically around the stage even if it's already translated.
     const rect = this.editor.getActiveOutputFrameRect()
       ?? this.editor.getActiveFrameRect();
     if (!rect) return;
@@ -161,18 +148,17 @@ export class KeyframeOverlay {
     const cx = hostRect.left + rect.x + rect.w / 2;
     const cy = hostRect.top + rect.y + rect.h / 2;
     const startDist = Math.hypot(e.clientX - cx, e.clientY - cy);
-    if (startDist < 1) return; // pointer right on center — meaningless
+    if (startDist < 1) return;
     const target = this.handles[corner];
     target.setPointerCapture(e.pointerId);
     this.capturedPointerId = e.pointerId;
     this.drag = {
       kind: "scale",
-      clipId: ctx.clipId,
-      keyframeId: ctx.keyframeId,
+      clipId: ctx.clip.id,
       centerX: cx,
       centerY: cy,
       startDistance: startDist,
-      startScale: ctx.kfValues.scale,
+      startScale: ctx.transform.scale,
     };
     target.addEventListener("pointermove", this.onPointerMove);
     target.addEventListener("pointerup", this.onPointerUp);
@@ -184,25 +170,25 @@ export class KeyframeOverlay {
     if (this.drag.kind === "translate") {
       const dx = e.clientX - this.drag.pointerStartX;
       const dy = e.clientY - this.drag.pointerStartY;
-      this.editor.setKeyframeValues(this.drag.clipId, this.drag.keyframeId, {
-        x: Math.round(this.drag.startX + dx),
-        y: Math.round(this.drag.startY + dy),
-      });
+      const newPanX = Math.round(this.drag.startPanX + dx);
+      const newPanY = Math.round(this.drag.startPanY + dy);
+      this.editor.setValueAtPlayhead(this.drag.clipId, "panX", newPanX);
+      this.editor.setValueAtPlayhead(this.drag.clipId, "panY", newPanY);
     } else {
       const dist = Math.hypot(
         e.clientX - this.drag.centerX,
         e.clientY - this.drag.centerY,
       );
-      // Clamp to [0.05, 16] — match the demo's "reasonable scale" band.
-      // Round to 2 decimals so the panel's display stays tidy.
       const ratio = dist / this.drag.startDistance;
       const next = Math.max(
         0.05,
         Math.min(16, this.drag.startScale * ratio),
       );
-      this.editor.setKeyframeValues(this.drag.clipId, this.drag.keyframeId, {
-        scale: Math.round(next * 100) / 100,
-      });
+      this.editor.setValueAtPlayhead(
+        this.drag.clipId,
+        "scale",
+        Math.round(next * 100) / 100,
+      );
     }
   };
 
@@ -241,15 +227,12 @@ export class KeyframeOverlay {
       return;
     }
     // Output rect = the FIXED stage where the video gets clipped.
-    // The dashed border + the body drag-target are anchored here so
-    // they don't move with the keyframe transform — they represent
-    // the export bounds, not the content position.
+    // The dashed border + body drag-target are anchored here.
     const outRect = this.editor.getActiveOutputFrameRect();
     // Content rect = where the video pixels currently land (after
-    // transform). Scale handles attach to its corners so they
-    // visually grow / shrink WITH the video as you drag them.
-    const contentRect =
-      this.editor.getActiveFrameRect() ?? outRect;
+    // transform). Scale handles attach to its corners so they visually
+    // grow / shrink WITH the video.
+    const contentRect = this.editor.getActiveFrameRect() ?? outRect;
     if (!outRect) {
       this.root.style.display = "none";
       return;
@@ -261,7 +244,7 @@ export class KeyframeOverlay {
       width: `${outRect.w}px`,
       height: `${outRect.h}px`,
     });
-    const halfHandle = 6; // visible 12×12 px
+    const halfHandle = 6;
     const r = contentRect ?? outRect;
     const fbLeft = r.x;
     const fbTop = r.y;
@@ -293,62 +276,33 @@ export class KeyframeOverlay {
   }
 
   /**
-   * Make sure there's a keyframe to edit. If none is selected, add
-   * one at the playhead and select it. Returns the clip + keyframe
-   * ids + the values to use as the drag's "start" baseline.
+   * Resolve the currently selected clip + its current effective
+   * transform (so drag baselines are correct). Returns null when no
+   * clip is selected or the playhead isn't over it.
    */
-  private ensureDragContext(): {
-    clipId: string;
-    keyframeId: string;
-    kfValues: EffectiveTransform;
-  } | null {
+  private ensureSelectedClip():
+    | {
+        clip: Clip;
+        transform: { panX: number; panY: number; scale: number };
+      }
+    | null {
     const selectedClipId = this.editor.getSelection();
     if (!selectedClipId) return null;
     const project = this.editor.getProject();
-    let targetClip: Clip | null = null;
+    let clip: Clip | null = null;
     for (const t of project.tracks) {
       const c = t.clips.find((cl) => cl.id === selectedClipId);
       if (c) {
-        targetClip = c;
+        clip = c;
         break;
       }
     }
-    if (!targetClip) return null;
-    const playheadLocal = this.editor.getTime() - targetClip.start;
-    if (playheadLocal < 0 || playheadLocal > targetClip.out - targetClip.in) {
+    if (!clip) return null;
+    const playheadLocal = this.editor.getTime() - clip.start;
+    if (playheadLocal < 0 || playheadLocal > clip.out - clip.in) {
       return null;
     }
-
-    const existing = this.editor.getSelectedKeyframe();
-    if (existing && existing.clipId === selectedClipId) {
-      const kf = targetClip.keyframes?.find((k) => k.id === existing.keyframeId);
-      if (kf) {
-        return {
-          clipId: existing.clipId,
-          keyframeId: existing.keyframeId,
-          kfValues: { x: kf.x ?? 0, y: kf.y ?? 0, scale: kf.scale ?? 1 },
-        };
-      }
-    }
-
-    // Auto-add at playhead with current interpolated values so the
-    // drag doesn't visually jump.
-    const baseline = getEffectiveTransform(targetClip, playheadLocal);
-    const newId = this.editor.addKeyframe(targetClip.id, {
-      time: Math.round(playheadLocal),
-      x: baseline.x,
-      y: baseline.y,
-      scale: baseline.scale,
-    });
-    if (!newId) return null;
-    this.editor.setSelectedKeyframe({
-      clipId: targetClip.id,
-      keyframeId: newId,
-    });
-    return {
-      clipId: targetClip.id,
-      keyframeId: newId,
-      kfValues: baseline,
-    };
+    const transform = getEffectiveTransform(clip, playheadLocal);
+    return { clip, transform };
   }
 }

@@ -23,13 +23,18 @@ import { type Locale, mergeLocale } from "./i18n.js";
 import type {
   Clip,
   Keyframe,
+  KeyframeProp,
   MediaSource,
   Ms,
   Project,
   Theme,
   Track,
 } from "./types.js";
-import { getEffectiveTransform } from "./keyframes/index.js";
+import {
+  getEffectiveTransform,
+  interpolateProp,
+  upsertKeyframe,
+} from "./keyframes/index.js";
 import { EditorUI } from "./ui/index.js";
 
 export interface EditorOptions {
@@ -214,35 +219,55 @@ export interface EditorApi {
     | { x: number; y: number; w: number; h: number }
     | null;
   /**
-   * Add a keyframe to a clip. Defaults: `time` = playhead in clip-local
-   * coords (clamped to [0, clipDuration]); `x / y / scale` = the values
-   * currently interpolated at that time. Returns the new keyframe's id,
-   * or null when the clip can't be found or the playhead isn't over it.
-   * No-op when keyframes already exist at the exact same `time`.
+   * Upsert a per-property keyframe at the given clip-local time. If a
+   * keyframe for the same `prop` already exists within ~1 frame of
+   * `time` it gets its value updated; else a new one is appended.
+   * Returns the keyframe's id, or null when the clip can't be found.
+   *
+   * Defaults: `time` = playhead in clip-local coords; `value` = the
+   * currently interpolated value for that prop (so adding doesn't
+   * cause a visible jump).
    */
   addKeyframe(
     clipId: string,
-    partial?: Partial<Omit<Keyframe, "id">>,
+    prop: KeyframeProp,
+    opts?: { time?: Ms; value?: number },
   ): string | null;
   removeKeyframe(clipId: string, keyframeId: string): boolean;
   moveKeyframe(clipId: string, keyframeId: string, timeMs: Ms): boolean;
-  setKeyframeValues(
+  /** Change one keyframe's value (single number, since each kf is
+   *  per-property). */
+  setKeyframeValue(
     clipId: string,
     keyframeId: string,
-    values: Partial<Pick<Keyframe, "x" | "y" | "scale">>,
+    value: number,
+  ): boolean;
+  /**
+   * CapCut-style auto-record: write `value` for `prop` at the playhead.
+   * - If the prop already has keyframes → upsert a keyframe at the
+   *   playhead with this value.
+   * - If the prop has no keyframes → just update the static base
+   *   (panX / panY / scale on the clip) so the visual changes
+   *   without committing the user to an animation track yet.
+   * Returns true if the project changed.
+   */
+  setValueAtPlayhead(
+    clipId: string,
+    prop: KeyframeProp,
+    value: number,
   ): boolean;
   getSelectedKeyframe(): { clipId: string; keyframeId: string } | null;
   setSelectedKeyframe(
     target: { clipId: string; keyframeId: string } | null,
   ): void;
   /**
-   * Toolbar-style toggle: if a keyframe exists at the playhead's
-   * clip-local time on the currently selected clip, remove it; else
-   * add one (with currently-interpolated values, so the preview
-   * doesn't jump). Returns the resulting keyframe id, or null when
-   * the action couldn't run (no selection / playhead off clip).
+   * Toolbar-style toggle. If ANY keyframe exists at the playhead time
+   * on the selected clip, remove every keyframe at that time (all
+   * props). Otherwise, capture one keyframe per prop (panX, panY,
+   * scale) at the playhead with the currently interpolated values.
+   * Returns true when the project changed.
    */
-  toggleKeyframeAtPlayhead(): string | null;
+  toggleKeyframeAtPlayhead(): boolean;
 
   // history
   canUndo(): boolean;
@@ -994,36 +1019,30 @@ export class Editor implements EditorApi {
 
   addKeyframe(
     clipId: string,
-    partial: Partial<Omit<Keyframe, "id">> = {},
+    prop: KeyframeProp,
+    opts: { time?: Ms; value?: number } = {},
   ): string | null {
     const trk = findTrackOfClip(this.project, clipId);
     const cl = trk?.clips.find((c) => c.id === clipId);
     if (!trk || !cl) return null;
     const duration = clipDuration(cl);
-    // Default time = playhead in clip-local coords.
     const playheadLocal = this.engine.getTime() - cl.start;
-    const rawTime = partial.time ?? playheadLocal;
+    const rawTime = opts.time ?? playheadLocal;
     const time = Math.max(0, Math.min(duration, Math.round(rawTime)));
-    // Refuse duplicates at the exact same time — the existing keyframe
-    // already owns this moment.
-    if (cl.keyframes?.some((k) => k.time === time)) return null;
-    // Fill missing axes with whatever's currently interpolated so that
-    // dropping a keyframe doesn't visually jump the preview.
-    const current = getEffectiveTransform(cl, time);
-    const kf: Keyframe = {
-      id: createId("kf"),
-      time,
-      x: partial.x ?? current.x,
-      y: partial.y ?? current.y,
-      scale: partial.scale ?? current.scale,
-    };
+    const value = opts.value ?? interpolateProp(cl, prop, time);
     this.pushHistory();
-    const next = [...(cl.keyframes ?? []), kf].sort(
-      (a, b) => a.time - b.time,
+    cl.keyframes = upsertKeyframe(cl.keyframes, prop, time, value, () =>
+      createId("kf"),
     );
-    cl.keyframes = next;
+    cl.keyframes.sort((a, b) => {
+      if (a.prop !== b.prop) return a.prop.localeCompare(b.prop);
+      return a.time - b.time;
+    });
     this.afterMutation();
-    return kf.id;
+    const created = cl.keyframes.find(
+      (k) => k.prop === prop && Math.abs(k.time - time) < 16,
+    );
+    return created?.id ?? null;
   }
 
   removeKeyframe(clipId: string, keyframeId: string): boolean {
@@ -1056,44 +1075,73 @@ export class Editor implements EditorApi {
     const duration = clipDuration(cl);
     const clamped = Math.max(0, Math.min(duration, Math.round(timeMs)));
     if (clamped === kf.time) return false;
-    // Reject moves that would collide with another keyframe at the
-    // exact same time — the user can always nudge by 1ms after.
-    if (cl.keyframes.some((k) => k.id !== keyframeId && k.time === clamped)) {
+    // Reject moves that would collide with another keyframe on the
+    // SAME prop at the exact same time — different props can coexist.
+    if (
+      cl.keyframes.some(
+        (k) =>
+          k.id !== keyframeId && k.prop === kf.prop && k.time === clamped,
+      )
+    ) {
       return false;
     }
     this.pushHistory();
     kf.time = clamped;
-    cl.keyframes.sort((a, b) => a.time - b.time);
+    cl.keyframes.sort((a, b) => {
+      if (a.prop !== b.prop) return a.prop.localeCompare(b.prop);
+      return a.time - b.time;
+    });
     this.afterMutation();
     return true;
   }
 
-  setKeyframeValues(
+  setKeyframeValue(
     clipId: string,
     keyframeId: string,
-    values: Partial<Pick<Keyframe, "x" | "y" | "scale">>,
+    value: number,
   ): boolean {
     const trk = findTrackOfClip(this.project, clipId);
     const cl = trk?.clips.find((c) => c.id === clipId);
     const kf = cl?.keyframes?.find((k) => k.id === keyframeId);
     if (!trk || !cl || !kf) return false;
-    // No-op when nothing actually changed.
-    const eq = (a: number | undefined, b: number | undefined): boolean =>
-      (a ?? 0) === (b ?? 0);
-    const nextX = values.x ?? kf.x;
-    const nextY = values.y ?? kf.y;
-    const nextScale = values.scale ?? kf.scale;
-    if (
-      eq(nextX, kf.x) &&
-      eq(nextY, kf.y) &&
-      eq(nextScale ?? 1, kf.scale ?? 1)
-    ) {
-      return false;
-    }
+    if (Math.abs(kf.value - value) < 1e-9) return false;
     this.pushHistory();
-    if (values.x !== undefined) kf.x = values.x;
-    if (values.y !== undefined) kf.y = values.y;
-    if (values.scale !== undefined) kf.scale = values.scale;
+    kf.value = value;
+    this.afterMutation();
+    return true;
+  }
+
+  setValueAtPlayhead(
+    clipId: string,
+    prop: KeyframeProp,
+    value: number,
+  ): boolean {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    if (!trk || !cl) return false;
+    const duration = clipDuration(cl);
+    const playheadLocal = this.engine.getTime() - cl.start;
+    const time = Math.max(0, Math.min(duration, Math.round(playheadLocal)));
+    const hasKf = cl.keyframes?.some((k) => k.prop === prop) ?? false;
+    if (hasKf) {
+      // Upsert at playhead → animation gets another anchor.
+      this.pushHistory();
+      cl.keyframes = upsertKeyframe(cl.keyframes, prop, time, value, () =>
+        createId("kf"),
+      );
+      cl.keyframes.sort((a, b) => {
+        if (a.prop !== b.prop) return a.prop.localeCompare(b.prop);
+        return a.time - b.time;
+      });
+      this.afterMutation();
+      return true;
+    }
+    // No keyframes for this prop yet → update the static base. The
+    // user can promote it to an animated property later by clicking
+    // the toolbar keyframe button.
+    if ((cl[prop] ?? (prop === "scale" ? 1 : 0)) === value) return false;
+    this.pushHistory();
+    cl[prop] = value;
     this.afterMutation();
     return true;
   }
@@ -1102,22 +1150,47 @@ export class Editor implements EditorApi {
     return this.selectedKeyframe;
   }
 
-  toggleKeyframeAtPlayhead(): string | null {
+  toggleKeyframeAtPlayhead(): boolean {
     const clipId = this.selectedClipId;
-    if (!clipId) return null;
+    if (!clipId) return false;
     const trk = findTrackOfClip(this.project, clipId);
     const cl = trk?.clips.find((c) => c.id === clipId);
-    if (!trk || !cl) return null;
+    if (!trk || !cl) return false;
     const localMs = this.engine.getTime() - cl.start;
     const duration = clipDuration(cl);
-    if (localMs < 0 || localMs > duration) return null;
+    if (localMs < 0 || localMs > duration) return false;
     const t = Math.round(localMs);
-    const existing = cl.keyframes?.find((k) => k.time === t);
-    if (existing) {
-      this.removeKeyframe(clipId, existing.id);
-      return null;
+    const existing = cl.keyframes?.filter((k) => Math.abs(k.time - t) < 16);
+    if (existing && existing.length > 0) {
+      this.pushHistory();
+      const ids = new Set(existing.map((k) => k.id));
+      const next = cl.keyframes!.filter((k) => !ids.has(k.id));
+      cl.keyframes = next.length > 0 ? next : undefined;
+      if (
+        this.selectedKeyframe &&
+        ids.has(this.selectedKeyframe.keyframeId)
+      ) {
+        this.selectedKeyframe = null;
+        this.bus.emit("keyframeSelectionChange", { target: null });
+      }
+      this.afterMutation();
+      return true;
     }
-    return this.addKeyframe(clipId, { time: t });
+    // Capture one keyframe per prop at the playhead. Use the currently
+    // interpolated values so the preview doesn't jump.
+    const current = getEffectiveTransform(cl, t);
+    this.pushHistory();
+    let kfs = cl.keyframes ?? [];
+    kfs = upsertKeyframe(kfs, "panX", t, current.panX, () => createId("kf"));
+    kfs = upsertKeyframe(kfs, "panY", t, current.panY, () => createId("kf"));
+    kfs = upsertKeyframe(kfs, "scale", t, current.scale, () => createId("kf"));
+    kfs.sort((a, b) => {
+      if (a.prop !== b.prop) return a.prop.localeCompare(b.prop);
+      return a.time - b.time;
+    });
+    cl.keyframes = kfs;
+    this.afterMutation();
+    return true;
   }
 
   setSelectedKeyframe(

@@ -1,26 +1,28 @@
 /**
- * The transform a clip's frame is painted with at a given moment.
- * Engines that support keyframes apply this via `ctx.setTransform`
- * before `drawImage`. Identity is `{ x: 0, y: 0, scale: 1 }`.
+ * The transform a clip's content is rendered with at a given moment.
+ * Engines apply this INSIDE a fixed output frame: `panX` / `panY`
+ * translate the content (in CSS px), `scale` resizes it around the
+ * output frame's center. Anything pushed outside the frame is
+ * clipped. Identity = `{ panX: 0, panY: 0, scale: 1 }`.
  */
 export interface EffectiveTransform {
-  x: number;
-  y: number;
+  panX: number;
+  panY: number;
   scale: number;
 }
 
-/** Identity transform — no translation, no scaling. */
+/** Identity transform — no pan, no scaling (content fills the output frame). */
 export const IDENTITY_TRANSFORM: EffectiveTransform = {
-  x: 0,
-  y: 0,
+  panX: 0,
+  panY: 0,
   scale: 1,
 };
 
 /** True when a transform is effectively identity (within FP slop). */
 export function isIdentityTransform(t: EffectiveTransform): boolean {
   return (
-    Math.abs(t.x) < 0.001 &&
-    Math.abs(t.y) < 0.001 &&
+    Math.abs(t.panX) < 0.001 &&
+    Math.abs(t.panY) < 0.001 &&
     Math.abs(t.scale - 1) < 0.0001
   );
 }

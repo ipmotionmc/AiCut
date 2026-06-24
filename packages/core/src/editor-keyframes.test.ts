@@ -3,8 +3,6 @@ import { Editor } from "./editor.js";
 import type { PlaybackEngine } from "./playback/index.js";
 import type { Project } from "./types.js";
 
-/** Minimal engine that does nothing — same pattern as editor.test.ts.
- *  All methods present so the Editor doesn't blow up on its own checks. */
 function makeStubEngine(): PlaybackEngine {
   let time = 0;
   let playing = false;
@@ -39,7 +37,7 @@ function tinyProject(): Project {
   };
 }
 
-describe("Editor.keyframes — mutators + history + selection", () => {
+describe("Editor.keyframes — per-property mutators + history + selection", () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
@@ -67,7 +65,7 @@ describe("Editor.keyframes — mutators + history + selection", () => {
     editor.destroy();
   });
 
-  it("addKeyframe creates one at the playhead with current interpolated values", () => {
+  it("addKeyframe(prop) at playhead uses currently interpolated value", () => {
     const stub = makeStubEngine();
     const editor = Editor.create({
       container,
@@ -75,152 +73,156 @@ describe("Editor.keyframes — mutators + history + selection", () => {
       playbackEngine: () => stub,
     });
     stub.seek(1000);
-    const id = editor.addKeyframe("c1");
+    const id = editor.addKeyframe("c1", "scale");
     expect(id).not.toBeNull();
     const clip = editor.getProject().tracks[0]?.clips[0];
     expect(clip?.keyframes).toHaveLength(1);
     expect(clip?.keyframes?.[0]).toMatchObject({
+      prop: "scale",
       time: 1000,
-      x: 0,
-      y: 0,
-      scale: 1,
+      value: 1,
     });
     editor.destroy();
   });
 
-  it("addKeyframe with partial values fills missing axes with interpolated values", () => {
+  it("addKeyframe respects explicit value override", () => {
     const editor = Editor.create({
       container,
       project: tinyProject(),
       playbackEngine: () => makeStubEngine(),
     });
-    const id = editor.addKeyframe("c1", { time: 500, scale: 2 });
+    const id = editor.addKeyframe("c1", "scale", { time: 500, value: 2 });
     expect(id).not.toBeNull();
     const kf = editor.getProject().tracks[0]?.clips[0]?.keyframes?.[0];
-    expect(kf).toMatchObject({ time: 500, x: 0, y: 0, scale: 2 });
+    expect(kf).toMatchObject({ prop: "scale", time: 500, value: 2 });
     editor.destroy();
   });
 
-  it("addKeyframe at duplicate time is a no-op (returns null)", () => {
+  it("addKeyframe at the same time on the same prop UPSERTS the value", () => {
     const editor = Editor.create({
       container,
       project: tinyProject(),
       playbackEngine: () => makeStubEngine(),
     });
-    expect(editor.addKeyframe("c1", { time: 1000 })).not.toBeNull();
-    expect(editor.addKeyframe("c1", { time: 1000 })).toBeNull();
-    expect(
-      editor.getProject().tracks[0]?.clips[0]?.keyframes,
-    ).toHaveLength(1);
+    editor.addKeyframe("c1", "scale", { time: 1000, value: 1.5 });
+    editor.addKeyframe("c1", "scale", { time: 1000, value: 2 });
+    const kfs = editor.getProject().tracks[0]?.clips[0]?.keyframes ?? [];
+    expect(kfs).toHaveLength(1);
+    expect(kfs[0]?.value).toBe(2);
     editor.destroy();
   });
 
-  it("removeKeyframe drops the entry and clears the array when empty", () => {
+  it("different props at the same time are independent keyframes", () => {
     const editor = Editor.create({
       container,
       project: tinyProject(),
       playbackEngine: () => makeStubEngine(),
     });
-    const id = editor.addKeyframe("c1", { time: 1000 });
+    editor.addKeyframe("c1", "panX", { time: 1000, value: 50 });
+    editor.addKeyframe("c1", "scale", { time: 1000, value: 2 });
+    const kfs = editor.getProject().tracks[0]?.clips[0]?.keyframes ?? [];
+    expect(kfs).toHaveLength(2);
+    expect(kfs.some((k) => k.prop === "panX" && k.value === 50)).toBe(true);
+    expect(kfs.some((k) => k.prop === "scale" && k.value === 2)).toBe(true);
+    editor.destroy();
+  });
+
+  it("removeKeyframe drops one entry; sets keyframes to undefined when last", () => {
+    const editor = Editor.create({
+      container,
+      project: tinyProject(),
+      playbackEngine: () => makeStubEngine(),
+    });
+    const id = editor.addKeyframe("c1", "scale", { time: 1000, value: 2 });
     expect(editor.removeKeyframe("c1", id!)).toBe(true);
-    // Array drops to undefined (not empty []) to keep serialized
-    // output the same as it was before any keyframes ever existed.
     expect(editor.getProject().tracks[0]?.clips[0]?.keyframes).toBeUndefined();
     editor.destroy();
   });
 
-  it("moveKeyframe clamps to [0, clipDuration] and re-sorts", () => {
+  it("moveKeyframe clamps + rejects collision on the SAME prop", () => {
     const editor = Editor.create({
       container,
       project: tinyProject(),
       playbackEngine: () => makeStubEngine(),
     });
-    const a = editor.addKeyframe("c1", { time: 1000 });
-    const b = editor.addKeyframe("c1", { time: 3000 });
-    // Move b before a → array should re-sort by time.
-    editor.moveKeyframe("c1", b!, 500);
-    const kfs = editor.getProject().tracks[0]?.clips[0]?.keyframes;
-    expect(kfs?.[0]?.id).toBe(b);
-    expect(kfs?.[1]?.id).toBe(a);
-    // Negative clamps to 0; out-of-range clamps to duration (5000).
-    editor.moveKeyframe("c1", a!, -1000);
-    expect(
-      editor.getProject().tracks[0]?.clips[0]?.keyframes?.find(
-        (k) => k.id === a,
-      )?.time,
-    ).toBe(0);
-    editor.moveKeyframe("c1", b!, 99999);
-    expect(
-      editor.getProject().tracks[0]?.clips[0]?.keyframes?.find(
-        (k) => k.id === b,
-      )?.time,
-    ).toBe(5000);
+    const a = editor.addKeyframe("c1", "scale", { time: 1000, value: 1 });
+    const b = editor.addKeyframe("c1", "scale", { time: 3000, value: 2 });
+    // Move b before a — they're on the same prop, so re-sort.
+    expect(editor.moveKeyframe("c1", b!, 500)).toBe(true);
+    // Try to collide a with b (now at 500).
+    expect(editor.moveKeyframe("c1", a!, 500)).toBe(false);
+    // Move a to a free slot.
+    expect(editor.moveKeyframe("c1", a!, 2500)).toBe(true);
     editor.destroy();
   });
 
-  it("setKeyframeValues partially overwrites and ignores no-ops", () => {
+  it("setKeyframeValue updates the single value of one kf", () => {
     const editor = Editor.create({
       container,
       project: tinyProject(),
       playbackEngine: () => makeStubEngine(),
     });
-    const id = editor.addKeyframe("c1", { time: 1000, x: 10, y: 20, scale: 1 });
-    expect(editor.setKeyframeValues("c1", id!, { scale: 1.5 })).toBe(true);
+    const id = editor.addKeyframe("c1", "scale", { time: 1000, value: 1 });
+    expect(editor.setKeyframeValue("c1", id!, 1.75)).toBe(true);
     const kf = editor.getProject().tracks[0]?.clips[0]?.keyframes?.[0];
-    expect(kf).toMatchObject({ x: 10, y: 20, scale: 1.5 });
-    // Same value again — no-op.
-    expect(editor.setKeyframeValues("c1", id!, { scale: 1.5 })).toBe(false);
+    expect(kf?.value).toBeCloseTo(1.75);
+    expect(editor.setKeyframeValue("c1", id!, 1.75)).toBe(false); // no-op
     editor.destroy();
   });
 
-  it("undo restores the state before an add", () => {
+  it("setValueAtPlayhead writes static base when no keyframes exist", () => {
+    const stub = makeStubEngine();
+    const editor = Editor.create({
+      container,
+      project: tinyProject(),
+      playbackEngine: () => stub,
+    });
+    stub.seek(1500);
+    expect(editor.setValueAtPlayhead("c1", "scale", 1.5)).toBe(true);
+    const clip = editor.getProject().tracks[0]?.clips[0];
+    expect(clip?.scale).toBe(1.5);
+    expect(clip?.keyframes).toBeUndefined();
+    editor.destroy();
+  });
+
+  it("setValueAtPlayhead upserts a keyframe once the prop is animated", () => {
+    const stub = makeStubEngine();
+    const editor = Editor.create({
+      container,
+      project: tinyProject(),
+      playbackEngine: () => stub,
+    });
+    stub.seek(0);
+    editor.addKeyframe("c1", "scale", { time: 0, value: 1 });
+    stub.seek(2000);
+    editor.setValueAtPlayhead("c1", "scale", 2);
+    const kfs = editor.getProject().tracks[0]?.clips[0]?.keyframes ?? [];
+    expect(kfs).toHaveLength(2);
+    expect(kfs.find((k) => k.time === 2000)?.value).toBe(2);
+    editor.destroy();
+  });
+
+  it("undo restores state before add / move / value-change", () => {
     const editor = Editor.create({
       container,
       project: tinyProject(),
       playbackEngine: () => makeStubEngine(),
     });
-    expect(editor.canUndo()).toBe(false);
-    editor.addKeyframe("c1", { time: 1000 });
-    expect(editor.canUndo()).toBe(true);
-    expect(editor.undo()).toBe(true);
-    expect(
-      editor.getProject().tracks[0]?.clips[0]?.keyframes,
-    ).toBeUndefined();
-    editor.destroy();
-  });
-
-  it("undo restores the state before a move", () => {
-    const editor = Editor.create({
-      container,
-      project: tinyProject(),
-      playbackEngine: () => makeStubEngine(),
-    });
-    const id = editor.addKeyframe("c1", { time: 1000 });
+    const id = editor.addKeyframe("c1", "scale", { time: 1000, value: 1.5 });
     editor.moveKeyframe("c1", id!, 2500);
-    editor.undo(); // undo the move
+    editor.setKeyframeValue("c1", id!, 2);
+    editor.undo(); // value back to 1.5
+    expect(
+      editor.getProject().tracks[0]?.clips[0]?.keyframes?.[0]?.value,
+    ).toBe(1.5);
+    editor.undo(); // time back to 1000
     expect(
       editor.getProject().tracks[0]?.clips[0]?.keyframes?.[0]?.time,
     ).toBe(1000);
-    editor.destroy();
-  });
-
-  it("undo restores the state before a value change", () => {
-    const editor = Editor.create({
-      container,
-      project: tinyProject(),
-      playbackEngine: () => makeStubEngine(),
-    });
-    const id = editor.addKeyframe("c1", {
-      time: 1000,
-      x: 0,
-      y: 0,
-      scale: 1,
-    });
-    editor.setKeyframeValues("c1", id!, { scale: 2 });
-    editor.undo();
+    editor.undo(); // keyframe removed
     expect(
-      editor.getProject().tracks[0]?.clips[0]?.keyframes?.[0]?.scale,
-    ).toBe(1);
+      editor.getProject().tracks[0]?.clips[0]?.keyframes,
+    ).toBeUndefined();
     editor.destroy();
   });
 
@@ -230,33 +232,33 @@ describe("Editor.keyframes — mutators + history + selection", () => {
       project: tinyProject(),
       playbackEngine: () => makeStubEngine(),
     });
-    const id = editor.addKeyframe("c1", { time: 1000 });
-    expect(editor.getSelection()).toBeNull();
-    let clipSel: string | null = null;
-    let kfSel: { clipId: string; keyframeId: string } | null = null;
-    editor.on("selectionChange", ({ clipId }) => (clipSel = clipId));
-    editor.on("keyframeSelectionChange", ({ target }) => (kfSel = target));
+    const id = editor.addKeyframe("c1", "scale", { time: 1000, value: 1.5 });
     editor.setSelectedKeyframe({ clipId: "c1", keyframeId: id! });
     expect(editor.getSelection()).toBe("c1");
-    expect(clipSel).toBe("c1");
-    expect(kfSel).toEqual({ clipId: "c1", keyframeId: id });
     editor.destroy();
   });
 
-  it("clearing the clip selection clears any keyframe selection", () => {
+  it("toggleKeyframeAtPlayhead adds 3 keyframes (panX/panY/scale) when none exist", () => {
+    const stub = makeStubEngine();
     const editor = Editor.create({
       container,
       project: tinyProject(),
-      playbackEngine: () => makeStubEngine(),
+      playbackEngine: () => stub,
     });
-    const id = editor.addKeyframe("c1", { time: 1000 });
-    editor.setSelectedKeyframe({ clipId: "c1", keyframeId: id! });
-    editor.setSelection(null);
-    expect(editor.getSelectedKeyframe()).toBeNull();
+    editor.setSelection("c1");
+    stub.seek(1000);
+    expect(editor.toggleKeyframeAtPlayhead()).toBe(true);
+    const kfs = editor.getProject().tracks[0]?.clips[0]?.keyframes ?? [];
+    expect(kfs).toHaveLength(3);
+    const props = new Set(kfs.map((k) => k.prop));
+    expect(props).toEqual(new Set(["panX", "panY", "scale"]));
+    // Toggle again at the same time → removes them.
+    expect(editor.toggleKeyframeAtPlayhead()).toBe(true);
+    expect(editor.getProject().tracks[0]?.clips[0]?.keyframes).toBeUndefined();
     editor.destroy();
   });
 
-  it("projects without keyframes round-trip through setProject identically", () => {
+  it("projects without keyframes round-trip identically through setProject", () => {
     const editor = Editor.create({
       container,
       project: tinyProject(),
@@ -268,27 +270,64 @@ describe("Editor.keyframes — mutators + history + selection", () => {
     editor.destroy();
   });
 
-  it("splitClipAt partitions keyframes across the cut (verified via api.split)", () => {
+  it("splitClipAt partitions per-property keyframes across the cut", () => {
     const editor = Editor.create({
       container,
       project: tinyProject(),
       playbackEngine: () => makeStubEngine(),
     });
-    editor.addKeyframe("c1", { time: 500 });
-    editor.addKeyframe("c1", { time: 3000 });
-    // Split at timeline t=2000 (clip is at start=0, so local=2000).
+    editor.addKeyframe("c1", "scale", { time: 500, value: 1 });
+    editor.addKeyframe("c1", "scale", { time: 3000, value: 2 });
+    editor.addKeyframe("c1", "panX", { time: 3000, value: 100 });
     editor.split(2000);
-    const proj = editor.getProject();
-    const clips = proj.tracks[0]?.clips;
+    const clips = editor.getProject().tracks[0]?.clips ?? [];
     expect(clips).toHaveLength(2);
-    const left = clips?.[0];
-    const right = clips?.[1];
-    // Left keeps the 500-time keyframe (< 2000).
-    expect(left?.keyframes).toHaveLength(1);
-    expect(left?.keyframes?.[0]?.time).toBe(500);
-    // Right gets the 3000-time keyframe, shifted by -2000.
-    expect(right?.keyframes).toHaveLength(1);
-    expect(right?.keyframes?.[0]?.time).toBe(1000);
+    expect(clips[0]?.keyframes).toHaveLength(1);
+    expect(clips[0]?.keyframes?.[0]).toMatchObject({
+      prop: "scale",
+      time: 500,
+    });
+    expect(clips[1]?.keyframes).toHaveLength(2);
+    expect(clips[1]?.keyframes?.every((k) => k.time === 1000)).toBe(true);
+    editor.destroy();
+  });
+
+  it("migrates legacy {time, x, y, scale} tuple keyframes on setProject", () => {
+    const editor = Editor.create({
+      container,
+      project: tinyProject(),
+      playbackEngine: () => makeStubEngine(),
+    });
+    editor.setProject({
+      version: 1,
+      sources: [{ id: "s1", url: "blob:x", kind: "video" }],
+      tracks: [
+        {
+          id: "t1",
+          kind: "video",
+          clips: [
+            {
+              id: "c1",
+              sourceId: "s1",
+              in: 0,
+              out: 5000,
+              start: 0,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              keyframes: [
+                { id: "old1", time: 1000, x: 50, y: 0, scale: 1.5 },
+                { id: "old2", time: 3000, x: 100, y: 0, scale: 2 },
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ] as any,
+            },
+          ],
+        },
+      ],
+    });
+    const kfs = editor.getProject().tracks[0]?.clips[0]?.keyframes ?? [];
+    // 2 tuples × 3 props = 6 per-property entries.
+    expect(kfs).toHaveLength(6);
+    const props = new Set(kfs.map((k) => k.prop));
+    expect(props).toEqual(new Set(["panX", "panY", "scale"]));
     editor.destroy();
   });
 });

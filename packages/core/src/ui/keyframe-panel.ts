@@ -1,24 +1,30 @@
 import type { Editor } from "../editor.js";
-import type { Clip, Keyframe } from "../types.js";
+import {
+  getEffectiveTransform,
+  hasKeyframesForProp,
+} from "../keyframes/index.js";
+import type { Clip, KeyframeProp } from "../types.js";
 
 /**
- * Inline numeric panel for the currently selected keyframe. Floats on
- * the left edge of the preview area; only visible when keyframe mode
- * is on AND a keyframe is selected. Mounted by EditorUI.
+ * Floating numeric panel anchored to the preview's top-left corner.
+ * Shown whenever keyframe mode is on AND a clip is selected — the
+ * three inputs (panX, panY, scale) drive the currently-effective
+ * transform via `Editor.setValueAtPlayhead`. Each prop is
+ * independent: if it has keyframes, edits land as upserted keyframes
+ * at the playhead; otherwise the clip's static base updates.
  *
- * Inputs commit on blur / Enter so typing isn't laggy. Editing any
- * field updates the selected keyframe's values; the engine repaints
- * the preview transform on the next rAF.
+ * Selected keyframe state still drives the highlight, but unlike v3
+ * the panel doesn't require a selected keyframe to be visible —
+ * matches the reference (Figma-style) UX where you just see the
+ * current values and the "K" affordance turns them into an animation.
  */
 export class KeyframePanel {
   private editor: Editor;
   readonly root: HTMLDivElement;
-  private xIn: HTMLInputElement;
-  private yIn: HTMLInputElement;
-  private scaleIn: HTMLInputElement;
-  private timeLabel: HTMLSpanElement;
-  private deleteBtn: HTMLButtonElement;
-  /** Cached so we know when we have to re-sync inputs from the model. */
+  private inputs: Record<KeyframeProp, HTMLInputElement>;
+  private kfBadges: Record<KeyframeProp, HTMLSpanElement>;
+  private clipLabel: HTMLSpanElement;
+  /** Cached so we know when to re-sync inputs from the model. */
   private lastSyncKey = "";
 
   constructor(host: HTMLElement, editor: Editor) {
@@ -33,29 +39,23 @@ export class KeyframePanel {
 
     const title = document.createElement("div");
     title.className = "aicut-keyframe-panel__title";
-    title.textContent = "Keyframe";
+    title.textContent = "Transform";
     this.root.appendChild(title);
 
-    this.timeLabel = document.createElement("span");
-    this.timeLabel.className = "aicut-keyframe-panel__time";
-    this.root.appendChild(this.timeLabel);
+    this.clipLabel = document.createElement("span");
+    this.clipLabel.className = "aicut-keyframe-panel__time";
+    this.root.appendChild(this.clipLabel);
 
-    this.xIn = this.makeRow("X", "kf-x", (v) => this.commit("x", v));
-    this.yIn = this.makeRow("Y", "kf-y", (v) => this.commit("y", v));
-    this.scaleIn = this.makeRow(
-      "Scale",
-      "kf-scale",
-      (v) => this.commit("scale", v),
-      0.05,
-    );
-
-    this.deleteBtn = document.createElement("button");
-    this.deleteBtn.type = "button";
-    this.deleteBtn.className = "aicut-keyframe-panel__delete";
-    this.deleteBtn.setAttribute("data-testid", "aicut-keyframe-delete");
-    this.deleteBtn.textContent = "Delete";
-    this.deleteBtn.addEventListener("click", () => this.onDelete());
-    this.root.appendChild(this.deleteBtn);
+    this.inputs = {
+      panX: this.makeRow("X", "kf-x", "panX", 1),
+      panY: this.makeRow("Y", "kf-y", "panY", 1),
+      scale: this.makeRow("Scale", "kf-scale", "scale", 0.05),
+    };
+    this.kfBadges = {
+      panX: this.makeBadge(this.inputs.panX),
+      panY: this.makeBadge(this.inputs.panY),
+      scale: this.makeBadge(this.inputs.scale),
+    };
 
     host.appendChild(this.root);
   }
@@ -67,37 +67,40 @@ export class KeyframePanel {
   /** Re-read the editor's state and show / hide / refresh inputs. */
   render(): void {
     const enabled = this.editor.isKeyframesEnabled();
-    const selected = this.editor.getSelectedKeyframe();
-    if (!enabled || !selected) {
+    const selectedClipId = this.editor.getSelection();
+    const clip = selectedClipId ? this.findClip(selectedClipId) : null;
+    if (!enabled || !clip) {
       this.root.style.display = "none";
       this.lastSyncKey = "";
       return;
     }
-    const found = this.findKeyframe(selected.clipId, selected.keyframeId);
-    if (!found) {
+    const playheadLocal = this.editor.getTime() - clip.start;
+    if (playheadLocal < 0 || playheadLocal > clip.out - clip.in) {
       this.root.style.display = "none";
-      this.lastSyncKey = "";
       return;
     }
-    const { kf } = found;
+    const t = getEffectiveTransform(clip, playheadLocal);
+    const kfMask = (["panX", "panY", "scale"] as const)
+      .map((p) => (hasKeyframesForProp(clip, p) ? "1" : "0"))
+      .join("");
+    const syncKey = `${clip.id}|${t.panX.toFixed(2)}|${t.panY.toFixed(2)}|${t.scale.toFixed(4)}|${kfMask}`;
     this.root.style.display = "flex";
-    const syncKey = `${kf.id}|${kf.time}|${kf.x ?? 0}|${kf.y ?? 0}|${
-      kf.scale ?? 1
-    }`;
-    if (syncKey !== this.lastSyncKey) {
-      this.lastSyncKey = syncKey;
-      // Only overwrite an input the user isn't focused on, to keep
-      // mid-typing values intact.
-      if (document.activeElement !== this.xIn) {
-        this.xIn.value = String(Math.round(kf.x ?? 0));
-      }
-      if (document.activeElement !== this.yIn) {
-        this.yIn.value = String(Math.round(kf.y ?? 0));
-      }
-      if (document.activeElement !== this.scaleIn) {
-        this.scaleIn.value = (kf.scale ?? 1).toFixed(2);
-      }
-      this.timeLabel.textContent = `at ${(kf.time / 1000).toFixed(2)}s`;
+    if (syncKey === this.lastSyncKey) return;
+    this.lastSyncKey = syncKey;
+    this.setIfBlur(this.inputs.panX, String(Math.round(t.panX)));
+    this.setIfBlur(this.inputs.panY, String(Math.round(t.panY)));
+    this.setIfBlur(this.inputs.scale, t.scale.toFixed(2));
+    this.clipLabel.textContent = `${(playheadLocal / 1000).toFixed(2)}s`;
+    // Visual cue: the small dot next to each input shows whether
+    // that prop is animated (filled = keyframes exist) or just static
+    // (outlined).
+    for (const p of ["panX", "panY", "scale"] as const) {
+      const animated = hasKeyframesForProp(clip, p);
+      this.kfBadges[p].classList.toggle(
+        "aicut-keyframe-panel__badge--on",
+        animated,
+      );
+      this.kfBadges[p].title = animated ? "Animated" : "Static value";
     }
   }
 
@@ -106,8 +109,8 @@ export class KeyframePanel {
   private makeRow(
     label: string,
     testId: string,
-    onCommit: (raw: string) => void,
-    step = 1,
+    prop: KeyframeProp,
+    step: number,
   ): HTMLInputElement {
     const row = document.createElement("div");
     row.className = "aicut-keyframe-panel__row";
@@ -117,7 +120,7 @@ export class KeyframePanel {
     input.type = "number";
     input.step = String(step);
     input.setAttribute("data-testid", `aicut-${testId}`);
-    input.addEventListener("blur", () => onCommit(input.value));
+    input.addEventListener("blur", () => this.commit(prop, input.value));
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") input.blur();
     });
@@ -126,30 +129,31 @@ export class KeyframePanel {
     return input;
   }
 
-  private commit(axis: "x" | "y" | "scale", raw: string): void {
+  private makeBadge(input: HTMLInputElement): HTMLSpanElement {
+    const dot = document.createElement("span");
+    dot.className = "aicut-keyframe-panel__badge";
+    input.parentElement?.appendChild(dot);
+    return dot;
+  }
+
+  private commit(prop: KeyframeProp, raw: string): void {
     const num = Number(raw);
     if (!Number.isFinite(num)) return;
-    const sel = this.editor.getSelectedKeyframe();
-    if (!sel) return;
-    this.editor.setKeyframeValues(sel.clipId, sel.keyframeId, { [axis]: num });
+    const clipId = this.editor.getSelection();
+    if (!clipId) return;
+    this.editor.setValueAtPlayhead(clipId, prop, num);
   }
 
-  private onDelete(): void {
-    const sel = this.editor.getSelectedKeyframe();
-    if (!sel) return;
-    this.editor.removeKeyframe(sel.clipId, sel.keyframeId);
+  private setIfBlur(input: HTMLInputElement, value: string): void {
+    if (document.activeElement === input) return;
+    if (input.value !== value) input.value = value;
   }
 
-  private findKeyframe(
-    clipId: string,
-    kfId: string,
-  ): { clip: Clip; kf: Keyframe } | null {
+  private findClip(clipId: string): Clip | null {
     const project = this.editor.getProject();
     for (const t of project.tracks) {
-      const clip = t.clips.find((c) => c.id === clipId);
-      if (!clip || !clip.keyframes) continue;
-      const kf = clip.keyframes.find((k) => k.id === kfId);
-      if (kf) return { clip, kf };
+      const c = t.clips.find((cl) => cl.id === clipId);
+      if (c) return c;
     }
     return null;
   }

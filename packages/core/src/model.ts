@@ -63,14 +63,23 @@ export function normalizeProject(project: Project): Project {
       .map<Clip>((c) => {
         const out: Clip = { ...c, id: c.id || createId("clip") };
         if (c.keyframes && c.keyframes.length > 0) {
-          // Sort by time + assign ids to any keyframe missing one. Drop
-          // empties / out-of-range keyframes (defensive — a host
-          // restoring a stale snapshot might have them).
+          // Sort by (prop, time) + assign ids to any keyframe missing
+          // one. Drop empties / out-of-range keyframes (defensive — a
+          // host restoring a stale snapshot might have them).
+          //
+          // Also: migrate the v0.5 tuple-keyframe format
+          //   { time, x?, y?, scale? }
+          // into per-property keyframes if we see any. Old projects
+          // round-trip cleanly into the new model without the host
+          // having to know.
           const duration = c.out - c.in;
-          out.keyframes = c.keyframes
+          out.keyframes = migrateKeyframes(c.keyframes)
             .filter((kf) => kf.time >= 0 && kf.time <= duration)
             .map<Keyframe>((kf) => ({ ...kf, id: kf.id || createId("kf") }))
-            .sort((a, b) => a.time - b.time);
+            .sort((a, b) => {
+              if (a.prop !== b.prop) return a.prop.localeCompare(b.prop);
+              return a.time - b.time;
+            });
         }
         return out;
       })
@@ -78,6 +87,58 @@ export function normalizeProject(project: Project): Project {
     return { ...t, id: t.id || createId("track"), clips };
   });
   return { version: 1, sources, tracks };
+}
+
+/**
+ * Back-compat: the v0.5 keyframe shape was a single object with
+ * `{ time, x?, y?, scale? }` — all three values together. v0.6 splits
+ * them into per-property entries `{ prop, time, value }`. If we see
+ * the old shape, fan out into N per-property keyframes; otherwise
+ * pass through unchanged.
+ */
+function migrateKeyframes(
+  raw: Array<
+    | Keyframe
+    | { id?: string; time: number; x?: number; y?: number; scale?: number }
+  >,
+): Keyframe[] {
+  const out: Keyframe[] = [];
+  for (const kf of raw) {
+    if ("prop" in kf && "value" in kf) {
+      out.push(kf as Keyframe);
+      continue;
+    }
+    // Old tuple shape — fan out.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tuple = kf as any;
+    const id = tuple.id;
+    const t = tuple.time;
+    if (typeof tuple.x === "number") {
+      out.push({
+        id: id ? `${id}-px` : createId("kf"),
+        prop: "panX",
+        time: t,
+        value: tuple.x,
+      });
+    }
+    if (typeof tuple.y === "number") {
+      out.push({
+        id: id ? `${id}-py` : createId("kf"),
+        prop: "panY",
+        time: t,
+        value: tuple.y,
+      });
+    }
+    if (typeof tuple.scale === "number") {
+      out.push({
+        id: id ? `${id}-s` : createId("kf"),
+        prop: "scale",
+        time: t,
+        value: tuple.scale,
+      });
+    }
+  }
+  return out;
 }
 
 /** Splits a clip at `localOffset` ms (measured from clip.start on the timeline). */
@@ -93,6 +154,8 @@ export function splitClipAt(clip: Clip, localOffset: Ms): [Clip, Clip] | null {
   };
   // Partition keyframes across the cut. Times are clip-local, so the
   // right half's keyframes shift by -localOffset to keep their meaning.
+  // Static base values (panX / panY / scale) are inherited unchanged
+  // by both halves — they were per-clip defaults.
   if (clip.keyframes && clip.keyframes.length > 0) {
     const leftKf: Keyframe[] = [];
     const rightKf: Keyframe[] = [];

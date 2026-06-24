@@ -28,35 +28,49 @@ export interface Clip {
    */
   speed?: number;
   /**
-   * Optional per-clip transform animation. Each keyframe pins x / y / scale
-   * at a clip-local time (0 = clip's `in`); the canvas-based playback
-   * engines linearly interpolate between adjacent keyframes when keyframe
-   * mode is enabled on the Editor.
+   * Static base values for the content transform, used when the clip
+   * has no keyframes for that property. Pan slides the video inside
+   * the FIXED output frame (the dashed border the user sees); scale
+   * grows / shrinks the content around the frame center. Anything
+   * pushed outside the output frame is clipped — that's how
+   * picture-in-picture, pan, and zoom work.
    *
-   * Clip-local times mean keyframes follow when the clip is moved or
-   * trimmed — no rewrite needed.
+   * `panX`, `panY` are CSS pixels relative to the output frame center.
+   * Defaults: panX = 0, panY = 0, scale = 1 (content fills frame).
+   */
+  panX?: number;
+  panY?: number;
+  scale?: number;
+  /**
+   * Per-property keyframe animation. Each keyframe targets one prop
+   * (`panX`, `panY`, or `scale`) so the user can animate one axis
+   * independently of the others (the standard NLE / CapCut model).
    *
-   * Absent / empty array = identity transform; legacy projects behave
-   * exactly as before. `normalizeProject` keeps the array sorted by `time`.
+   * Times are clip-local (0 = clip's `in`), so trim and move ops
+   * carry keyframes with the clip. Empty array / undefined = use the
+   * static base values above. `normalizeProject` keeps it sorted by
+   * (prop, time).
    */
   keyframes?: Keyframe[];
 }
 
+/** Properties on a Clip that can be animated by keyframes. */
+export type KeyframeProp = "panX" | "panY" | "scale";
+
 /**
- * One pinned state of a clip's transform at a moment in clip-local time.
- * Missing axis fields default to identity (x = 0, y = 0, scale = 1) when
- * interpolating — host code can persist sparse keyframes.
+ * One pinned value for one property at one moment in clip-local time.
+ * Properties without keyframes fall back to the clip's static base
+ * value (`Clip.panX` / `panY` / `scale`).
  */
 export interface Keyframe {
   id: string;
+  /** Which property this keyframe controls. */
+  prop: KeyframeProp;
   /** Clip-local time in ms. 0 = clip's `in`. Bounds: [0, clip.out - clip.in]. */
   time: Ms;
-  /** Pixel translate along the preview's local X axis. Default 0. */
-  x?: number;
-  /** Pixel translate along the preview's local Y axis. Default 0. */
-  y?: number;
-  /** Multiplier on intrinsic frame size. Default 1. */
-  scale?: number;
+  /** The value the property holds at this moment. Same units as the
+   *  matching static field (CSS px for pan, multiplier for scale). */
+  value: number;
 }
 
 export interface Track {
