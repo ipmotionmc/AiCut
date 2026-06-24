@@ -24,3 +24,8 @@ coverage
 # Env
 .env
 .env.local
+
+# Demo media — drop your own H.264 MP4/MOV files here to run the demo.
+# Kept out of the repo so we don't ship large binary fixtures.
+/examples/react-demo/public/*.mov
+/examples/react-demo/public/*.mp4

@@ -52,7 +52,11 @@ export class Mp4Demuxer {
 
   constructor(opts: Mp4DemuxerOptions) {
     this.opts = opts;
-    this.file = createFile();
+    // `keepMdatData: true` is critical — without it, mp4box discards
+    // raw sample bytes after parsing the mdat box, and the Sample
+    // objects we receive via onSamples come back without `.data`.
+    // We need .data to wrap into EncodedVideoChunk.
+    this.file = createFile(true);
     this.file.onError = (msg: string) => {
       opts.onError?.(new Error(`mp4box: ${msg}`));
     };

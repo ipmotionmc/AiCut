@@ -52,15 +52,22 @@ const THEMES: Record<"dark" | "light", Theme> = {
   },
 };
 
+// Same-origin URLs served straight from `examples/react-demo/public/`
+// by Vite at root path. Using same-origin paths matters for the
+// WebCodecs engine: it uses fetch() under the hood, and fetch enforces
+// CORS while <video> doesn't. Same-origin sidesteps the whole topic.
+//
+// The .mov files are gitignored — drop your own clips at
+// examples/react-demo/public/{a,b}.mov to make the demo work locally.
 const SRC_A = {
   id: createId("src"),
-  url: "http://127.0.0.1:8091/a.mov",
+  url: "/a.mov",
   kind: "video" as const,
   name: "a.mov",
 };
 const SRC_B = {
   id: createId("src"),
-  url: "http://127.0.0.1:8091/b.mov",
+  url: "/b.mov",
   kind: "video" as const,
   name: "b.mov",
 };
@@ -98,7 +105,7 @@ function FramePicker() {
       sources: [
         {
           id: sourceId,
-          url: "http://127.0.0.1:8091/a.mov",
+          url: "/a.mov",
           kind: "video",
           name: "a.mov",
         },
