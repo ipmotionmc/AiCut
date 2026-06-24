@@ -78,6 +78,15 @@ export interface VideoEditorProps {
    * has no effect — the editor binds its engine at construction.
    */
   playbackEngine?: PlaybackEngineFactory;
+  /**
+   * Initial-only — pixel height of each track row (default 56). Lower
+   * values (~32–40) shrink the timeline for small viewports where the
+   * default crowds out the preview. Applied process-wide; to re-apply
+   * change this prop AND remount the component (e.g. via `key`).
+   */
+  trackHeight?: number;
+  /** Initial-only — pixel height of the timeline ruler (default 24). */
+  rulerHeight?: number;
 }
 
 /**
@@ -118,6 +127,12 @@ export function VideoEditor(props: VideoEditorProps) {
       theme: cbRef.current.theme,
       locale: cbRef.current.locale,
       playbackEngine: cbRef.current.playbackEngine,
+      ...(cbRef.current.trackHeight != null
+        ? { trackHeight: cbRef.current.trackHeight }
+        : {}),
+      ...(cbRef.current.rulerHeight != null
+        ? { rulerHeight: cbRef.current.rulerHeight }
+        : {}),
     });
     editorRef.current = editor;
     setSlots({

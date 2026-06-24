@@ -24,4 +24,8 @@ export {
   htmlVideoEngineFactory,
   CanvasCompositorEngine,
   canvasCompositorEngineFactory,
+  TRACK_HEIGHT,
+  RULER_HEIGHT,
+  HEADER_WIDTH,
+  setTimelineMetrics,
 } from "@aicut/core";

@@ -12,7 +12,7 @@ import {
   splitClipAt,
   trackEnd,
 } from "./model.js";
-import { wouldOverlap } from "./timeline/layout.js";
+import { setTimelineMetrics, wouldOverlap } from "./timeline/layout.js";
 import {
   HtmlVideoEngine,
   type PlaybackEngine,
@@ -59,6 +59,20 @@ export interface EditorOptions {
    * (v0.6+) or their own.
    */
   playbackEngine?: PlaybackEngineFactory;
+  /**
+   * Pixel height of each track row in the timeline (default 56). Lower
+   * values (~32–40) shrink the timeline footprint for small viewports
+   * where the default crowds out the preview. Reasonable range:
+   * [28, 96]. Applied process-wide via `setTimelineMetrics` — multi-
+   * editor mounts share the value.
+   */
+  trackHeight?: number;
+  /**
+   * Pixel height of the timeline ruler / time-label strip (default 24).
+   * Pair with `trackHeight` to compact the whole timeline. Reasonable
+   * range: [18, 36].
+   */
+  rulerHeight?: number;
 }
 
 export interface EditorEventMap {
@@ -226,6 +240,15 @@ export class Editor implements EditorApi {
     this.pxPerSec = clampScale(opts.initialScale ?? DEFAULT_PX_PER_SEC);
     this.snap = opts.initialSnap !== false;
     this.locale = mergeLocale(opts.locale);
+
+    // Must run before EditorUI builds the Timeline — those layout
+    // values are read at canvas init time.
+    if (opts.trackHeight != null || opts.rulerHeight != null) {
+      setTimelineMetrics({
+        ...(opts.trackHeight != null ? { trackHeight: opts.trackHeight } : {}),
+        ...(opts.rulerHeight != null ? { rulerHeight: opts.rulerHeight } : {}),
+      });
+    }
 
     applyTheme(this.container, opts.theme);
 

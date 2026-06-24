@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   CanvasCompositorEngine,
+  TRACK_HEIGHT,
   Timeline,
   VideoEditor,
   createEmptyProject,
@@ -258,6 +259,12 @@ export function App() {
   const [engineKind, setEngineKind] = useState<
     "html" | "canvas" | "webcodecs"
   >("html");
+  // Demo of EditorOptions.trackHeight — shrinking each track row
+  // tightens the timeline footprint, leaving more room for the
+  // preview. The library applies it process-wide via
+  // setTimelineMetrics, so we remount the editor (via key) whenever
+  // this changes so the new value takes effect on construction.
+  const [trackHeight, setTrackHeight] = useState<number>(56);
   const playbackEngine: PlaybackEngineFactory = useMemo(() => {
     if (engineKind === "canvas") {
       return (opts) => new CanvasCompositorEngine({ ...opts, debug: true });
@@ -364,15 +371,17 @@ export function App() {
     <div className="demo-shell">
       <div className="demo-editor">
         <VideoEditor
-          // The engine binds at construction — flipping `engineKind`
-          // forces React to remount the editor with the new factory
-          // (playback state resets, which is acceptable for a demo).
-          key={engineKind}
+          // The engine + trackHeight both bind at construction —
+          // flipping either forces React to remount the editor so the
+          // new value takes effect. Playback state resets, acceptable
+          // for a demo.
+          key={`${engineKind}|${trackHeight}`}
           apiRef={apiRef}
           defaultProject={seed()}
           theme={theme}
           locale={locale}
           playbackEngine={playbackEngine}
+          trackHeight={trackHeight}
           style={{ height: "100%" }}
           headerLeft={
             showHeader ? (
@@ -475,7 +484,14 @@ export function App() {
           onReady={(api) => {
             // Expose the API for e2e immediately (canvas clips have
             // no DOM nodes to query).
-            (window as unknown as { __aicut?: unknown }).__aicut = { api };
+            // `TRACK_HEIGHT` is an ESM live binding — re-reading it
+            // here after editor mount reflects whatever setTimelineMetrics
+            // has applied. E2E uses it to verify the trackHeight knob
+            // actually plumbed through to the layout module.
+            (window as unknown as { __aicut?: unknown }).__aicut = {
+              api,
+              metrics: { trackHeight: TRACK_HEIGHT },
+            };
             api.on("selectionChange", ({ clipId }) =>
               setSelectedClipId(clipId),
             );
@@ -535,6 +551,27 @@ export function App() {
           >
             {localeName === "en" ? "Switch to 中文" : "Switch to English"}
           </button>
+        </div>
+
+        <h2>Timeline density</h2>
+        <div className="demo-row demo-track-height-row">
+          <label>
+            Track height: <strong>{trackHeight}px</strong>
+          </label>
+          <input
+            type="range"
+            min={28}
+            max={80}
+            step={2}
+            value={trackHeight}
+            data-testid="demo-track-height"
+            onChange={(e) => setTrackHeight(Number(e.target.value))}
+          />
+          <p className="demo-engine-help">
+            Smaller rows shrink the timeline footprint so the preview
+            has more vertical room — handy on laptop / small screens.
+            Changing this remounts the editor.
+          </p>
         </div>
 
         <h2>Playback engine</h2>

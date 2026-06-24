@@ -6,6 +6,7 @@ import {
   SCROLLBAR_INSET,
   SCROLLBAR_MIN_THUMB,
   SCROLLBAR_THICKNESS,
+  TRACK_HEIGHT,
   contentHeight,
   contentWidth,
   trackIndexAt,
@@ -122,7 +123,10 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
         // Header rows are translated by -scrollTop when painted, so
         // their visible top in viewport coords is `trackY(i) - scrollTop`.
         const btnTop =
-          RULER_HEIGHT + ti * 56 + (56 - btnSize) / 2 - ctx.scrollTop;
+          RULER_HEIGHT +
+          ti * TRACK_HEIGHT +
+          (TRACK_HEIGHT - btnSize) / 2 -
+          ctx.scrollTop;
         if (
           x >= btnLeft &&
           x <= btnLeft + btnSize &&

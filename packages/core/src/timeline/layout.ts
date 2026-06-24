@@ -1,13 +1,41 @@
 import type { Clip, Ms, Project, Track } from "../types.js";
 
-/** Visual constants — kept here so draw + hit-test share one source of truth. */
-export const TRACK_HEIGHT = 56;
-export const RULER_HEIGHT = 24;
+/** Visual constants — kept here so draw + hit-test share one source of truth.
+ *  The two row-height values are `let` rather than `const` so hosts can
+ *  shrink the timeline footprint for small screens via
+ *  `setTimelineMetrics(...)`. ES module live bindings mean every importer
+ *  sees the updated value automatically. */
+export let TRACK_HEIGHT = 56;
+export let RULER_HEIGHT = 24;
 export const HEADER_WIDTH = 96;
 export const HANDLE_PX = 8;
 export const CLIP_INSET = 6;
 export const SCALE_MIN = 10;
 export const SCALE_MAX = 400;
+
+/**
+ * Override the default timeline row + ruler heights. Process-wide — call
+ * before / during editor construction. Useful when the editor is mounted
+ * in a small viewport (e.g. side-by-side panel on a laptop) and the
+ * default 56px tracks crowd out the preview.
+ *
+ * Reasonable ranges: trackHeight ∈ [28, 96], rulerHeight ∈ [18, 36].
+ * Anything smaller leaves no room for the clip label or the time ticks.
+ *
+ * Multi-editor mounts share these values. If you have two editors with
+ * different needs, agree on the smaller one or remount on switch.
+ */
+export function setTimelineMetrics(opts: {
+  trackHeight?: number;
+  rulerHeight?: number;
+}): void {
+  if (opts.trackHeight != null && opts.trackHeight > 0) {
+    TRACK_HEIGHT = Math.round(opts.trackHeight);
+  }
+  if (opts.rulerHeight != null && opts.rulerHeight > 0) {
+    RULER_HEIGHT = Math.round(opts.rulerHeight);
+  }
+}
 
 /** Scrollbar geometry. */
 export const SCROLLBAR_THICKNESS = 10;

@@ -24,6 +24,7 @@ export {
   TRACK_HEIGHT,
   RULER_HEIGHT,
   HEADER_WIDTH,
+  setTimelineMetrics,
 } from "./timeline/layout.js";
 
 // i18n — pass to `Editor.create({ locale })` to switch the editor's

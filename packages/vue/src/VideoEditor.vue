@@ -27,6 +27,14 @@ const props = defineProps<{
    * ignored.
    */
   playbackEngine?: PlaybackEngineFactory;
+  /**
+   * Initial-only — pixel height of each track row (default 56). Lower
+   * values (~32–40) shrink the timeline for small viewports. Applied
+   * process-wide at construction time.
+   */
+  trackHeight?: number;
+  /** Initial-only — pixel height of the timeline ruler (default 24). */
+  rulerHeight?: number;
 }>();
 
 const emit = defineEmits<{
@@ -57,6 +65,8 @@ onMounted(() => {
     theme: props.theme,
     locale: props.locale,
     playbackEngine: props.playbackEngine,
+    ...(props.trackHeight != null ? { trackHeight: props.trackHeight } : {}),
+    ...(props.rulerHeight != null ? { rulerHeight: props.rulerHeight } : {}),
   });
 
   offs.push(

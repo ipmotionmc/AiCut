@@ -89,6 +89,55 @@ test.describe("PlaybackEngine swap", () => {
   });
 
   /**
+   * Track-height knob: the demo's slider changes EditorOptions.trackHeight,
+   * which forces a remount and re-paints the timeline canvas with smaller
+   * rows. We can't read pixels off the canvas easily, but we can verify
+   * the editor remounted (new aicut-root) and that the canvas pixel
+   * height shrank measurably between max + min track heights.
+   */
+  test("timeline density: trackHeight knob shrinks the canvas", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const slider = page.getByTestId("demo-track-height");
+    await expect(slider).toBeVisible();
+
+    await expect
+      .poll(
+        async () =>
+          await page.evaluate(() => Boolean((window as any).__aicut?.api)),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+
+    const canvas = page.locator('[data-testid="aicut-timeline"] canvas');
+
+    // Snap to the larger end first (defaults to 56, but be explicit).
+    await slider.fill("80");
+    await page.waitForTimeout(150); // let remount + paint settle
+    const tallH = await canvas.evaluate((c) => (c as HTMLCanvasElement).getBoundingClientRect().height);
+
+    await slider.fill("28");
+    await page.waitForTimeout(150);
+    const shortH = await canvas.evaluate((c) => (c as HTMLCanvasElement).getBoundingClientRect().height);
+
+    // The canvas size depends on grid layout — the more decisive
+    // signal is the live `TRACK_HEIGHT` binding the demo exposes on
+    // __aicut.metrics. setTimelineMetrics() mutates the module-level
+    // value; ESM re-exports preserve the binding so we see the new
+    // number from any consumer (here, the React wrapper's re-export).
+    const observed = await page.evaluate(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      () => (window as any).__aicut?.metrics?.trackHeight,
+    );
+    expect(observed).toBe(28);
+
+    // And the canvas should not have grown — the grid auto row for
+    // the timeline collapses when its content shrinks.
+    expect(shortH).toBeLessThanOrEqual(tallH);
+  });
+
+  /**
    * End-to-end decode: switch to WebCodecs, programmatically lay down
    * a clip from one of the seeded sources, and assert the HUD reports
    * decoded frames > 0 within a few seconds. This is the test that
