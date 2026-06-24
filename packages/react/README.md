@@ -163,6 +163,36 @@ import { VideoEditor, localeZh } from "@aicut/react";
 
 `locale` is reactive too — runtime swap re-titles the toolbar and re-paints canvas labels in place.
 
+## Custom playback engine
+
+The editor talks to playback through a single interface. The default is
+`HtmlVideoEngine` (one hidden `<video>` per source, swap on clip
+boundaries). To plug in a different one — WebCodecs, WebGL compositor,
+desktop-wrapper IPC bridge — pass a factory:
+
+```tsx
+import {
+  VideoEditor,
+  type PlaybackEngineFactory,
+} from "@aicut/react";
+
+const myEngine: PlaybackEngineFactory = ({ host, project }) =>
+  new MyCustomEngine(host, project); // implements PlaybackEngine
+
+<VideoEditor
+  defaultProject={project}
+  playbackEngine={myEngine}        // initial-only — bound at mount
+  /* … */
+/>
+```
+
+`PlaybackEngine`, `PlaybackEngineFactory`, `PlaybackEngineOptions`, and
+the built-in `HtmlVideoEngine` are re-exported from `@aicut/react` so
+you don't need a separate `@aicut/core` import to write one.
+
+See [@aicut/core's playback section](https://www.npmjs.com/package/@aicut/core#playback-engine)
+for the full interface contract.
+
 ## `<LightingEditor>` (opt-in sub-entry)
 
 A 3D lighting director for AI relighting flows — separate component that doesn't pull three.js into the rest of your bundle.

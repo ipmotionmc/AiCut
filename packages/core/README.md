@@ -155,6 +155,62 @@ editor.toolbarRight.appendChild(customIconBtn);
 
 The standalone `Timeline` also exposes `toolbarLeft` / `toolbarRight` when constructed with `toolbar: true`.
 
+## Playback engine
+
+The Editor talks to playback through a single interface (`PlaybackEngine`).
+The default engine is `HtmlVideoEngine` — one hidden `<video>` per source,
+swapped at clip boundaries. Zero deps, works in every browser, but seek
+snaps to the nearest keyframe (the browser owns the decode pipeline).
+
+For frame-accurate scrubbing, multi-track compositing, transitions, or a
+custom render pipeline (WebGL compositor, IPC bridge to a native player,
+WebRTC stream consumer), pass your own factory:
+
+```ts
+import {
+  Editor,
+  type PlaybackEngine,
+  type PlaybackEngineFactory,
+} from "@aicut/core";
+
+const myFactory: PlaybackEngineFactory = ({ host, project }) => {
+  // host: a div the editor owns. Mount whatever surface you need.
+  // project: the initial Project — pre-warm decoders, etc.
+  return new MyEngine(host, project); // implements PlaybackEngine
+};
+
+Editor.create({ container, project, playbackEngine: myFactory });
+```
+
+The contract — every engine implements this exactly:
+
+```ts
+interface PlaybackEngine {
+  setProject(next: Project): void;
+  play(): void;
+  pause(): void;
+  isPlaying(): boolean;
+  getTime(): Ms;
+  seek(timeMs: Ms): void;
+  destroy(): void;
+
+  // Optional event hooks — Editor assigns these after construction.
+  onTimeUpdate?: (ms: Ms) => void;
+  onEnded?: () => void;
+  onError?: (err: Error) => void;
+  onReady?: () => void;
+  onSourceMetadata?: (sourceId: string, durationMs: Ms) => void;
+}
+```
+
+Engines that can't emit a particular event (e.g. no audio metadata)
+simply never call that hook. The Editor re-emits engine events as its
+own `time` / `pause` / `error` / `ready` / `change` events, so your host
+code is unaffected by which engine is in use.
+
+A WebCodecs-based engine ships in a follow-up release; for now you can
+wrap the default with your own and incrementally take over.
+
 ## Lighting picker (opt-in sub-entry)
 
 A separate component for AI-relighting workflows — drag a light dot around a 3D sphere wrapping a subject frame, control brightness / color / direction. Three.js is bundled only on this sub-entry, so consumers of the video editor pay zero bytes for it.

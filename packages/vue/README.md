@@ -146,6 +146,37 @@ const locale = computed<Locale>(() =>
 
 `locale` swap re-titles the toolbar and re-paints canvas labels in place.
 
+## Custom playback engine
+
+The editor talks to playback through a single interface. The default is
+`HtmlVideoEngine` (one hidden `<video>` per source, swap on clip
+boundaries). To plug in a different one — WebCodecs, WebGL compositor,
+desktop-wrapper IPC bridge — pass a factory:
+
+```vue
+<script setup lang="ts">
+import { VideoEditor, type PlaybackEngineFactory } from "@aicut/vue";
+
+const myEngine: PlaybackEngineFactory = ({ host, project }) =>
+  new MyCustomEngine(host, project); // implements PlaybackEngine
+</script>
+
+<template>
+  <VideoEditor
+    :default-project="project"
+    :playback-engine="myEngine"
+    /* initial-only — bound at mount */
+  />
+</template>
+```
+
+`PlaybackEngine`, `PlaybackEngineFactory`, `PlaybackEngineOptions`, and
+the built-in `HtmlVideoEngine` are re-exported from `@aicut/vue` so
+you don't need a separate `@aicut/core` import to write one.
+
+See [@aicut/core's playback section](https://www.npmjs.com/package/@aicut/core#playback-engine)
+for the full interface contract.
+
 ## `<LightingEditor>` (opt-in sub-entry)
 
 A 3D lighting director for AI relighting flows — separate sub-entry; three.js bundles only here.

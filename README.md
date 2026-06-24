@@ -353,7 +353,10 @@ import { Timeline } from "@aicut/react";
 packages/
   core/           @aicut/core    framework-agnostic engine
                                   ├─ Editor + Project + EventBus
-                                  ├─ HTML5 PlaybackEngine
+                                  ├─ Pluggable PlaybackEngine
+                                  │   (default: HtmlVideoEngine; host
+                                  │    can inject WebCodecs / WebGL /
+                                  │    IPC-bridged native players)
                                   ├─ Canvas Timeline (ruler, tracks, clips,
                                   │   thumbnails, playhead, snap, scrollbars)
                                   └─ Theme + i18n (en / zh)
@@ -386,6 +389,7 @@ cd backends/go && go run .         # http://127.0.0.1:8788
 
 # Tests
 pnpm typecheck                     # whole workspace, strict TS
+pnpm test                          # Vitest unit tests (packages/core)
 pnpm test:e2e                      # Playwright against the live demo
 pnpm --filter @aicut/e2e exec playwright test screenshots.spec.ts
                                    # regenerate docs/screenshots/*.png
@@ -412,9 +416,10 @@ The script is idempotent — already-published versions are skipped, so a re-run
 - [x] SSE-progress export backends (TS + Go)
 - [x] Bundled `en` / `zh` locale packs + runtime switch
 - [x] 3D lighting picker (`@aicut/core/lighting` sub-entry)
+- [x] Pluggable `PlaybackEngine` interface (HTML5 default, host can inject)
 - [ ] Speed adjustment (timeline already reserves the slot)
 - [ ] Audio track rendering + waveform thumbnails
-- [ ] WebGL preview engine for frame-accurate seek + transitions
+- [ ] WebCodecs preview engine for frame-accurate seek + transitions
 - [ ] Lighting → relighting backend reference
 - [ ] Hosted demo site
 
