@@ -1,5 +1,8 @@
 import { createId } from "./ids.js";
-import type { Clip, Keyframe, Ms, Project, Track } from "./types.js";
+import { interpolateProp } from "./keyframes/interpolate.js";
+import type { Clip, Keyframe, KeyframeProp, Ms, Project, Track } from "./types.js";
+
+const KEYFRAME_PROPS: KeyframeProp[] = ["panX", "panY", "scale"];
 
 export function createEmptyProject(): Project {
   return {
@@ -152,20 +155,58 @@ export function splitClipAt(clip: Clip, localOffset: Ms): [Clip, Clip] | null {
     in: clip.in + localOffset,
     start: clip.start + localOffset,
   };
-  // Partition keyframes across the cut. Times are clip-local, so the
-  // right half's keyframes shift by -localOffset to keep their meaning.
+  // Partition keyframes across the cut, AND insert interpolated
+  // boundary keyframes at the seam so playing the two halves back-to-
+  // back is visually identical to the un-cut clip. Without the
+  // boundary insertion, a cut mid-ramp would snap to the prior kf's
+  // value on the left half (because "after last kf = hold") and to
+  // the next kf's value on the right half — instant value jump at
+  // the seam. Done per-property because only the props that actually
+  // have keyframes need a boundary; props that ride the static base
+  // are inherited unchanged.
+  //
   // Static base values (panX / panY / scale) are inherited unchanged
   // by both halves — they were per-clip defaults.
   if (clip.keyframes && clip.keyframes.length > 0) {
     const leftKf: Keyframe[] = [];
     const rightKf: Keyframe[] = [];
-    for (const kf of clip.keyframes) {
-      if (kf.time < localOffset) {
-        leftKf.push(kf);
-      } else {
-        // Re-id the shifted ones — the original kf belongs to the left
-        // half conceptually; the right half is a brand-new clip.
-        rightKf.push({ ...kf, id: createId("kf"), time: kf.time - localOffset });
+    for (const prop of KEYFRAME_PROPS) {
+      const propKfs = clip.keyframes.filter((k) => k.prop === prop);
+      if (propKfs.length === 0) continue;
+      const boundaryValue = interpolateProp(clip, prop, localOffset);
+      let leftSeamPresent = false;
+      let rightSeamPresent = false;
+      for (const kf of propKfs) {
+        if (kf.time < localOffset) {
+          leftKf.push(kf);
+        } else if (kf.time > localOffset) {
+          // Re-id the shifted ones — the original kf belongs to the
+          // left half conceptually; the right half is a brand-new clip.
+          rightKf.push({ ...kf, id: createId("kf"), time: kf.time - localOffset });
+        } else {
+          // kf sits exactly on the cut. It IS the seam — keep on the
+          // left at its current time, and clone to the right at t=0.
+          leftKf.push(kf);
+          leftSeamPresent = true;
+          rightKf.push({ ...kf, id: createId("kf"), time: 0 });
+          rightSeamPresent = true;
+        }
+      }
+      if (!leftSeamPresent) {
+        leftKf.push({
+          id: createId("kf"),
+          prop,
+          time: localOffset,
+          value: boundaryValue,
+        });
+      }
+      if (!rightSeamPresent) {
+        rightKf.push({
+          id: createId("kf"),
+          prop,
+          time: 0,
+          value: boundaryValue,
+        });
       }
     }
     left.keyframes = leftKf.length > 0 ? leftKf : undefined;

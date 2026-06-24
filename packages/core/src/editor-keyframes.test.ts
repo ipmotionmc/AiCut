@@ -270,7 +270,11 @@ describe("Editor.keyframes — per-property mutators + history + selection", () 
     editor.destroy();
   });
 
-  it("splitClipAt partitions per-property keyframes across the cut", () => {
+  it("splitClipAt inserts interpolated boundary keyframes per property at the seam", () => {
+    // Cut at 2000 lands BETWEEN scale@500 (v=1) and scale@3000 (v=2).
+    // Expected boundary scale = 1 + (1500/2500)*(2-1) = 1.6.
+    // panX has a single kf at 3000 (v=100) → before-first rule means
+    // value at cut is held at first kf's value = 100.
     const editor = Editor.create({
       container,
       project: tinyProject(),
@@ -282,13 +286,104 @@ describe("Editor.keyframes — per-property mutators + history + selection", () 
     editor.split(2000);
     const clips = editor.getProject().tracks[0]?.clips ?? [];
     expect(clips).toHaveLength(2);
-    expect(clips[0]?.keyframes).toHaveLength(1);
-    expect(clips[0]?.keyframes?.[0]).toMatchObject({
-      prop: "scale",
-      time: 500,
+
+    const leftScale = (clips[0]?.keyframes ?? []).filter(
+      (k) => k.prop === "scale",
+    );
+    expect(leftScale).toHaveLength(2);
+    expect(leftScale.find((k) => k.time === 500)?.value).toBe(1);
+    expect(leftScale.find((k) => k.time === 2000)?.value).toBeCloseTo(1.6, 6);
+
+    const leftPanX = (clips[0]?.keyframes ?? []).filter(
+      (k) => k.prop === "panX",
+    );
+    expect(leftPanX).toHaveLength(1);
+    expect(leftPanX[0]).toMatchObject({ time: 2000, value: 100 });
+
+    const rightScale = (clips[1]?.keyframes ?? []).filter(
+      (k) => k.prop === "scale",
+    );
+    expect(rightScale).toHaveLength(2);
+    expect(rightScale.find((k) => k.time === 0)?.value).toBeCloseTo(1.6, 6);
+    expect(rightScale.find((k) => k.time === 1000)?.value).toBe(2);
+
+    const rightPanX = (clips[1]?.keyframes ?? []).filter(
+      (k) => k.prop === "panX",
+    );
+    expect(rightPanX).toHaveLength(2);
+    expect(rightPanX.find((k) => k.time === 0)?.value).toBe(100);
+    expect(rightPanX.find((k) => k.time === 1000)?.value).toBe(100);
+    editor.destroy();
+  });
+
+  it("splitClipAt — cut exactly on a keyframe shares it across the seam, no duplicate", () => {
+    const editor = Editor.create({
+      container,
+      project: tinyProject(),
+      playbackEngine: () => makeStubEngine(),
     });
-    expect(clips[1]?.keyframes).toHaveLength(2);
-    expect(clips[1]?.keyframes?.every((k) => k.time === 1000)).toBe(true);
+    editor.addKeyframe("c1", "scale", { time: 1000, value: 1 });
+    editor.addKeyframe("c1", "scale", { time: 2000, value: 2 });
+    editor.addKeyframe("c1", "scale", { time: 3000, value: 3 });
+    editor.split(2000); // cut sits exactly on scale@2000
+    const clips = editor.getProject().tracks[0]?.clips ?? [];
+    const leftScale = (clips[0]?.keyframes ?? []).filter(
+      (k) => k.prop === "scale",
+    );
+    const rightScale = (clips[1]?.keyframes ?? []).filter(
+      (k) => k.prop === "scale",
+    );
+    // Left: kf@1000 (v=1) + the seam kf@2000 (v=2). No synthetic
+    // duplicate at t=2000 because the seam keyframe already pins it.
+    expect(leftScale.map((k) => ({ time: k.time, value: k.value }))).toEqual([
+      { time: 1000, value: 1 },
+      { time: 2000, value: 2 },
+    ]);
+    // Right: cloned seam at t=0 + the shifted kf@3000 → t=1000.
+    expect(
+      rightScale.map((k) => ({ time: k.time, value: k.value })).sort((a, b) =>
+        a.time - b.time,
+      ),
+    ).toEqual([
+      { time: 0, value: 2 },
+      { time: 1000, value: 3 },
+    ]);
+    editor.destroy();
+  });
+
+  it("splitClipAt — cut before the first keyframe still gives both halves a pinned value", () => {
+    // Original clip: only kf@3000 (scale=2). Effective value
+    // anywhere before t=3000 is held at 2. Cutting at 1000 should
+    // produce two halves that BOTH evaluate to 2 at the seam.
+    const editor = Editor.create({
+      container,
+      project: tinyProject(),
+      playbackEngine: () => makeStubEngine(),
+    });
+    editor.addKeyframe("c1", "scale", { time: 3000, value: 2 });
+    editor.split(1000);
+    const clips = editor.getProject().tracks[0]?.clips ?? [];
+    const leftScale = (clips[0]?.keyframes ?? []).filter(
+      (k) => k.prop === "scale",
+    );
+    const rightScale = (clips[1]?.keyframes ?? []).filter(
+      (k) => k.prop === "scale",
+    );
+    // Left: only the synthesised seam kf — value 2 (held from
+    // first-kf rule). A single kf means constant scale=2 across the
+    // whole left half, matching the original.
+    expect(leftScale).toEqual([
+      expect.objectContaining({ prop: "scale", time: 1000, value: 2 }),
+    ]);
+    // Right: seam kf@0 (v=2) + original kf shifted to t=2000 (v=2).
+    expect(
+      rightScale.map((k) => ({ time: k.time, value: k.value })).sort((a, b) =>
+        a.time - b.time,
+      ),
+    ).toEqual([
+      { time: 0, value: 2 },
+      { time: 2000, value: 2 },
+    ]);
     editor.destroy();
   });
 
