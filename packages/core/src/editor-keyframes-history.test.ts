@@ -247,6 +247,88 @@ describe("keyframe undo / redo", () => {
     editor.destroy();
   });
 
+  it("beginInteraction / endInteraction coalesces a drag burst into 1 history entry", () => {
+    // Repro of the overlay-drag ripple bug: without coalescing, a
+    // 30-tick pointermove drag produced 30 history entries and the
+    // user had to mash Cmd+Z 30 times to fully unwind. With the
+    // session API, the WHOLE drag is one entry.
+    const editor = Editor.create({
+      container,
+      project: seedProject(),
+      playbackEngine: () => makeStubEngine(),
+    });
+    const id = editor.addKeyframe("c1", "scale", { time: 1000, value: 1 })!;
+    // Snapshot how many undos are left after just the kf add — this
+    // is the "baseline" depth (could include init bookkeeping that
+    // isn't relevant to this test).
+    let baseDepth = 0;
+    {
+      const probe = editor.getProject();
+      while (editor.canUndo()) {
+        baseDepth += 1;
+        editor.undo();
+      }
+      // Replay forward back to where we were.
+      while (editor.canRedo()) editor.redo();
+      // Sanity — the kf is back.
+      expect(kfs(editor).find((k) => k.id === id)?.value).toBe(1);
+      expect(editor.getProject()).toEqual(probe);
+    }
+    // Drive a "drag" — 20 micro-mutations inside one session.
+    editor.beginInteraction();
+    for (let i = 0; i < 20; i += 1) {
+      editor.setKeyframeValue("c1", id, 1 + i * 0.05);
+    }
+    editor.endInteraction();
+    // The whole drag adds EXACTLY one history entry on top of the
+    // baseline depth.
+    let postDepth = 0;
+    while (editor.canUndo()) {
+      postDepth += 1;
+      editor.undo();
+    }
+    expect(postDepth).toBe(baseDepth + 1);
+    editor.destroy();
+  });
+
+  it("no-op interaction is dropped — pressing then releasing without changes adds no entry", () => {
+    const editor = Editor.create({
+      container,
+      project: seedProject(),
+      playbackEngine: () => makeStubEngine(),
+    });
+    editor.addKeyframe("c1", "scale", { time: 1000, value: 1 });
+    const before = editor.canUndo();
+    expect(before).toBe(true);
+    editor.beginInteraction();
+    // Nothing mutates inside.
+    editor.endInteraction();
+    // Undo state unchanged — no zombie empty entry.
+    expect(editor.undo()).toBe(true); // unwinds the kf add
+    expect(kfs(editor)).toHaveLength(0);
+    expect(editor.canUndo()).toBe(false);
+    editor.destroy();
+  });
+
+  it("nested interactions only commit on the outermost end", () => {
+    const editor = Editor.create({
+      container,
+      project: seedProject(),
+      playbackEngine: () => makeStubEngine(),
+    });
+    const id = editor.addKeyframe("c1", "scale", { time: 1000, value: 1 })!;
+    editor.beginInteraction(); // outer
+    editor.beginInteraction(); // inner
+    editor.setKeyframeValue("c1", id, 2);
+    editor.endInteraction(); // inner — no commit
+    expect(editor.canRedo()).toBe(false); // not undone, not committed yet
+    editor.setKeyframeValue("c1", id, 3);
+    editor.endInteraction(); // outer — single commit covering both
+    expect(editor.undo()).toBe(true);
+    expect(kfs(editor)[0]?.value).toBe(1); // all the way back to pre-outer
+    editor.destroy();
+  });
+
   it("redo stack is cleared when a new mutation lands after an undo", () => {
     const editor = Editor.create({
       container,

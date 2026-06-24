@@ -48,6 +48,8 @@ export class KeyframeOverlay {
       }
     | null = null;
   private capturedPointerId: number | null = null;
+  /** Timer handle for the wheel-burst → interaction commit. */
+  private wheelInteractionTimer: number | null = null;
   /** Snap-target threshold in CSS px — the same feel as the timeline. */
   private static readonly SNAP_PX = 8;
 
@@ -88,6 +90,14 @@ export class KeyframeOverlay {
   destroy(): void {
     this.destroyed = true;
     if (this.rafHandle != null) cancelAnimationFrame(this.rafHandle);
+    if (this.wheelInteractionTimer != null) {
+      clearTimeout(this.wheelInteractionTimer);
+      this.wheelInteractionTimer = null;
+      // The editor outlives this overlay on a normal teardown, but
+      // if a burst was in flight we still owe it an endInteraction
+      // to balance the begin (otherwise pushHistory stays muted).
+      this.editor.endInteraction();
+    }
     this.root.remove();
   }
 
@@ -109,6 +119,9 @@ export class KeyframeOverlay {
       startPanX: ctx.transform.panX,
       startPanY: ctx.transform.panY,
     };
+    // Open a drag session so the 30-100 pointermove mutations
+    // coalesce into ONE history entry — committed on pointer-up.
+    this.editor.beginInteraction();
     this.frameBody.addEventListener("pointermove", this.onPointerMove);
     this.frameBody.addEventListener("pointerup", this.onPointerUp);
     this.frameBody.addEventListener("pointercancel", this.onPointerUp);
@@ -128,6 +141,21 @@ export class KeyframeOverlay {
       0.05,
       Math.min(16, ctx.transform.scale * factor),
     );
+    // Wheel events have no down / up boundary, so use a debounce-
+    // flush instead: first event opens an interaction, every
+    // subsequent event within 200ms resets the timer, and 200ms
+    // after the last wheel tick we commit. The result is one
+    // history entry per "burst" of scrolling — matches the user's
+    // mental model of "I scrolled, then I stopped".
+    if (this.wheelInteractionTimer == null) {
+      this.editor.beginInteraction();
+    } else {
+      clearTimeout(this.wheelInteractionTimer);
+    }
+    this.wheelInteractionTimer = window.setTimeout(() => {
+      this.wheelInteractionTimer = null;
+      this.editor.endInteraction();
+    }, 200);
     this.editor.setValueAtPlayhead(
       ctx.clip.id,
       "scale",
@@ -162,6 +190,7 @@ export class KeyframeOverlay {
       startDistance: startDist,
       startScale: ctx.transform.scale,
     };
+    this.editor.beginInteraction();
     target.addEventListener("pointermove", this.onPointerMove);
     target.addEventListener("pointerup", this.onPointerUp);
     target.addEventListener("pointercancel", this.onPointerUp);
@@ -270,6 +299,10 @@ export class KeyframeOverlay {
     targetEl?.removeEventListener("pointercancel", this.onPointerUp);
     this.drag = null;
     this.capturedPointerId = null;
+    // Commit the drag session — single history entry for the whole
+    // gesture, dropped entirely if the project ended up unchanged
+    // (e.g. mousedown without movement).
+    this.editor.endInteraction();
   };
 
   // ---- per-frame layout ------------------------------------------------

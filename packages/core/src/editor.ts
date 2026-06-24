@@ -312,6 +312,22 @@ export interface EditorApi {
   canRedo(): boolean;
   undo(): boolean;
   redo(): boolean;
+  /**
+   * Open a "drag session". While open, every internal `pushHistory`
+   * call captures the pre-session snapshot ONCE — subsequent calls
+   * during the same session are no-ops. The session commits a single
+   * history entry on `endInteraction()` (or is dropped entirely if
+   * the project ended up unchanged). Nestable: nested begin/end pairs
+   * count by depth and only the outermost commits.
+   *
+   * Hosts call this around continuous gestures (drag the preview
+   * overlay, scrub a numeric slider, wheel-zoom) so a single user
+   * gesture becomes ONE undo entry instead of 30-100. Without this,
+   * each pointermove of an overlay drag pushes its own history entry
+   * and the user has to mash Cmd+Z that many times to fully undo.
+   */
+  beginInteraction(): void;
+  endInteraction(): void;
 
   /**
    * Bookend slot at the very left of the top toolbar — host appends
@@ -371,6 +387,10 @@ export class Editor implements EditorApi {
     null;
   private keyframesEnabled: boolean;
   private clipEdgeNavEnabled: boolean;
+  /** Drag-session bookkeeping for ripple-merge undo. See
+   *  beginInteraction / endInteraction docs on EditorApi. */
+  private interactionDepth = 0;
+  private interactionStartSnapshot: string | null = null;
   private pxPerSec: number;
   private snap: boolean;
   private locale: Locale;
@@ -1383,6 +1403,26 @@ export class Editor implements EditorApi {
     return true;
   }
 
+  beginInteraction(): void {
+    this.interactionDepth += 1;
+  }
+
+  endInteraction(): void {
+    if (this.interactionDepth === 0) return;
+    this.interactionDepth -= 1;
+    if (this.interactionDepth > 0) return; // still nested
+    const snapshot = this.interactionStartSnapshot;
+    this.interactionStartSnapshot = null;
+    if (snapshot == null) return; // no mutation happened inside
+    // Drop no-op sessions — if the project ended up identical to its
+    // pre-session state (e.g. user pressed mouse, made no real move,
+    // released), don't pollute history with an empty entry.
+    const now = JSON.stringify(this.project);
+    if (now === snapshot) return;
+    this.history.push(JSON.parse(snapshot) as Project);
+    this.emitHistory();
+  }
+
   /**
    * Selections (clipId + selectedKeyframe) live OUTSIDE the project
    * snapshot, so undo / redo can leave them pointing at ids that no
@@ -1464,6 +1504,16 @@ export class Editor implements EditorApi {
   }
 
   private pushHistory(): void {
+    // Inside a drag session, only the FIRST pushHistory captures —
+    // subsequent calls during the same session coalesce. endInteraction
+    // is the one that actually pushes the captured snapshot onto the
+    // stack. See beginInteraction / endInteraction docs.
+    if (this.interactionDepth > 0) {
+      if (this.interactionStartSnapshot == null) {
+        this.interactionStartSnapshot = JSON.stringify(this.project);
+      }
+      return;
+    }
     this.history.push(this.project);
     this.emitHistory();
   }
