@@ -94,6 +94,21 @@ export interface VideoEditorProps {
    * Useful range: [120, 480] depending on viewport.
    */
   timelineHeight?: number;
+  /**
+   * Per-clip keyframe animation (X / Y / Scale). Reactive — set
+   * `{ enabled: true }` to surface keyframe diamonds on the timeline
+   * and route the canvas-based engines through the transform pipeline.
+   * Disabling hides the editing UI but preserves the data in
+   * `Project.tracks[].clips[].keyframes`.
+   *
+   * `HtmlVideoEngine` cannot animate frames; swap to
+   * `CanvasCompositorEngine` or `WebCodecsEngine` for live preview.
+   */
+  keyframes?: { enabled?: boolean };
+  /** Fires when the user selects or deselects a keyframe diamond. */
+  onKeyframeSelectionChange?: (
+    target: { clipId: string; keyframeId: string } | null,
+  ) => void;
 }
 
 /**
@@ -143,6 +158,9 @@ export function VideoEditor(props: VideoEditorProps) {
       ...(cbRef.current.timelineHeight != null
         ? { timelineHeight: cbRef.current.timelineHeight }
         : {}),
+      ...(cbRef.current.keyframes != null
+        ? { keyframes: cbRef.current.keyframes }
+        : {}),
     });
     editorRef.current = editor;
     setSlots({
@@ -160,6 +178,9 @@ export function VideoEditor(props: VideoEditorProps) {
       editor.on("pause", () => cbRef.current.onPause?.()),
       editor.on("selectionChange", ({ clipId }) =>
         cbRef.current.onSelectionChange?.(clipId),
+      ),
+      editor.on("keyframeSelectionChange", ({ target }) =>
+        cbRef.current.onKeyframeSelectionChange?.(target),
       ),
       editor.on("error", ({ error }) => cbRef.current.onError?.(error)),
     ];
@@ -185,6 +206,19 @@ export function VideoEditor(props: VideoEditorProps) {
   useEffect(() => {
     if (props.locale) editorRef.current?.setLocale(props.locale);
   }, [props.locale]);
+
+  // Reactive — flipping `keyframes.enabled` instantly toggles diamond
+  // visibility on the timeline and routes the canvas / WebCodecs
+  // engines through the transform pipeline (or not). Data is
+  // preserved either way.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const desired = props.keyframes?.enabled === true;
+    if (editor.isKeyframesEnabled() !== desired) {
+      editor.setKeyframesEnabled(desired);
+    }
+  }, [props.keyframes?.enabled]);
 
   // Reactive — the underlying CSS custom property can be updated on
   // the container any time; the timeline picks up the new height
