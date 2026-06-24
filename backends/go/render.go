@@ -8,9 +8,30 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+// resolveSourceURL maps a frontend source URL to something ffmpeg can
+// open. HTTP(s)/file:// pass through; an absolute-looking "/foo.mov"
+// is treated as a Vite-style public path and resolved under
+// AICUT_ASSETS_DIR when set. Without the env var we pass through
+// unchanged and let ffmpeg report the missing file.
+//
+// Matches the TS backend's resolveSourceUrl exactly so the two
+// backends behave identically on the same project JSON.
+var protocolPrefix = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+\-.]*://`)
+
+func resolveSourceURL(url string) string {
+	if protocolPrefix.MatchString(url) {
+		return url
+	}
+	if dir := os.Getenv("AICUT_ASSETS_DIR"); dir != "" && strings.HasPrefix(url, "/") {
+		return filepath.Join(dir, url)
+	}
+	return url
+}
 
 // ProgressEvent matches the SSE wire format the demo consumes. Stays
 // in lockstep with backends/ts/src/render.ts ProgressEvent.
@@ -64,7 +85,7 @@ func renderProject(ctx context.Context, req ExportRequest, outputPath string, on
 		args := []string{
 			"-y",
 			"-ss", msToSec(clip.In),
-			"-i", src.URL,
+			"-i", resolveSourceURL(src.URL),
 			"-t", msToSec(durMs),
 			"-c:v", "libx264",
 			"-preset", "veryfast",

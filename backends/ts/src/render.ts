@@ -5,6 +5,31 @@ import type { Clip, Project } from "@aicut/core";
 import { resolveFfmpeg, runFfmpeg } from "./ffmpeg.js";
 import { compileKeyframeExpression } from "./keyframe-expression.js";
 
+/**
+ * Turn a frontend source URL into something ffmpeg can open.
+ *
+ * Accepted as-is:
+ *   - Absolute filesystem paths (`/Users/me/a.mov`, `C:\videos\a.mp4`)
+ *   - HTTP(S) URLs (`http://localhost:5173/a.mov`)
+ *   - file:// URLs
+ *
+ * Rewritten:
+ *   - Bare paths like `/a.mov` (Vite-public style) when the
+ *     `AICUT_ASSETS_DIR` env var is set. The leading `/` is treated
+ *     as the asset-root, NOT the filesystem root, so projects authored
+ *     against a public/ dir stay portable. Without the env var we
+ *     pass through unchanged and let ffmpeg report "no such file".
+ */
+function resolveSourceUrl(url: string): string {
+  // ffmpeg-native protocol prefixes — never touch.
+  if (/^[a-z][a-z0-9+\-.]*:\/\//i.test(url)) return url;
+  const assetsDir = process.env.AICUT_ASSETS_DIR;
+  if (assetsDir && url.startsWith("/")) {
+    return path.join(assetsDir, url);
+  }
+  return url;
+}
+
 export interface RenderOptions {
   width?: number;
   height?: number;
@@ -89,7 +114,7 @@ export async function renderProject(
         "-ss",
         inSec.toString(),
         "-i",
-        src.url,
+        resolveSourceUrl(src.url),
         "-t",
         durSec.toString(),
         "-c:v",

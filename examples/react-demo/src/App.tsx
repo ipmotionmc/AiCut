@@ -300,11 +300,26 @@ export function App() {
     exportAbortRef.current = ac;
     const baseUrl = BACKENDS[backendKindRef.current].url;
     setExportStatus({ running: true, overall: 0, phase: "encode" });
+    // Resolve dev-server-relative URLs (e.g. "/a.mov") into absolute
+    // http URLs the backend's ffmpeg can fetch. Demo seeds use Vite's
+    // /public/ paths which are only meaningful to the browser; the
+    // backend opens whatever string we send via `-i`, and "/a.mov"
+    // would try to read from the filesystem root. Leave already-
+    // absolute URLs (http(s)://, file://) untouched.
+    const projectForExport: Project = {
+      ...project,
+      sources: project.sources.map((s) => {
+        if (s.url.startsWith("/") && !s.url.startsWith("//")) {
+          return { ...s, url: `${window.location.origin}${s.url}` };
+        }
+        return s;
+      }),
+    };
     try {
       const res = await fetch(`${baseUrl}/export`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ project }),
+        body: JSON.stringify({ project: projectForExport }),
         signal: ac.signal,
       });
       if (!res.ok || !res.body) {
