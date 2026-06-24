@@ -266,9 +266,9 @@ setTimelineMetrics({ trackHeight: 36, rulerHeight: 20 });
 
 `TRACK_HEIGHT` and `RULER_HEIGHT` are ESM live bindings — re-reading them after the setter returns the updated values.
 
-## Keyframes (per-clip X / Y / scale animation)
+## Keyframes (per-clip panX / panY / scale animation)
 
-Off by default. Flip on, and the canvas + WebCodecs engines linearly interpolate per-clip transforms between adjacent keyframes — the bread-and-butter motion-template feature (think CapCut "动画").
+Off by default. Flip on, and **all three** playback engines (HTML5 / Canvas / WebCodecs) interpolate per-clip transforms between adjacent keyframes — the bread-and-butter motion-template feature (think CapCut "动画").
 
 ```ts
 const editor = Editor.create({
@@ -277,34 +277,51 @@ const editor = Editor.create({
   keyframes: { enabled: true },
 });
 
-// Default time = playhead in clip-local coords; default values
-// = whatever's currently interpolated. Both can be overridden.
-const id = editor.addKeyframe("clip-1");
-editor.moveKeyframe("clip-1", id, 1500);            // shift to t=1.5s
-editor.setKeyframeValues("clip-1", id, { scale: 1.5 });
-editor.removeKeyframe("clip-1", id);
+// Per-property — pin only the props you care about, others ride the
+// static base (Clip.panX / Clip.panY / Clip.scale).
+editor.addKeyframe("clip-1", "scale", { time: 0,    value: 1                       });
+editor.addKeyframe("clip-1", "scale", { time: 2000, value: 2.5, easing: "easeInOut" });
+editor.addKeyframe("clip-1", "scale", { time: 4000, value: 1                       });
+editor.setKeyframeValue("clip-1", kfId, 1.8);     // tweak one kf's value
+editor.setKeyframeEasing("clip-1", kfId, "easeOut");
+editor.moveKeyframe("clip-1", kfId, 1500);        // shift to t=1.5s
+editor.removeKeyframe("clip-1", kfId);
+
+// Toolbar-style "K at playhead" — one click drops kfs for all 3 props.
+editor.setSelection("clip-1");
+editor.toggleKeyframeAtPlayhead();
 ```
 
-The data lives on `Clip.keyframes: Keyframe[]` — sparse on purpose, so a host can pin only `scale` and leave `x` / `y` to interpolate from identity (`0`, `0`, `1`):
+The data lives on `Clip.keyframes: Keyframe[]`, one entry per animated property at one moment in clip-local time:
 
 ```ts
+type KeyframeProp = "panX" | "panY" | "scale";
+type EasingKind = "linear" | "easeIn" | "easeOut" | "easeInOut";
+
 interface Keyframe {
   id: string;
-  time: Ms;       // clip-local; 0 = clip's `in`
-  x?: number;     // pixel translate, default 0
-  y?: number;
-  scale?: number; // multiplier on intrinsic frame size, default 1
+  prop: KeyframeProp;
+  time: Ms;            // clip-local; 0 = clip's `in`
+  value: number;       // CSS px for pan, multiplier for scale
+  easing?: EasingKind; // optional outgoing curve; omitted = linear
+}
+
+interface Clip {
+  // ...
+  panX?: number; panY?: number; scale?: number; // static base
+  keyframes?: Keyframe[];
 }
 ```
 
 | Behavior |  |
 | --- | --- |
-| **Data model** | Optional `keyframes?: Keyframe[]` on `Clip`. Legacy projects without the field are unchanged. |
-| **Undo / redo** | Every mutator pushes onto the existing `HistoryStack`. ⌘Z works. |
+| **Per-property model** | `panX` / `panY` / `scale` animate independently. Pre-easing tuple-keyframes (`{time, x, y, scale}`) auto-migrate via `normalizeProject`. |
+| **Easing** | 4 cubic curves stored on the leaving kf (AE / Premiere / CapCut convention). `editor.setKeyframesEasingAtTime(clipId, time, "easeInOut")` updates all 3 props at a moment atomically. |
+| **Drag-burst undo** | `editor.beginInteraction() / endInteraction()` coalesce a 30+ tick pointermove drag into ONE history entry. Hosts wrap continuous gestures with these for clean ⌘Z. |
 | **Snap** | Each keyframe contributes a timeline-absolute target — dragging snaps to other keyframes / clip edges / playhead. |
-| **Split** | `splitClipAt` partitions keyframes across the cut; the right half's clip-local times shift automatically. |
-| **HtmlVideoEngine** | Cannot apply per-frame transforms (raw `<video>`). Renders identity. Swap engines for live preview. |
-| **Backend export** | v0.6 backends log and ignore keyframes — exports are identity-transform. Full ffmpeg compilation is v0.7 work. |
+| **Lossless split** | `splitClipAt` mid-segment inserts interpolated boundary keyframes per property so cutting and not moving the halves plays back identically to the un-cut clip. |
+| **All engines animate** | HTML5 (CSS transform on wrapper div), Canvas + WebCodecs (`ctx.clip()` + `ctx.translate/scale`), and the backend exporter all share the same interpolation. |
+| **Backend export** | `@aicut/backend-ts` and `@aicut/backend-go` both compile keyframes to ffmpeg `t`-expressions in `scale=…:eval=frame` + `overlay=…:eval=frame` filters. Pass `output: { width, height, fps }` in the request — required for the kf path. |
 
 Read the live transform anywhere (e.g. host-rendered thumbnails) via the pure helper:
 
@@ -312,7 +329,7 @@ Read the live transform anywhere (e.g. host-rendered thumbnails) via the pure he
 import { getEffectiveTransform, getTransformAtTimelineTime } from "@aicut/core";
 
 const t = getEffectiveTransform(clip, localMs);
-// → { x: 100, y: 0, scale: 1.5 }
+// → { panX: 100, panY: 0, scale: 1.5 }
 ```
 
 ## Lighting picker (opt-in sub-entry)
