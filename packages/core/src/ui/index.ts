@@ -402,6 +402,22 @@ export class EditorUI {
       } else if (e.code === "KeyO" && this.editor.isClipEdgeNavEnabled()) {
         e.preventDefault();
         cb.onSeekClipEnd();
+      } else if (e.code === "ArrowLeft" || e.code === "ArrowRight") {
+        // Frame-stepping nav — matches Premiere / Final Cut / CapCut /
+        // After Effects: ← / → = one frame, Shift+← / → = 10 frames.
+        // No fps on Project today, so we assume 30 fps and use 33 ms
+        // (a sub-frame value never looks "wrong" because the playhead
+        // snaps to whatever the engine renders at the new time).
+        e.preventDefault();
+        const STEP_MS = 33; // ~1 frame @ 30 fps
+        const BIG_STEP_MS = 333; // ~10 frames @ 30 fps
+        const step = e.shiftKey ? BIG_STEP_MS : STEP_MS;
+        const dir = e.code === "ArrowLeft" ? -1 : 1;
+        const next = Math.max(
+          0,
+          Math.min(this.editor.getDuration(), this.editor.getTime() + dir * step),
+        );
+        cb.onSeek(next);
       } else if ((e.metaKey || e.ctrlKey) && e.code === "KeyZ") {
         e.preventDefault();
         if (e.shiftKey) cb.onRedo();
