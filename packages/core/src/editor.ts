@@ -22,12 +22,14 @@ import { applyTheme } from "./theme.js";
 import { type Locale, mergeLocale } from "./i18n.js";
 import type {
   Clip,
+  Keyframe,
   MediaSource,
   Ms,
   Project,
   Theme,
   Track,
 } from "./types.js";
+import { getEffectiveTransform } from "./keyframes/index.js";
 import { EditorUI } from "./ui/index.js";
 
 export interface EditorOptions {
@@ -81,6 +83,19 @@ export interface EditorOptions {
    * Reasonable range: [120, 480].
    */
   timelineHeight?: number;
+  /**
+   * Per-clip keyframe animation (X / Y / Scale). Off by default; flip
+   * `enabled: true` to surface keyframe markers on the timeline and
+   * route the canvas / WebCodecs engines through `getEffectiveTransform`
+   * when painting. Data is preserved either way — disabling just hides
+   * the editing UI and renders identity transforms.
+   *
+   * HtmlVideoEngine cannot apply per-frame transforms (it shows a raw
+   * `<video>`), so keyframes are silently ignored on that engine
+   * regardless of this flag. Swap to `CanvasCompositorEngine` or
+   * `WebCodecsEngine` for live preview.
+   */
+  keyframes?: { enabled?: boolean };
 }
 
 export interface EditorEventMap {
@@ -97,6 +112,14 @@ export interface EditorEventMap {
   error: { error: Error };
   /** Currently selected clip id, or null. */
   selectionChange: { clipId: string | null };
+  /** Currently selected keyframe (parent clip + keyframe id), or null.
+   *  Selecting a keyframe also selects its parent clip — listeners
+   *  watching `selectionChange` get notified independently. */
+  keyframeSelectionChange: {
+    target: { clipId: string; keyframeId: string } | null;
+  };
+  /** Keyframe-mode toggle changed (Editor.setKeyframesEnabled). */
+  keyframesEnabledChange: { enabled: boolean };
   /** Zoom (px/sec) changed. */
   scaleChange: { pxPerSec: number };
   /** Snap toggle changed. */
@@ -177,6 +200,32 @@ export interface EditorApi {
   getSelection(): string | null;
   setSelection(clipId: string | null): void;
 
+  // keyframes
+  isKeyframesEnabled(): boolean;
+  setKeyframesEnabled(enabled: boolean): void;
+  /**
+   * Add a keyframe to a clip. Defaults: `time` = playhead in clip-local
+   * coords (clamped to [0, clipDuration]); `x / y / scale` = the values
+   * currently interpolated at that time. Returns the new keyframe's id,
+   * or null when the clip can't be found or the playhead isn't over it.
+   * No-op when keyframes already exist at the exact same `time`.
+   */
+  addKeyframe(
+    clipId: string,
+    partial?: Partial<Omit<Keyframe, "id">>,
+  ): string | null;
+  removeKeyframe(clipId: string, keyframeId: string): boolean;
+  moveKeyframe(clipId: string, keyframeId: string, timeMs: Ms): boolean;
+  setKeyframeValues(
+    clipId: string,
+    keyframeId: string,
+    values: Partial<Pick<Keyframe, "x" | "y" | "scale">>,
+  ): boolean;
+  getSelectedKeyframe(): { clipId: string; keyframeId: string } | null;
+  setSelectedKeyframe(
+    target: { clipId: string; keyframeId: string } | null,
+  ): void;
+
   // history
   canUndo(): boolean;
   canRedo(): boolean;
@@ -237,6 +286,9 @@ export class Editor implements EditorApi {
   private history = new HistoryStack();
 
   private selectedClipId: string | null = null;
+  private selectedKeyframe: { clipId: string; keyframeId: string } | null =
+    null;
+  private keyframesEnabled: boolean;
   private pxPerSec: number;
   private snap: boolean;
   private locale: Locale;
@@ -248,6 +300,7 @@ export class Editor implements EditorApi {
     this.pxPerSec = clampScale(opts.initialScale ?? DEFAULT_PX_PER_SEC);
     this.snap = opts.initialSnap !== false;
     this.locale = mergeLocale(opts.locale);
+    this.keyframesEnabled = opts.keyframes?.enabled === true;
 
     // Must run before EditorUI builds the Timeline — those layout
     // values are read at canvas init time.
@@ -285,6 +338,9 @@ export class Editor implements EditorApi {
       onDeleteClip: (id) => this.removeClip(id),
       onMoveClip: (id, opts) => this.moveClip(id, opts),
       onResizeClip: (id, edits) => this.resizeClip(id, edits),
+      onSelectKeyframe: (target) => this.setSelectedKeyframe(target),
+      onMoveKeyframe: (clipId, keyframeId, timeMs) =>
+        this.moveKeyframe(clipId, keyframeId, timeMs),
     });
 
     const engineFactory: PlaybackEngineFactory =
@@ -832,6 +888,9 @@ export class Editor implements EditorApi {
       for (const c of t.clips) {
         if (c.id === ignoreClipId) continue;
         targets.push(c.start, clipEnd(c));
+        if (c.keyframes) {
+          for (const kf of c.keyframes) targets.push(c.start + kf.time);
+        }
       }
     }
     let best: Ms = timeMs;
@@ -856,6 +915,165 @@ export class Editor implements EditorApi {
     if (clipId === this.selectedClipId) return;
     this.selectedClipId = clipId;
     this.bus.emit("selectionChange", { clipId });
+    // Clearing the clip selection or moving to a different clip
+    // clears any orphan keyframe selection — selecting a keyframe
+    // outside the current clip would be confusing UX.
+    if (
+      this.selectedKeyframe &&
+      this.selectedKeyframe.clipId !== clipId
+    ) {
+      this.selectedKeyframe = null;
+      this.bus.emit("keyframeSelectionChange", { target: null });
+    }
+    this.ui.render();
+  }
+
+  // ---- keyframes ------------------------------------------------------
+
+  isKeyframesEnabled(): boolean {
+    return this.keyframesEnabled;
+  }
+
+  setKeyframesEnabled(enabled: boolean): void {
+    if (enabled === this.keyframesEnabled) return;
+    this.keyframesEnabled = enabled;
+    // Disabling clears any active keyframe selection (the UI for it
+    // is about to disappear).
+    if (!enabled && this.selectedKeyframe) {
+      this.selectedKeyframe = null;
+      this.bus.emit("keyframeSelectionChange", { target: null });
+    }
+    this.bus.emit("keyframesEnabledChange", { enabled });
+    this.ui.render();
+  }
+
+  addKeyframe(
+    clipId: string,
+    partial: Partial<Omit<Keyframe, "id">> = {},
+  ): string | null {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    if (!trk || !cl) return null;
+    const duration = clipDuration(cl);
+    // Default time = playhead in clip-local coords.
+    const playheadLocal = this.engine.getTime() - cl.start;
+    const rawTime = partial.time ?? playheadLocal;
+    const time = Math.max(0, Math.min(duration, Math.round(rawTime)));
+    // Refuse duplicates at the exact same time — the existing keyframe
+    // already owns this moment.
+    if (cl.keyframes?.some((k) => k.time === time)) return null;
+    // Fill missing axes with whatever's currently interpolated so that
+    // dropping a keyframe doesn't visually jump the preview.
+    const current = getEffectiveTransform(cl, time);
+    const kf: Keyframe = {
+      id: createId("kf"),
+      time,
+      x: partial.x ?? current.x,
+      y: partial.y ?? current.y,
+      scale: partial.scale ?? current.scale,
+    };
+    this.pushHistory();
+    const next = [...(cl.keyframes ?? []), kf].sort(
+      (a, b) => a.time - b.time,
+    );
+    cl.keyframes = next;
+    this.afterMutation();
+    return kf.id;
+  }
+
+  removeKeyframe(clipId: string, keyframeId: string): boolean {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    if (!trk || !cl || !cl.keyframes) return false;
+    const idx = cl.keyframes.findIndex((k) => k.id === keyframeId);
+    if (idx < 0) return false;
+    this.pushHistory();
+    const next = cl.keyframes.slice();
+    next.splice(idx, 1);
+    cl.keyframes = next.length > 0 ? next : undefined;
+    if (
+      this.selectedKeyframe &&
+      this.selectedKeyframe.clipId === clipId &&
+      this.selectedKeyframe.keyframeId === keyframeId
+    ) {
+      this.selectedKeyframe = null;
+      this.bus.emit("keyframeSelectionChange", { target: null });
+    }
+    this.afterMutation();
+    return true;
+  }
+
+  moveKeyframe(clipId: string, keyframeId: string, timeMs: Ms): boolean {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    const kf = cl?.keyframes?.find((k) => k.id === keyframeId);
+    if (!trk || !cl || !kf || !cl.keyframes) return false;
+    const duration = clipDuration(cl);
+    const clamped = Math.max(0, Math.min(duration, Math.round(timeMs)));
+    if (clamped === kf.time) return false;
+    // Reject moves that would collide with another keyframe at the
+    // exact same time — the user can always nudge by 1ms after.
+    if (cl.keyframes.some((k) => k.id !== keyframeId && k.time === clamped)) {
+      return false;
+    }
+    this.pushHistory();
+    kf.time = clamped;
+    cl.keyframes.sort((a, b) => a.time - b.time);
+    this.afterMutation();
+    return true;
+  }
+
+  setKeyframeValues(
+    clipId: string,
+    keyframeId: string,
+    values: Partial<Pick<Keyframe, "x" | "y" | "scale">>,
+  ): boolean {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    const kf = cl?.keyframes?.find((k) => k.id === keyframeId);
+    if (!trk || !cl || !kf) return false;
+    // No-op when nothing actually changed.
+    const eq = (a: number | undefined, b: number | undefined): boolean =>
+      (a ?? 0) === (b ?? 0);
+    const nextX = values.x ?? kf.x;
+    const nextY = values.y ?? kf.y;
+    const nextScale = values.scale ?? kf.scale;
+    if (
+      eq(nextX, kf.x) &&
+      eq(nextY, kf.y) &&
+      eq(nextScale ?? 1, kf.scale ?? 1)
+    ) {
+      return false;
+    }
+    this.pushHistory();
+    if (values.x !== undefined) kf.x = values.x;
+    if (values.y !== undefined) kf.y = values.y;
+    if (values.scale !== undefined) kf.scale = values.scale;
+    this.afterMutation();
+    return true;
+  }
+
+  getSelectedKeyframe(): { clipId: string; keyframeId: string } | null {
+    return this.selectedKeyframe;
+  }
+
+  setSelectedKeyframe(
+    target: { clipId: string; keyframeId: string } | null,
+  ): void {
+    if (
+      target?.clipId === this.selectedKeyframe?.clipId &&
+      target?.keyframeId === this.selectedKeyframe?.keyframeId
+    ) {
+      return;
+    }
+    this.selectedKeyframe = target;
+    // Couple selection to the parent clip — clicking a keyframe makes
+    // the host's clip-level UI light up too.
+    if (target && target.clipId !== this.selectedClipId) {
+      this.selectedClipId = target.clipId;
+      this.bus.emit("selectionChange", { clipId: target.clipId });
+    }
+    this.bus.emit("keyframeSelectionChange", { target });
     this.ui.render();
   }
 

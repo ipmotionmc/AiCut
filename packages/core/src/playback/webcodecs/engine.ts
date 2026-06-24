@@ -1,4 +1,5 @@
 import type { Sample } from "mp4box";
+import { getEffectiveTransform } from "../../keyframes/index.js";
 import type { Clip, Ms, Project } from "../../types.js";
 import type {
   PlaybackEngine,
@@ -559,12 +560,17 @@ export class WebCodecsEngine implements PlaybackEngine {
       if (chosenFrame) {
         const vw = chosenFrame.displayWidth || chosenFrame.codedWidth;
         const vh = chosenFrame.displayHeight || chosenFrame.codedHeight;
-        const scale = Math.min(cw / vw, ch / vh);
-        const dw = vw * scale;
-        const dh = vh * scale;
-        const dx = (cw - dw) / 2;
-        const dy = (ch - dh) / 2;
-        this.ctx.drawImage(chosenFrame, dx, dy, dw, dh);
+        const baseScale = Math.min(cw / vw, ch / vh);
+        const dw = vw * baseScale;
+        const dh = vh * baseScale;
+        // Compose keyframe transform on top of the centered letterbox.
+        // Identity transform reduces to a plain centered drawImage.
+        const t = getEffectiveTransform(clip, localMs);
+        this.ctx.save();
+        this.ctx.translate(cw / 2 + t.x, ch / 2 + t.y);
+        this.ctx.scale(t.scale, t.scale);
+        this.ctx.drawImage(chosenFrame, -dw / 2, -dh / 2, dw, dh);
+        this.ctx.restore();
       }
       // Keep the decoder fed for upcoming frames.
       this.feedDecoder(src);

@@ -22,6 +22,7 @@ export type HitTarget =
   | { kind: "clip"; trackIndex: number; clipId: string }
   | { kind: "clip-handle-left"; trackIndex: number; clipId: string }
   | { kind: "clip-handle-right"; trackIndex: number; clipId: string }
+  | { kind: "keyframe"; trackIndex: number; clipId: string; keyframeId: string }
   | { kind: "phantom-new-track" }
   /** Drag the thumb itself — caller stores pointerStart + scrollStart. */
   | { kind: "scrollbar-thumb-v"; thumbY: number; thumbLen: number }
@@ -41,7 +42,13 @@ export interface HitContext {
   viewportWidth: number;
   viewportHeight: number;
   isDragging: boolean;
+  /** When true, hit-test keyframe diamonds before the broad clip body. */
+  keyframesEnabled: boolean;
 }
+
+/** Pixel half-width of the keyframe diamond hit zone — generous so a
+ *  small target is easy to grab even at low zoom. */
+const KEYFRAME_HIT_RADIUS = 8;
 
 /**
  * Pixel → semantic target. Branches in roughly this order:
@@ -164,6 +171,23 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
       return { kind: "clip-handle-right", trackIndex: ti, clipId: clip.id };
     }
     if (ms >= start && ms < end) {
+      // Keyframe diamonds beat the clip body — checked AFTER the edge
+      // handles (those are usually small/important) but BEFORE returning
+      // the clip itself, so a click on a diamond never just selects the
+      // parent clip.
+      if (ctx.keyframesEnabled && clip.keyframes && clip.keyframes.length > 0) {
+        for (const kf of clip.keyframes) {
+          const kfX = startX + (kf.time / 1000) * ctx.pxPerSec;
+          if (Math.abs(x - kfX) <= KEYFRAME_HIT_RADIUS) {
+            return {
+              kind: "keyframe",
+              trackIndex: ti,
+              clipId: clip.id,
+              keyframeId: kf.id,
+            };
+          }
+        }
+      }
       return { kind: "clip", trackIndex: ti, clipId: clip.id };
     }
   }

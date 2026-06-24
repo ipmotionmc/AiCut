@@ -152,6 +152,14 @@ export function snapTargets(
     for (const c of t.clips) {
       if (c.id === ignoreClipId) continue;
       arr.push(c.start, c.start + (c.out - c.in));
+      // Each keyframe is a timeline-absolute snap target. Without this
+      // keyframes can't snap to each other (or to clip drags hitting
+      // a keyframe's time). Note: a keyframe's own time is also a
+      // legit target during its own drag — same-time check in the
+      // snap distance loop handles "snap to self" as a zero-cost no-op.
+      if (c.keyframes) {
+        for (const kf of c.keyframes) arr.push(c.start + kf.time);
+      }
     }
   }
   return arr;

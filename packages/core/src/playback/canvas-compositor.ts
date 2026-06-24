@@ -1,3 +1,4 @@
+import { getEffectiveTransform } from "../keyframes/index.js";
 import type { Clip, Ms, Project } from "../types.js";
 import type {
   PlaybackEngine,
@@ -362,15 +363,23 @@ export class CanvasCompositorEngine implements PlaybackEngine {
     this.ctx.clearRect(0, 0, cw, ch);
     const clip = this.currentClipId ? this.clipById(this.currentClipId) : null;
     const v = clip ? this.videos.get(clip.sourceId) : null;
-    if (v && v.videoWidth > 0 && v.videoHeight > 0) {
+    if (v && v.videoWidth > 0 && v.videoHeight > 0 && clip) {
       const vw = v.videoWidth;
       const vh = v.videoHeight;
-      const scale = Math.min(cw / vw, ch / vh);
-      const dw = vw * scale;
-      const dh = vh * scale;
-      const dx = (cw - dw) / 2;
-      const dy = (ch - dh) / 2;
-      this.ctx.drawImage(v, dx, dy, dw, dh);
+      const baseScale = Math.min(cw / vw, ch / vh);
+      const dw = vw * baseScale;
+      const dh = vh * baseScale;
+      const cx = cw / 2;
+      const cy = ch / 2;
+      // Compose keyframe transform on top of the centered letterbox.
+      // Identity transform (no keyframes / disabled) → math reduces to
+      // a plain centered drawImage, same as before.
+      const t = getEffectiveTransform(clip, this.timeMs - clip.start);
+      this.ctx.save();
+      this.ctx.translate(cx + t.x, cy + t.y);
+      this.ctx.scale(t.scale, t.scale);
+      this.ctx.drawImage(v, -dw / 2, -dh / 2, dw, dh);
+      this.ctx.restore();
       this.paintedFrames += 1;
     }
     this.updateBadge();

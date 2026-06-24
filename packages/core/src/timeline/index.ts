@@ -77,6 +77,25 @@ export interface TimelineOptions {
   onChange?: (project: Project) => void;
 
   /**
+   * Hosts wire these to forward keyframe edits to the Editor. The
+   * Timeline only paints + hit-tests; mutation goes through these
+   * callbacks so the Editor can push history + emit events.
+   */
+  onSelectKeyframe?: (
+    target: { clipId: string; keyframeId: string } | null,
+  ) => void;
+  onMoveKeyframe?: (
+    clipId: string,
+    keyframeId: string,
+    timeMs: Ms,
+  ) => void;
+
+  /** Host-driven state mirror — Editor passes these on every render
+   *  via `Timeline.setKeyframeState`. */
+  keyframesEnabled?: boolean;
+  selectedKeyframe?: { clipId: string; keyframeId: string } | null;
+
+  /**
    * Lets the host predict where a drop will actually land — used to
    * keep the drag-ghost visual honest. The Editor wires this to its
    * smart routing (intended → source → other → new track), so the
@@ -111,7 +130,19 @@ interface DragTrim {
 interface DragScrub {
   kind: "scrub";
 }
-type DragCtx = DragMove | DragTrim | DragScrub;
+interface DragKeyframe {
+  kind: "keyframe-drag";
+  clipId: string;
+  keyframeId: string;
+  trackIndex: number;
+  pointerStartX: number;
+  originalTimeMs: Ms;
+  /** Latest snapped time during the drag — committed once on pointer-up
+   *  so the history stack records one entry per drag, not one per
+   *  rAF tick. Draw uses this to render the ghost position. */
+  ghostTimeMs: Ms;
+}
+type DragCtx = DragMove | DragTrim | DragScrub | DragKeyframe;
 
 const SNAP_PX = 8;
 const DEFAULT_SCALE = 80;
@@ -151,6 +182,10 @@ export class Timeline {
   private readOnly: boolean;
   private autoFitEnabled: boolean;
   private locale: Locale;
+  private keyframesEnabled = false;
+  private selectedKeyframe:
+    | { clipId: string; keyframeId: string }
+    | null = null;
 
   private scrollLeft = 0;
   private scrollTop = 0;
@@ -219,6 +254,8 @@ export class Timeline {
     this.readOnly = opts.readOnly === true;
     this.autoFitEnabled = opts.autoFit !== false;
     this.locale = mergeLocale(opts.locale);
+    this.keyframesEnabled = opts.keyframesEnabled === true;
+    this.selectedKeyframe = opts.selectedKeyframe ?? null;
 
     this.root.classList.add("aicut-timeline-canvas");
     this.root.innerHTML = "";
@@ -602,7 +639,41 @@ export class Timeline {
       scrollbarActiveY: this.scrollbarDrag?.axis === "v",
       scrollbarActiveX: this.scrollbarDrag?.axis === "h",
       locale: this.locale,
+      keyframesEnabled: this.keyframesEnabled,
+      selectedKeyframe: this.selectedKeyframe,
+      keyframeDragGhost:
+        this.drag?.kind === "keyframe-drag"
+          ? {
+              clipId: this.drag.clipId,
+              keyframeId: this.drag.keyframeId,
+              ghostTimeMs: this.drag.ghostTimeMs,
+            }
+          : null,
     };
+  }
+
+  /** Host-pushed state — Editor calls this when its keyframe mode
+   *  changes or when a keyframe is selected/deselected externally. */
+  setKeyframeState(state: {
+    enabled?: boolean;
+    selected?: { clipId: string; keyframeId: string } | null;
+  }): void {
+    let dirty = false;
+    if (state.enabled !== undefined && state.enabled !== this.keyframesEnabled) {
+      this.keyframesEnabled = state.enabled;
+      dirty = true;
+    }
+    if (state.selected !== undefined) {
+      const a = this.selectedKeyframe;
+      const b = state.selected;
+      const same =
+        a?.clipId === b?.clipId && a?.keyframeId === b?.keyframeId;
+      if (!same) {
+        this.selectedKeyframe = b;
+        dirty = true;
+      }
+    }
+    if (dirty) this.scheduleRender();
   }
 
   private readStyle(): DrawStyle {
@@ -729,6 +800,32 @@ export class Timeline {
       );
       this.timeMs = ms;
       this.opts.onSeek?.(ms);
+      this.scheduleRender();
+      return;
+    }
+
+    if (target.kind === "keyframe") {
+      // Look up the current keyframe time (clip-local).
+      const found = findClip(this.project, target.clipId);
+      const kf = found?.clip.keyframes?.find((k) => k.id === target.keyframeId);
+      if (!found || !kf) return;
+      this.selectedKeyframe = {
+        clipId: target.clipId,
+        keyframeId: target.keyframeId,
+      };
+      this.opts.onSelectKeyframe?.({
+        clipId: target.clipId,
+        keyframeId: target.keyframeId,
+      });
+      this.drag = {
+        kind: "keyframe-drag",
+        clipId: target.clipId,
+        keyframeId: target.keyframeId,
+        trackIndex: target.trackIndex,
+        pointerStartX: x,
+        originalTimeMs: kf.time,
+        ghostTimeMs: kf.time,
+      };
       this.scheduleRender();
       return;
     }
@@ -913,6 +1010,30 @@ export class Timeline {
       this.processMoveDrag(x, y);
       this.scheduleRender();
       this.maybeStartDragAutoScroll();
+      return;
+    }
+
+    if (this.drag.kind === "keyframe-drag") {
+      // Compute the snapped clip-local time and stash it on the drag
+      // struct. The actual mutation is deferred to pointer-up so the
+      // history stack gets a single entry per drag (not one per tick).
+      const found = findClip(this.project, this.drag.clipId);
+      if (!found) return;
+      const clip = found.clip;
+      const duration = clip.out - clip.in;
+      const dxPx = x - this.drag.pointerStartX;
+      const dxMs = (dxPx / this.pxPerSec) * 1000;
+      const nextLocal = Math.max(
+        0,
+        Math.min(duration, this.drag.originalTimeMs + dxMs),
+      );
+      const snappedAbs = this.applySnap(clip.start + nextLocal, null);
+      const snappedLocal = Math.max(
+        0,
+        Math.min(duration, snappedAbs - clip.start),
+      );
+      this.drag.ghostTimeMs = Math.round(snappedLocal);
+      this.scheduleRender();
       return;
     }
 
@@ -1102,6 +1223,14 @@ export class Timeline {
         });
         this.opts.onChange?.(this.getProject());
       }
+    } else if (drag.kind === "keyframe-drag") {
+      if (drag.ghostTimeMs !== drag.originalTimeMs) {
+        this.opts.onMoveKeyframe?.(
+          drag.clipId,
+          drag.keyframeId,
+          drag.ghostTimeMs,
+        );
+      }
     } else if (drag.kind === "trim-left" || drag.kind === "trim-right") {
       const found = findClip(this.project, drag.clipId);
       if (found) {
@@ -1210,6 +1339,7 @@ export class Timeline {
       viewportWidth: this.viewportWidth,
       viewportHeight: this.viewportHeight,
       isDragging: this.drag?.kind === "move",
+      keyframesEnabled: this.keyframesEnabled,
     });
   }
 

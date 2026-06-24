@@ -57,6 +57,19 @@ export interface DrawState {
   scrollbarActiveX: boolean;
   /** Resolved locale used for canvas-painted labels. */
   locale: Locale;
+  /** When true, paint a diamond marker on each clip per keyframe.
+   *  Wired to `Editor.isKeyframesEnabled()`. */
+  keyframesEnabled: boolean;
+  /** Currently selected keyframe (rendered with brand-color fill). */
+  selectedKeyframe: { clipId: string; keyframeId: string } | null;
+  /** While a keyframe-drag is in flight, the dragged diamond paints
+   *  at this ghost time instead of its committed time so the visual
+   *  follows the cursor. */
+  keyframeDragGhost: {
+    clipId: string;
+    keyframeId: string;
+    ghostTimeMs: number;
+  } | null;
   /**
    * In-flight drag preview. While set, the clip with `clipId` is
    * drawn faded at its real position AND a fully-opaque "ghost" of it
@@ -563,6 +576,49 @@ function drawClipAt(
     ctx.fillRect(startX + 2, y + 12, 2, h - 24);
     ctx.fillRect(startX + widthPx - 4, y + 12, 2, h - 24);
   }
+
+  // Keyframe markers — only when keyframe mode is on and the clip has
+  // any. Diamonds sit on the clip body vertical center; the selected
+  // one is filled with the theme's selection ring (brand) color so it
+  // pops against the gradient.
+  if (
+    !dim &&
+    state.keyframesEnabled &&
+    clip.keyframes &&
+    clip.keyframes.length > 0
+  ) {
+    const diamondY = y + h / 2;
+    const halfSize = 5; // visible diamond is 10 × 10 px
+    for (const kf of clip.keyframes) {
+      // While a drag is in flight on THIS keyframe, paint it at the
+      // ghost time so the diamond follows the cursor smoothly.
+      const ghost = state.keyframeDragGhost;
+      const effectiveTime =
+        ghost && ghost.clipId === clip.id && ghost.keyframeId === kf.id
+          ? ghost.ghostTimeMs
+          : kf.time;
+      const kfX = startX + (effectiveTime / 1000) * pxPerSec;
+      // Cheap viewport cull — diamonds outside the canvas don't paint.
+      if (kfX < baseX - halfSize || kfX > state.viewportWidth + halfSize) continue;
+      const isSelected =
+        state.selectedKeyframe?.clipId === clip.id &&
+        state.selectedKeyframe?.keyframeId === kf.id;
+      ctx.beginPath();
+      ctx.moveTo(kfX, diamondY - halfSize);
+      ctx.lineTo(kfX + halfSize, diamondY);
+      ctx.lineTo(kfX, diamondY + halfSize);
+      ctx.lineTo(kfX - halfSize, diamondY);
+      ctx.closePath();
+      ctx.fillStyle = isSelected
+        ? style.selectedRing
+        : withAlpha(style.text, 0.85);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.65)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+
   ctx.restore();
 }
 

@@ -23,6 +23,14 @@ export interface UICallbacks extends ToolbarCallbacks {
     clipId: string,
     edits: Partial<Pick<Clip, "in" | "out" | "start">>,
   ) => void;
+  onSelectKeyframe: (
+    target: { clipId: string; keyframeId: string } | null,
+  ) => void;
+  onMoveKeyframe: (
+    clipId: string,
+    keyframeId: string,
+    timeMs: Ms,
+  ) => void;
 }
 
 /**
@@ -101,10 +109,14 @@ export class EditorUI {
       snap: editor.getSnap(),
       autoFit: true,
       locale,
+      keyframesEnabled: editor.isKeyframesEnabled(),
+      selectedKeyframe: editor.getSelectedKeyframe(),
       onSeek: cb.onSeek,
       onSelectClip: cb.onSelectClip,
       onMoveClip: cb.onMoveClip,
       onResizeClip: cb.onResizeClip,
+      onSelectKeyframe: cb.onSelectKeyframe,
+      onMoveKeyframe: cb.onMoveKeyframe,
       onScaleChange: cb.onScaleChange,
       onDeleteTrack: (trackId) => editor.removeTrack(trackId),
       // Mirror the editor's smart routing into the drag preview so
@@ -206,6 +218,10 @@ export class EditorUI {
     this.timeline.setScale(pxPerSec);
     this.timeline.setSelection(selectedClipId);
     this.timeline.setSnap(snap);
+    this.timeline.setKeyframeState({
+      enabled: this.editor.isKeyframesEnabled(),
+      selected: this.editor.getSelectedKeyframe(),
+    });
   }
 
   /** Playback-fast path: nudge playhead + toolbar time label only. */
