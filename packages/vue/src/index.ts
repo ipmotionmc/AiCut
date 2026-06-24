@@ -10,5 +10,15 @@ export type {
   EditorApi,
   TimelineOptions,
   Locale,
+  PlaybackEngine,
+  PlaybackEngineFactory,
+  PlaybackEngineOptions,
 } from "@aicut/core";
-export { createEmptyProject, createId, localeEn, localeZh } from "@aicut/core";
+export {
+  createEmptyProject,
+  createId,
+  localeEn,
+  localeZh,
+  HtmlVideoEngine,
+  htmlVideoEngineFactory,
+} from "@aicut/core";

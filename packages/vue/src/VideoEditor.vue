@@ -5,6 +5,7 @@ import {
   type EditorApi,
   type Locale,
   type Ms,
+  type PlaybackEngineFactory,
   type Project,
   type Theme,
 } from "@aicut/core";
@@ -19,6 +20,13 @@ const props = defineProps<{
   theme?: Theme;
   /** UI string overrides (English default). Reactive — swap to `localeZh` for Chinese. */
   locale?: Partial<Locale>;
+  /**
+   * Initial-only factory for a custom playback engine. Defaults to the
+   * built-in `HtmlVideoEngine`. Pass `WebCodecsEngine` (v0.6+) or your
+   * own engine to override. Bound at mount; later prop changes are
+   * ignored.
+   */
+  playbackEngine?: PlaybackEngineFactory;
 }>();
 
 const emit = defineEmits<{
@@ -48,6 +56,7 @@ onMounted(() => {
     project: props.defaultProject,
     theme: props.theme,
     locale: props.locale,
+    playbackEngine: props.playbackEngine,
   });
 
   offs.push(

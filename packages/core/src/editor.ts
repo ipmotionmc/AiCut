@@ -13,7 +13,11 @@ import {
   trackEnd,
 } from "./model.js";
 import { wouldOverlap } from "./timeline/layout.js";
-import { HtmlVideoEngine, type PlaybackEngine } from "./playback/index.js";
+import {
+  HtmlVideoEngine,
+  type PlaybackEngine,
+  type PlaybackEngineFactory,
+} from "./playback/index.js";
 import { applyTheme } from "./theme.js";
 import { type Locale, mergeLocale } from "./i18n.js";
 import type {
@@ -45,6 +49,16 @@ export interface EditorOptions {
    * Call `editor.setLocale(...)` to switch at runtime.
    */
   locale?: Partial<Locale>;
+  /**
+   * Optional factory for a custom playback engine. Receives the
+   * editor's preview host element + the initial project, returns
+   * anything satisfying `PlaybackEngine`. Defaults to the built-in
+   * `HtmlVideoEngine` (one hidden `<video>` per source, swap on
+   * boundaries). Hosts that need frame-accurate editing, multi-track
+   * compositing, transitions, etc. pass a `WebCodecsEngine` factory
+   * (v0.6+) or their own.
+   */
+  playbackEngine?: PlaybackEngineFactory;
 }
 
 export interface EditorEventMap {
@@ -233,7 +247,9 @@ export class Editor implements EditorApi {
       onResizeClip: (id, edits) => this.resizeClip(id, edits),
     });
 
-    this.engine = new HtmlVideoEngine({
+    const engineFactory: PlaybackEngineFactory =
+      opts.playbackEngine ?? ((o) => new HtmlVideoEngine(o));
+    this.engine = engineFactory({
       host: this.ui.previewHost,
       project: this.project,
     });

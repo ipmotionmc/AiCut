@@ -13,6 +13,7 @@ import {
   type EditorApi,
   type Locale,
   type Ms,
+  type PlaybackEngineFactory,
   type Project,
   type Theme,
 } from "@aicut/core";
@@ -68,6 +69,15 @@ export interface VideoEditorProps {
   headerLeft?: ReactNode;
   /** Right side of the editor header — conventionally Share / Export / profile. */
   headerRight?: ReactNode;
+
+  /**
+   * Initial-only — picks the playback engine used by the underlying
+   * core Editor. Defaults to the built-in `HtmlVideoEngine`. Pass a
+   * factory to plug in a custom engine (WebCodecs, WebGL compositor,
+   * IPC bridge to a native player, …). Swapping this prop after mount
+   * has no effect — the editor binds its engine at construction.
+   */
+  playbackEngine?: PlaybackEngineFactory;
 }
 
 /**
@@ -107,6 +117,7 @@ export function VideoEditor(props: VideoEditorProps) {
       project: cbRef.current.defaultProject,
       theme: cbRef.current.theme,
       locale: cbRef.current.locale,
+      playbackEngine: cbRef.current.playbackEngine,
     });
     editorRef.current = editor;
     setSlots({
