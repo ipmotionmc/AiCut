@@ -273,6 +273,10 @@ export function App() {
   // pipeline. Data round-trips either way, so flipping off and back on
   // doesn't lose the keyframes.
   const [keyframesEnabled, setKeyframesEnabled] = useState<boolean>(false);
+  // Jump-to-clip-edge nav cluster (|◀ ▶|) + I/O keyboard shortcuts.
+  // Off by default — the buttons take toolbar space and the I/O keys
+  // would shadow page typing, so hosts opt in like they do for kfs.
+  const [clipEdgeNavEnabled, setClipEdgeNavEnabled] = useState<boolean>(false);
   const playbackEngine: PlaybackEngineFactory = useMemo(() => {
     if (engineKind === "canvas") {
       return (opts) => new CanvasCompositorEngine({ ...opts, debug: true });
@@ -393,6 +397,7 @@ export function App() {
           trackHeight={trackHeight}
           timelineHeight={timelineHeight}
           keyframes={{ enabled: keyframesEnabled }}
+          clipEdgeNav={{ enabled: clipEdgeNavEnabled }}
           style={{ height: "100%" }}
           headerLeft={
             showHeader ? (
@@ -665,6 +670,17 @@ export function App() {
               onChange={(e) => setKeyframesEnabled(e.target.checked)}
             />
             <span>Enable keyframe animation (X / Y / Scale)</span>
+          </label>
+        </div>
+        <div className="demo-row demo-checkbox-row">
+          <label>
+            <input
+              type="checkbox"
+              data-testid="demo-clip-edge-nav-toggle"
+              checked={clipEdgeNavEnabled}
+              onChange={(e) => setClipEdgeNavEnabled(e.target.checked)}
+            />
+            <span>Enable "jump to clip start / end" (|◀ ▶|, I / O)</span>
           </label>
         </div>
         <p className="demo-engine-help">

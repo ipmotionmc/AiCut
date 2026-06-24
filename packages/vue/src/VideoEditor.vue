@@ -48,6 +48,13 @@ const props = defineProps<{
    * Data is preserved when disabled.
    */
   keyframes?: { enabled?: boolean };
+  /**
+   * Jump-to-clip-edge toolbar cluster (|◀ ▶|) + I/O keyboard shortcuts.
+   * Reactive — set `{ enabled: true }` to surface the buttons next to
+   * the keyframe diamond and bind the shortcuts. Off hides the buttons
+   * entirely (no toolbar space cost).
+   */
+  clipEdgeNav?: { enabled?: boolean };
 }>();
 
 const emit = defineEmits<{
@@ -88,6 +95,7 @@ onMounted(() => {
       ? { timelineHeight: props.timelineHeight }
       : {}),
     ...(props.keyframes != null ? { keyframes: props.keyframes } : {}),
+    ...(props.clipEdgeNav != null ? { clipEdgeNav: props.clipEdgeNav } : {}),
   });
 
   offs.push(
@@ -132,6 +140,18 @@ watch(
     const desired = enabled === true;
     if (editor.isKeyframesEnabled() !== desired) {
       editor.setKeyframesEnabled(desired);
+    }
+  },
+);
+
+// Reactive — flip clip-edge nav cluster (|◀ ▶|) + I/O shortcuts.
+watch(
+  () => props.clipEdgeNav?.enabled,
+  (enabled) => {
+    if (!editor) return;
+    const desired = enabled === true;
+    if (editor.isClipEdgeNavEnabled() !== desired) {
+      editor.setClipEdgeNavEnabled(desired);
     }
   },
 );

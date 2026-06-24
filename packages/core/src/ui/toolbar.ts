@@ -51,6 +51,10 @@ interface ToolbarState {
   /** Enable the |◀ / ▶| jump-to-clip-edge buttons. Mirrors the
    *  selection-driven gating used by split / trim. */
   canSeekClipEdge: boolean;
+  /** Host opt-in for the clip-edge nav cluster. Matches the keyframes
+   *  toggle pattern: when off the |◀ / ▶| buttons are completely
+   *  hidden (display: none) so they don't take up toolbar real estate. */
+  clipEdgeNavEnabled: boolean;
 }
 
 /**
@@ -122,6 +126,7 @@ export class Toolbar {
       () => cb.onSeekClipStart(),
       "aicut-seek-clip-start",
     );
+    this.seekClipStartBtn.style.display = "none"; // gated by render() on clipEdgeNavEnabled
     this.keyframeBtn = mkIconButton(
       "keyframeOutline",
       locale.keyframeAdd,
@@ -135,6 +140,7 @@ export class Toolbar {
       () => cb.onSeekClipEnd(),
       "aicut-seek-clip-end",
     );
+    this.seekClipEndBtn.style.display = "none"; // gated by render() on clipEdgeNavEnabled
     // Order: trim handles, then [|◀ ◇ ▶|] — start, kf, end — so the
     // three nav buttons cluster around the keyframe affordance.
     left.append(
@@ -227,6 +233,14 @@ export class Toolbar {
     if (!this.lastState || this.lastState.canTrim !== state.canTrim) {
       this.trimLeftBtn.disabled = !state.canTrim;
       this.trimRightBtn.disabled = !state.canTrim;
+    }
+    if (
+      !this.lastState ||
+      this.lastState.clipEdgeNavEnabled !== state.clipEdgeNavEnabled
+    ) {
+      const display = state.clipEdgeNavEnabled ? "" : "none";
+      this.seekClipStartBtn.style.display = display;
+      this.seekClipEndBtn.style.display = display;
     }
     if (
       !this.lastState ||

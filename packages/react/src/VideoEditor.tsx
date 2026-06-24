@@ -109,6 +109,14 @@ export interface VideoEditorProps {
   onKeyframeSelectionChange?: (
     target: { clipId: string; keyframeId: string } | null,
   ) => void;
+  /**
+   * Jump-to-clip-edge toolbar cluster (|◀ ▶|) + I/O keyboard shortcuts.
+   * Reactive — set `{ enabled: true }` to surface the buttons next to
+   * the keyframe diamond and bind the shortcuts. Off hides the buttons
+   * entirely (display: none, no toolbar space cost) and lets I/O
+   * fall through to the page.
+   */
+  clipEdgeNav?: { enabled?: boolean };
 }
 
 /**
@@ -160,6 +168,9 @@ export function VideoEditor(props: VideoEditorProps) {
         : {}),
       ...(cbRef.current.keyframes != null
         ? { keyframes: cbRef.current.keyframes }
+        : {}),
+      ...(cbRef.current.clipEdgeNav != null
+        ? { clipEdgeNav: cbRef.current.clipEdgeNav }
         : {}),
     });
     editorRef.current = editor;
@@ -219,6 +230,15 @@ export function VideoEditor(props: VideoEditorProps) {
       editor.setKeyframesEnabled(desired);
     }
   }, [props.keyframes?.enabled]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const desired = props.clipEdgeNav?.enabled === true;
+    if (editor.isClipEdgeNavEnabled() !== desired) {
+      editor.setClipEdgeNavEnabled(desired);
+    }
+  }, [props.clipEdgeNav?.enabled]);
 
   // Reactive — the underlying CSS custom property can be updated on
   // the container any time; the timeline picks up the new height

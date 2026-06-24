@@ -229,6 +229,7 @@ export class EditorUI {
       canSplit: this.canSplitAt(time),
       canTrim: this.canTrimAt(time, selectedClipId),
       canSeekClipEdge: selectedClipId != null,
+      clipEdgeNavEnabled: this.editor.isClipEdgeNavEnabled(),
       snap,
       pxPerSec,
       ...kfState,
@@ -266,6 +267,7 @@ export class EditorUI {
       canSplit: this.canSplitAt(timeMs),
       canTrim: this.canTrimAt(timeMs, selectedClipId),
       canSeekClipEdge: selectedClipId != null,
+      clipEdgeNavEnabled: this.editor.isClipEdgeNavEnabled(),
       snap: this.editor.getSnap(),
       pxPerSec: this.editor.getScale(),
       ...kfState,
@@ -394,10 +396,10 @@ export class EditorUI {
       } else if (e.code === "KeyW") {
         e.preventDefault();
         cb.onTrimRight();
-      } else if (e.code === "KeyI") {
+      } else if (e.code === "KeyI" && this.editor.isClipEdgeNavEnabled()) {
         e.preventDefault();
         cb.onSeekClipStart();
-      } else if (e.code === "KeyO") {
+      } else if (e.code === "KeyO" && this.editor.isClipEdgeNavEnabled()) {
         e.preventDefault();
         cb.onSeekClipEnd();
       } else if ((e.metaKey || e.ctrlKey) && e.code === "KeyZ") {

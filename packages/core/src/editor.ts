@@ -101,6 +101,14 @@ export interface EditorOptions {
    * `WebCodecsEngine` for live preview.
    */
   keyframes?: { enabled?: boolean };
+  /**
+   * Show the |◀ / ▶| "jump to clip start / end" toolbar buttons and
+   * bind the I / O keyboard shortcuts. Off by default — hosts opt in
+   * the same way they do for keyframes. When off the buttons are
+   * completely hidden (display: none) so they don't take up toolbar
+   * space, and the I / O keys fall through to the page.
+   */
+  clipEdgeNav?: { enabled?: boolean };
 }
 
 export interface EditorEventMap {
@@ -125,6 +133,8 @@ export interface EditorEventMap {
   };
   /** Keyframe-mode toggle changed (Editor.setKeyframesEnabled). */
   keyframesEnabledChange: { enabled: boolean };
+  /** Jump-to-clip-edge nav toggle changed (Editor.setClipEdgeNavEnabled). */
+  clipEdgeNavEnabledChange: { enabled: boolean };
   /** Zoom (px/sec) changed. */
   scaleChange: { pxPerSec: number };
   /** Snap toggle changed. */
@@ -208,6 +218,8 @@ export interface EditorApi {
   // keyframes
   isKeyframesEnabled(): boolean;
   setKeyframesEnabled(enabled: boolean): void;
+  isClipEdgeNavEnabled(): boolean;
+  setClipEdgeNavEnabled(enabled: boolean): void;
   /** Screen-space CSS-pixel rect of the active rendered frame, post
    *  transform, relative to the editor preview. Null when none. */
   getActiveFrameRect():
@@ -358,6 +370,7 @@ export class Editor implements EditorApi {
   private selectedKeyframe: { clipId: string; keyframeId: string } | null =
     null;
   private keyframesEnabled: boolean;
+  private clipEdgeNavEnabled: boolean;
   private pxPerSec: number;
   private snap: boolean;
   private locale: Locale;
@@ -370,6 +383,7 @@ export class Editor implements EditorApi {
     this.snap = opts.initialSnap !== false;
     this.locale = mergeLocale(opts.locale);
     this.keyframesEnabled = opts.keyframes?.enabled === true;
+    this.clipEdgeNavEnabled = opts.clipEdgeNav?.enabled === true;
 
     // Must run before EditorUI builds the Timeline — those layout
     // values are read at canvas init time.
@@ -1042,6 +1056,17 @@ export class Editor implements EditorApi {
       this.bus.emit("keyframeSelectionChange", { target: null });
     }
     this.bus.emit("keyframesEnabledChange", { enabled });
+    this.ui.render();
+  }
+
+  isClipEdgeNavEnabled(): boolean {
+    return this.clipEdgeNavEnabled;
+  }
+
+  setClipEdgeNavEnabled(enabled: boolean): void {
+    if (enabled === this.clipEdgeNavEnabled) return;
+    this.clipEdgeNavEnabled = enabled;
+    this.bus.emit("clipEdgeNavEnabledChange", { enabled });
     this.ui.render();
   }
 
