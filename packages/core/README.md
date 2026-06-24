@@ -266,6 +266,55 @@ setTimelineMetrics({ trackHeight: 36, rulerHeight: 20 });
 
 `TRACK_HEIGHT` and `RULER_HEIGHT` are ESM live bindings — re-reading them after the setter returns the updated values.
 
+## Keyframes (per-clip X / Y / scale animation)
+
+Off by default. Flip on, and the canvas + WebCodecs engines linearly interpolate per-clip transforms between adjacent keyframes — the bread-and-butter motion-template feature (think CapCut "动画").
+
+```ts
+const editor = Editor.create({
+  container,
+  project,
+  keyframes: { enabled: true },
+});
+
+// Default time = playhead in clip-local coords; default values
+// = whatever's currently interpolated. Both can be overridden.
+const id = editor.addKeyframe("clip-1");
+editor.moveKeyframe("clip-1", id, 1500);            // shift to t=1.5s
+editor.setKeyframeValues("clip-1", id, { scale: 1.5 });
+editor.removeKeyframe("clip-1", id);
+```
+
+The data lives on `Clip.keyframes: Keyframe[]` — sparse on purpose, so a host can pin only `scale` and leave `x` / `y` to interpolate from identity (`0`, `0`, `1`):
+
+```ts
+interface Keyframe {
+  id: string;
+  time: Ms;       // clip-local; 0 = clip's `in`
+  x?: number;     // pixel translate, default 0
+  y?: number;
+  scale?: number; // multiplier on intrinsic frame size, default 1
+}
+```
+
+| Behavior |  |
+| --- | --- |
+| **Data model** | Optional `keyframes?: Keyframe[]` on `Clip`. Legacy projects without the field are unchanged. |
+| **Undo / redo** | Every mutator pushes onto the existing `HistoryStack`. ⌘Z works. |
+| **Snap** | Each keyframe contributes a timeline-absolute target — dragging snaps to other keyframes / clip edges / playhead. |
+| **Split** | `splitClipAt` partitions keyframes across the cut; the right half's clip-local times shift automatically. |
+| **HtmlVideoEngine** | Cannot apply per-frame transforms (raw `<video>`). Renders identity. Swap engines for live preview. |
+| **Backend export** | v0.6 backends log and ignore keyframes — exports are identity-transform. Full ffmpeg compilation is v0.7 work. |
+
+Read the live transform anywhere (e.g. host-rendered thumbnails) via the pure helper:
+
+```ts
+import { getEffectiveTransform, getTransformAtTimelineTime } from "@aicut/core";
+
+const t = getEffectiveTransform(clip, localMs);
+// → { x: 100, y: 0, scale: 1.5 }
+```
+
 ## Lighting picker (opt-in sub-entry)
 
 A separate component for AI-relighting workflows — drag a light dot around a 3D sphere wrapping a subject frame, control brightness / color / direction. Three.js is bundled only on this sub-entry, so consumers of the video editor pay zero bytes for it.

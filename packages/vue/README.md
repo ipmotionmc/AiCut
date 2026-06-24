@@ -233,6 +233,43 @@ const factory = computed(() =>
 
 `WebCodecsEngine` v1 covers single-track MP4/MOV playback (H.264 / HEVC / VP9 / AV1 — whatever the browser's `VideoDecoder` supports). Multi-track compositing, audio, transitions land in follow-up releases.
 
+## Keyframes (X / Y / scale animation)
+
+Off by default. Flip the `keyframes` prop and the canvas / WebCodecs engines start interpolating per-clip transforms between adjacent keyframes. Diamond markers appear on the timeline; drag them, edit values via the imperative API, snap them to each other.
+
+```vue
+<script setup lang="ts">
+import { ref } from "vue";
+const kfEnabled = ref(true);
+function onKfSelection(t: { clipId: string; keyframeId: string } | null) {
+  console.log(t);
+}
+</script>
+
+<template>
+  <VideoEditor
+    ref="editor"
+    :default-project="project"
+    :keyframes="{ enabled: kfEnabled }"
+    @keyframe-selection-change="onKfSelection"
+  />
+</template>
+```
+
+```ts
+// Imperative — through `editor.value?.api()`
+api.addKeyframe("clip-1");
+api.setKeyframeValues("clip-1", kfId, { scale: 1.5 });
+```
+
+`Keyframe`, `EffectiveTransform`, `getEffectiveTransform`, `getTransformAtTimelineTime`, `IDENTITY_TRANSFORM`, `isIdentityTransform` are all re-exported from `@aicut/vue` for thumbnail / preview rendering outside the editor.
+
+**Limits in v0.6 (preview-only):**
+- `HtmlVideoEngine` renders identity (raw `<video>` has no transform pipeline). Use `CanvasCompositorEngine` or `WebCodecsEngine` for live animation.
+- Backend ffmpeg export ignores keyframes and logs a warning — exports are identity-transform. Backend compilation lands in v0.7.
+
+See [@aicut/core's keyframes section](https://www.npmjs.com/package/@aicut/core#keyframes-per-clip-x--y--scale-animation) for the full API.
+
 ## `<LightingEditor>` (opt-in sub-entry)
 
 A 3D lighting director for AI relighting flows — separate sub-entry; three.js bundles only here.
