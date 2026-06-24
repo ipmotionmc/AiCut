@@ -14,6 +14,27 @@ export const SCALE_MIN = 10;
 export const SCALE_MAX = 400;
 
 /**
+ * Left / right padding inside the timeline canvas, between the header
+ * column (or canvas edge when the header is hidden) and where actual
+ * content (clips + ruler ticks + playhead) is drawn. Without this the
+ * t=0 playhead has its left half clipped, the first clip touches the
+ * canvas edge, and the visual rhythm with the rest of the editor
+ * chrome is off.
+ */
+export const TIMELINE_PAD_LEFT = 12;
+export const TIMELINE_PAD_RIGHT = 12;
+
+/**
+ * Where on the canvas does the timeline CONTENT area start (in CSS
+ * pixels)? Combines the optional header column with the left padding.
+ * Use this instead of `showHeader ? HEADER_WIDTH : 0` everywhere —
+ * one place to change if the padding ever becomes configurable.
+ */
+export function contentLeftX(showHeader: boolean): number {
+  return (showHeader ? HEADER_WIDTH : 0) + TIMELINE_PAD_LEFT;
+}
+
+/**
  * Override the default timeline row + ruler heights. Process-wide — call
  * before / during editor construction. Useful when the editor is mounted
  * in a small viewport (e.g. side-by-side panel on a laptop) and the
@@ -89,15 +110,15 @@ export function trackIndexAt(
   return idx;
 }
 
-/** Convert timeline ms → x pixel coordinate, accounting for header + scroll. */
+/** Convert timeline ms → x pixel coordinate, accounting for header,
+ *  the left padding, and scroll. */
 export function msToX(
   timeMs: Ms,
   pxPerSec: number,
   scrollLeft: number,
   showHeader: boolean,
 ): number {
-  const base = showHeader ? HEADER_WIDTH : 0;
-  return base + (timeMs / 1000) * pxPerSec - scrollLeft;
+  return contentLeftX(showHeader) + (timeMs / 1000) * pxPerSec - scrollLeft;
 }
 
 /** Convert x pixel coordinate back → timeline ms. */
@@ -107,8 +128,10 @@ export function xToMs(
   scrollLeft: number,
   showHeader: boolean,
 ): Ms {
-  const base = showHeader ? HEADER_WIDTH : 0;
-  return Math.max(0, ((x - base + scrollLeft) / pxPerSec) * 1000);
+  return Math.max(
+    0,
+    ((x - contentLeftX(showHeader) + scrollLeft) / pxPerSec) * 1000,
+  );
 }
 
 /**

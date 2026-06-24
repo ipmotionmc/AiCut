@@ -8,6 +8,7 @@ import {
   SCROLLBAR_THICKNESS,
   TRACK_HEIGHT,
   contentHeight,
+  contentLeftX,
   contentWidth,
   trackIndexAt,
   trackY,
@@ -66,7 +67,7 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
   // The bars overlay everything else, so a click on the thumb must NEVER
   // fall through to "select clip" / "seek". Check them before any other
   // region resolves.
-  const baseX = ctx.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(ctx.showHeader);
   const visibleH = ctx.viewportHeight - RULER_HEIGHT - SCROLLBAR_THICKNESS;
   const contentH = contentHeight(ctx.project.tracks, ctx.isDragging);
   // Vertical bar
@@ -209,6 +210,5 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
 }
 
 function msToXLocal(ms: number, ctx: HitContext): number {
-  const base = ctx.showHeader ? HEADER_WIDTH : 0;
-  return base + (ms / 1000) * ctx.pxPerSec - ctx.scrollLeft;
+  return contentLeftX(ctx.showHeader) + (ms / 1000) * ctx.pxPerSec - ctx.scrollLeft;
 }

@@ -17,6 +17,7 @@ import {
   SCROLLBAR_THICKNESS,
   TRACK_HEIGHT,
   contentHeight,
+  contentLeftX,
   contentWidth,
   formatRulerLabel,
   niceTickSeconds,
@@ -116,7 +117,7 @@ export function drawAll(
   ctx.fillStyle = style.bg;
   ctx.fillRect(0, 0, W, H);
 
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   const trackAreaW = W - baseX - SCROLLBAR_THICKNESS;
   const trackAreaH = H - RULER_HEIGHT - SCROLLBAR_THICKNESS;
 
@@ -193,7 +194,7 @@ function drawCoverageGaps(
 ): void {
   const gaps = uncoveredIntervals(state.project);
   if (gaps.length === 0) return;
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   // Span the visible track area, not the (potentially huge) total —
   // pre-clipped by drawAll's pass-2 region anyway, but explicit
   // height keeps the hatch math clean.
@@ -250,7 +251,7 @@ function drawDragGhost(
   }
   if (!real) return;
 
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   const widthPx = Math.max(2, ((real.out - real.in) / 1000) * state.pxPerSec);
   const startX =
     baseX + (ghost.ghostStart / 1000) * state.pxPerSec - state.scrollLeft;
@@ -368,7 +369,7 @@ function drawRuler(
   style: DrawStyle,
 ): void {
   const { pxPerSec, scrollLeft, viewportWidth: W } = state;
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   const rulerW = W - baseX;
 
   ctx.fillStyle = style.bg;
@@ -442,7 +443,7 @@ function drawTrackRow(
   thumbs: ThumbnailRibbon,
 ): void {
   const { viewportWidth: W } = state;
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   const y = trackY(trackIndex);
 
   // Track surface: just the default tint. Drop-target highlight is now
@@ -514,7 +515,7 @@ function drawClipAt(
   warn: boolean,
 ): void {
   const { pxPerSec, scrollLeft } = state;
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   const startX = baseX + (startMs / 1000) * pxPerSec - scrollLeft;
   const widthPx = Math.max(2, ((clip.out - clip.in) / 1000) * pxPerSec);
   const y = trackY(trackIndex) + CLIP_INSET;
@@ -716,7 +717,7 @@ function drawPlayhead(
   state: DrawState,
   style: DrawStyle,
 ): void {
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   const x = baseX + (state.timeMs / 1000) * state.pxPerSec - state.scrollLeft;
   if (x < baseX - 2 || x > state.viewportWidth + 2) return;
 
@@ -729,17 +730,24 @@ function drawPlayhead(
   ctx.stroke();
 
   // Time bubble centered on the playhead at the top of the ruler.
+  // Clamped to the content area's bounds so it doesn't get clipped
+  // (or hidden behind the header column) when the playhead sits at
+  // t=0 or scrolled to the very end. The triangle stays anchored to
+  // the playhead line so the visual link survives the clamp.
   const label = fmtClockMs(state.timeMs);
   ctx.font = "10px system-ui, -apple-system, sans-serif";
   const padX = 6;
   const w = ctx.measureText(label).width + padX * 2;
   const h = 14;
-  const bx = x - w / 2;
+  const contentRight = state.viewportWidth - SCROLLBAR_THICKNESS;
+  const rawBx = x - w / 2;
+  const bx = Math.max(baseX, Math.min(contentRight - w, rawBx));
   const by = 2;
   ctx.fillStyle = style.playhead;
   roundRect(ctx, bx, by, w, h, 4);
   ctx.fill();
-  // Triangle hanging below the bubble.
+  // Triangle hanging below the bubble — keeps the visual link to the
+  // playhead line even when the bubble is clamped.
   ctx.beginPath();
   ctx.moveTo(x - 4, by + h);
   ctx.lineTo(x + 4, by + h);
@@ -818,7 +826,7 @@ function drawScrollbarH(
   style: DrawStyle,
 ): void {
   if (state.scrollbarOpacityX <= 0.01) return;
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   const visibleW = state.viewportWidth - baseX - SCROLLBAR_THICKNESS;
   const contentW = contentWidth(state.project, state.pxPerSec);
   if (contentW <= visibleW) return;

@@ -14,9 +14,11 @@ import {
   SCROLLBAR_INSET,
   SCROLLBAR_MIN_THUMB,
   SCROLLBAR_THICKNESS,
+  TIMELINE_PAD_RIGHT,
   TRACK_HEIGHT,
   clampScale,
   contentHeight,
+  contentLeftX,
   contentWidth,
   findClip,
   snapTargets,
@@ -431,7 +433,7 @@ export class Timeline {
       height: number;
     }>;
   } {
-    const baseX = this.showHeader ? HEADER_WIDTH : 0;
+    const baseX = contentLeftX(this.showHeader);
     const clips: Array<{
       id: string;
       trackIndex: number;
@@ -507,7 +509,7 @@ export class Timeline {
   }
 
   private computeFitScale(): number | null {
-    const baseX = this.showHeader ? HEADER_WIDTH : 0;
+    const baseX = contentLeftX(this.showHeader);
     const w = this.viewportWidth - baseX - 24;
     const dur = projectDuration(this.project);
     if (w <= 0 || dur <= 0) return null;
@@ -515,10 +517,12 @@ export class Timeline {
   }
 
   private maxScrollLeft(): number {
-    const baseX = this.showHeader ? HEADER_WIDTH : 0;
+    const baseX = contentLeftX(this.showHeader);
     const visibleW = this.viewportWidth - baseX - SCROLLBAR_THICKNESS;
     const cw = contentWidth(this.project, this.pxPerSec);
-    return Math.max(0, cw - visibleW + 24);
+    // Tail pad keeps the right padding visible even when scrolled to
+    // the project's end, mirroring the left content padding.
+    return Math.max(0, cw - visibleW + TIMELINE_PAD_RIGHT);
   }
 
   private maxScrollTop(): number {
@@ -756,7 +760,7 @@ export class Timeline {
       return;
     }
     if (target.kind === "scrollbar-track-h") {
-      const baseX = this.showHeader ? HEADER_WIDTH : 0;
+      const baseX = contentLeftX(this.showHeader);
       const page = Math.max(
         80,
         this.viewportWidth - baseX - SCROLLBAR_THICKNESS,
@@ -921,7 +925,7 @@ export class Timeline {
           this.scrollbarDrag.scrollStart +
           (y - this.scrollbarDrag.pointerStart) * ratio;
       } else {
-        const baseX = this.showHeader ? HEADER_WIDTH : 0;
+        const baseX = contentLeftX(this.showHeader);
         const visibleW = this.viewportWidth - baseX - SCROLLBAR_THICKNESS;
         const contentW = contentWidth(this.project, this.pxPerSec);
         const trackLen = visibleW - SCROLLBAR_INSET * 2;
@@ -1293,7 +1297,7 @@ export class Timeline {
           this.pxPerSec = next;
           this.hasAutoFitted = true;
           // Re-anchor: keep the time under the cursor visually pinned.
-          const baseX = this.showHeader ? HEADER_WIDTH : 0;
+          const baseX = contentLeftX(this.showHeader);
           this.scrollLeft =
             (anchorMs / 1000) * this.pxPerSec - (cursorX - baseX);
           this.clampScroll();
@@ -1391,7 +1395,7 @@ export class Timeline {
       }
     }
     if (best !== ms) {
-      const baseX = this.showHeader ? HEADER_WIDTH : 0;
+      const baseX = contentLeftX(this.showHeader);
       this.snapX = baseX + (best / 1000) * this.pxPerSec - this.scrollLeft;
     } else {
       this.snapX = null;
