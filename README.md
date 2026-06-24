@@ -417,9 +417,10 @@ The script is idempotent — already-published versions are skipped, so a re-run
 - [x] Bundled `en` / `zh` locale packs + runtime switch
 - [x] 3D lighting picker (`@aicut/core/lighting` sub-entry)
 - [x] Pluggable `PlaybackEngine` interface (HTML5 default, host can inject)
+- [x] WebCodecs preview engine for frame-accurate seek (`@aicut/core/webcodecs`, PoC: single-track MP4)
 - [ ] Speed adjustment (timeline already reserves the slot)
 - [ ] Audio track rendering + waveform thumbnails
-- [ ] WebCodecs preview engine for frame-accurate seek + transitions
+- [ ] WebCodecs engine: multi-track compositing + transitions
 - [ ] Lighting → relighting backend reference
 - [ ] Hosted demo site
 

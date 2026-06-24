@@ -1,17 +1,15 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * Verifies the new pluggable PlaybackEngine surface end-to-end:
+ * Verifies the pluggable PlaybackEngine surface end-to-end:
  * the demo offers a radio to switch between the default
- * HtmlVideoEngine and the host-supplied CanvasCompositorEngine,
- * and flipping it really swaps the rendering surface (raw <video>
- * vs <canvas> + HUD badge).
- *
- * Both modes must remain interactive — play / pause / seek go
- * through the same EditorApi regardless of which engine answered.
+ * HtmlVideoEngine, a host-supplied CanvasCompositorEngine, and
+ * the opt-in WebCodecsEngine. Flipping the radio really swaps the
+ * rendering surface — and editor controls stay wired regardless of
+ * which engine is active.
  */
 test.describe("PlaybackEngine swap", () => {
-  test("default mode renders via <video>, canvas mode via <canvas> + HUD badge", async ({
+  test("HTML5 ↔ Canvas swap: rendering surface flips, EditorApi stays live", async ({
     page,
   }) => {
     await page.goto("/");
@@ -56,5 +54,40 @@ test.describe("PlaybackEngine swap", () => {
     await expect(preview.locator("canvas")).toHaveCount(0);
     await expect(preview.locator(".aicut-preview__badge")).toHaveCount(0);
     await expect(preview.locator("video")).toHaveCount(2);
+  });
+
+  /**
+   * WebCodecs is gated on the browser exposing VideoDecoder + friends.
+   * System Chrome (Playwright's `channel: 'chrome'`) ships them in 94+,
+   * so this should pass under the standard config. We don't assert on
+   * actual decoded frames — that depends on whether the demo's local
+   * MP4 fixtures are H.264 — only on the engine mount + HUD identity.
+   * Decode quality is a manual / browser-side smoke test.
+   */
+  test("WebCodecs engine swap: canvas + HUD identifies the engine", async ({
+    page,
+  }) => {
+    await page.goto("/");
+
+    const radio = page.getByTestId("demo-engine-webcodecs");
+    await expect(radio).toBeVisible();
+
+    if (await radio.isDisabled()) {
+      test.skip(
+        true,
+        "Browser doesn't expose WebCodecs — skipping WebCodecs swap test.",
+      );
+      return;
+    }
+
+    await radio.check();
+    await expect(radio).toBeChecked();
+
+    const preview = page.getByTestId("aicut-preview");
+    await expect(preview.locator("canvas")).toHaveCount(1);
+    await expect(preview.locator(".aicut-preview__badge")).toHaveText(
+      /engine: webcodecs/,
+    );
+    await expect(preview.locator("video")).toHaveCount(0);
   });
 });

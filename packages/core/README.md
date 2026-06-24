@@ -208,8 +208,30 @@ simply never call that hook. The Editor re-emits engine events as its
 own `time` / `pause` / `error` / `ready` / `change` events, so your host
 code is unaffected by which engine is in use.
 
-A WebCodecs-based engine ships in a follow-up release; for now you can
-wrap the default with your own and incrementally take over.
+### Bundled engines
+
+| Engine | Where | Decoder | Renderer | Cost |
+| --- | --- | --- | --- | --- |
+| `HtmlVideoEngine` | main | browser | raw `<video>` | 0 deps |
+| `CanvasCompositorEngine` | main | browser | `ctx.drawImage` | 0 deps |
+| `WebCodecsEngine` | `@aicut/core/webcodecs` | `VideoDecoder` (frame-accurate) | `ctx.drawImage(VideoFrame)` | bundles mp4box.js (~200 KB) |
+
+The WebCodecs path is on its own sub-entry so consumers who don't ask for it pay nothing for the demuxer. Feature-detect before constructing:
+
+```ts
+import {
+  WebCodecsEngine,
+  isWebCodecsSupported,
+} from "@aicut/core/webcodecs";
+
+const factory: PlaybackEngineFactory = isWebCodecsSupported()
+  ? (opts) => new WebCodecsEngine({ ...opts, debug: true })
+  : htmlVideoEngineFactory;
+
+Editor.create({ container, project, playbackEngine: factory });
+```
+
+`WebCodecsEngine` v1 covers single-track MP4/MOV playback (H.264 / HEVC / VP9 / AV1 — whatever the browser's `VideoDecoder` supports). Multi-track compositing, audio, transitions land in follow-up releases on the same surface.
 
 ## Lighting picker (opt-in sub-entry)
 

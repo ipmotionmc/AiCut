@@ -177,6 +177,33 @@ you don't need a separate `@aicut/core` import to write one.
 See [@aicut/core's playback section](https://www.npmjs.com/package/@aicut/core#playback-engine)
 for the full interface contract.
 
+### WebCodecs engine (opt-in sub-entry)
+
+For frame-accurate playback via the browser's `VideoDecoder` API, import from the sub-entry so mp4box.js (~200 KB) only loads when you ask for it:
+
+```vue
+<script setup lang="ts">
+import { computed } from "vue";
+import { VideoEditor } from "@aicut/vue";
+import {
+  WebCodecsEngine,
+  isWebCodecsSupported,
+} from "@aicut/vue/webcodecs";
+
+const factory = computed(() =>
+  isWebCodecsSupported()
+    ? (opts) => new WebCodecsEngine({ ...opts, debug: true })
+    : undefined,
+);
+</script>
+
+<template>
+  <VideoEditor :playback-engine="factory" /* … */ />
+</template>
+```
+
+`WebCodecsEngine` v1 covers single-track MP4/MOV playback (H.264 / HEVC / VP9 / AV1 — whatever the browser's `VideoDecoder` supports). Multi-track compositing, audio, transitions land in follow-up releases.
+
 ## `<LightingEditor>` (opt-in sub-entry)
 
 A 3D lighting director for AI relighting flows — separate sub-entry; three.js bundles only here.

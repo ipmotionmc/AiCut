@@ -15,6 +15,10 @@ import {
   type TimelineApi,
   type VideoEditorApi,
 } from "@aicut/react";
+import {
+  WebCodecsEngine,
+  isWebCodecsSupported,
+} from "@aicut/react/webcodecs";
 
 /**
  * Two reference themes the demo cycles through. The library itself
@@ -236,22 +240,26 @@ export function App() {
     [localeName],
   );
   // Demo of the new pluggable playback engine — flip between the
-  // default HtmlVideoEngine and a host-supplied CanvasCompositorEngine
-  // (a real second implementation: same browser decode, but rendering
-  // happens via ctx.drawImage on a single canvas + an opt-in HUD).
-  // The engine binds at construction, so we force a VideoEditor
-  // remount via `key={engineKind}` when this changes. Canvas mode
-  // turns `debug: true` ON so the badge is visible — that's the
-  // whole point of the demo. Production hosts construct the engine
-  // without `debug` (default false) and get a clean canvas.
-  const [engineKind, setEngineKind] = useState<"html" | "canvas">("html");
-  const playbackEngine: PlaybackEngineFactory = useMemo(
-    () =>
-      engineKind === "canvas"
-        ? (opts) => new CanvasCompositorEngine({ ...opts, debug: true })
-        : htmlVideoEngineFactory,
-    [engineKind],
-  );
+  // built-in HTML5 engine, a host-supplied Canvas compositor, and the
+  // WebCodecs PoC (frame-accurate, decodes MP4 manually via mp4box.js).
+  // The engine binds at construction, so we force a VideoEditor remount
+  // via `key={engineKind}` when this changes. Canvas + WebCodecs both
+  // opt INTO `debug: true` so the HUD identifies the active engine —
+  // that's the whole point of the demo. Production hosts omit `debug`
+  // (defaults to false) and get a clean canvas.
+  const webCodecsAvailable = isWebCodecsSupported();
+  const [engineKind, setEngineKind] = useState<
+    "html" | "canvas" | "webcodecs"
+  >("html");
+  const playbackEngine: PlaybackEngineFactory = useMemo(() => {
+    if (engineKind === "canvas") {
+      return (opts) => new CanvasCompositorEngine({ ...opts, debug: true });
+    }
+    if (engineKind === "webcodecs") {
+      return (opts) => new WebCodecsEngine({ ...opts, debug: true });
+    }
+    return htmlVideoEngineFactory;
+  }, [engineKind]);
   const [exportStatus, setExportStatus] = useState<ExportStatus>({ running: false });
   const exportAbortRef = useRef<AbortController | null>(null);
   // Latest backend pick — read inside the editor `export` listener
@@ -546,9 +554,30 @@ export function App() {
             />
             <span>Canvas compositor (host-supplied)</span>
           </label>
+          <label
+            title={
+              webCodecsAvailable
+                ? "Decodes MP4 via WebCodecs + mp4box.js. Frame-accurate seek."
+                : "This browser doesn't expose VideoDecoder. Try Chrome 94+ or Safari 17.4+."
+            }
+          >
+            <input
+              type="radio"
+              name="engine"
+              value="webcodecs"
+              data-testid="demo-engine-webcodecs"
+              checked={engineKind === "webcodecs"}
+              disabled={!webCodecsAvailable}
+              onChange={() => setEngineKind("webcodecs")}
+            />
+            <span>
+              WebCodecs (mp4box + VideoDecoder)
+              {!webCodecsAvailable ? " — unsupported" : ""}
+            </span>
+          </label>
           <p className="demo-engine-help">
-            Same interface, different rendering surface. The canvas
-            engine paints a HUD badge so you can see who's drawing.
+            Same interface, different rendering surface. All three
+            paint a HUD badge identifying who's drawing.
           </p>
         </div>
 
