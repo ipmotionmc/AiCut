@@ -17,6 +17,18 @@ type Clip struct {
 	In       int64  `json:"in"`
 	Out      int64  `json:"out"`
 	Start    int64  `json:"start"`
+	// Keyframes are a frontend preview-only feature in v0.6 — the
+	// renderer logs and ignores them. Backend ffmpeg compilation is
+	// tracked for v0.7. Field is kept so the JSON round-trips cleanly.
+	Keyframes []Keyframe `json:"keyframes,omitempty"`
+}
+
+type Keyframe struct {
+	ID    string  `json:"id"`
+	Time  int64   `json:"time"`
+	X     float64 `json:"x,omitempty"`
+	Y     float64 `json:"y,omitempty"`
+	Scale float64 `json:"scale,omitempty"`
 }
 
 type Track struct {

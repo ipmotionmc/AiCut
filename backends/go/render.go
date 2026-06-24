@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -42,6 +43,17 @@ func renderProject(ctx context.Context, req ExportRequest, outputPath string, on
 	sourcesByID := make(map[string]MediaSource, len(req.Project.Sources))
 	for _, s := range req.Project.Sources {
 		sourcesByID[s.ID] = s
+	}
+
+	// Keyframe transforms (X / Y / scale) are a preview-only feature
+	// in v0.6 — the ffmpeg filtergraph below applies a single static
+	// scale=W:H,pad= per clip and ignores per-frame transforms.
+	// Compiling piecewise-linear expressions into ffmpeg syntax is
+	// tracked for v0.7.
+	for _, clip := range track.Clips {
+		if n := len(clip.Keyframes); n > 0 {
+			log.Printf("[render] clip %s: ignoring %d keyframe(s) — preview-only in v0.6", clip.ID, n)
+		}
 	}
 
 	// Total project duration in ms — denominator for the overall

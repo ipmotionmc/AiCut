@@ -67,6 +67,21 @@ export async function renderProject(
     }
     const sources = new Map(project.sources.map((s) => [s.id, s]));
 
+    // Keyframe transforms (X / Y / scale) are a preview-only feature
+    // in v0.6 — the ffmpeg filtergraph below applies a single static
+    // scale=W:H,pad= per clip and ignores per-frame transforms.
+    // Compiling piecewise-linear expressions into ffmpeg syntax is
+    // tracked for v0.7. Warn so anyone wondering "why doesn't the
+    // export move?" sees the answer in the logs.
+    for (const clip of videoTrack.clips) {
+      if (clip.keyframes && clip.keyframes.length > 0) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[render] clip ${clip.id}: ignoring ${clip.keyframes.length} keyframe(s) — preview-only in v0.6`,
+        );
+      }
+    }
+
     const totalMs = videoTrack.clips.reduce(
       (acc, c) => acc + (c.out - c.in),
       0,
