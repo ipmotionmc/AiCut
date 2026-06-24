@@ -307,11 +307,13 @@ export class KeyframeOverlay {
       width: `${outRect.w}px`,
       height: `${outRect.h}px`,
     });
-    // Border tint: brand by default; red while the user is actively
-    // dragging AND the content doesn't fully cover the output frame
-    // (i.e. they've panned far enough to expose letterbox). Helps
-    // catch "I dragged my video off-screen by accident."
-    const dragging = this.drag != null;
+    // Border state: brand color when the content fully covers the
+    // output (normal pan / zoom). Solid red when ANY part of the
+    // output frame isn't covered by content (i.e. the user has
+    // panned far enough to expose letterbox / would lose coverage).
+    // Persistent rather than drag-only — so a user who navigates back
+    // to a bad keyframe still sees the warning without having to
+    // touch the overlay.
     const fullyCovered = contentRect
       ? contentRect.x <= outRect.x + 0.5 &&
         contentRect.x + contentRect.w >= outRect.x + outRect.w - 0.5 &&
@@ -320,7 +322,7 @@ export class KeyframeOverlay {
       : true;
     this.frameBody.classList.toggle(
       "aicut-keyframe-overlay__frame--warn",
-      dragging && !fullyCovered,
+      !fullyCovered,
     );
     const halfHandle = 6;
     const r = contentRect ?? outRect;

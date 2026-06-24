@@ -99,8 +99,11 @@
   min-height: 220px;
 }
 
-/* Keyframe transform panel — floats on the left edge of the preview
-   when keyframe mode is on AND a clip is selected. */
+/* Keyframe transform panel — floats on the preview's top-left when
+   keyframe mode is on AND a keyframe is selected. Adapts to the
+   editor theme via the same `--aicut-controls-*` tokens the rest of
+   the chrome uses, so dark / light / custom themes get a coherent
+   look without a separate "floating panel" palette. */
 .aicut-keyframe-panel {
   position: absolute;
   top: 12px;
@@ -112,15 +115,11 @@
   min-width: 188px;
   padding: 12px 14px 10px;
   border-radius: 10px;
-  background: rgba(20, 20, 22, 0.88);
-  color: rgba(255, 255, 255, 0.94);
+  background: var(--aicut-controls-bg, #1f1f22);
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
   font: 12px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.05) inset,
-    0 8px 28px rgba(0, 0, 0, 0.42);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
 }
 
 .aicut-keyframe-panel__title {
@@ -131,13 +130,15 @@
   font-size: 11px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.72);
+  /* Slightly muted variant of controls-text — same hue, less weight. */
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  opacity: 0.75;
 }
 
 .aicut-keyframe-panel__time {
   font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: rgba(255, 255, 255, 0.48);
-  margin-bottom: 2px;
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  opacity: 0.55;
 }
 
 .aicut-keyframe-panel__row {
@@ -150,7 +151,8 @@
   flex: 0 0 44px;
   font-size: 11px;
   letter-spacing: 0.02em;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  opacity: 0.7;
 }
 
 .aicut-keyframe-panel__row input {
@@ -159,9 +161,9 @@
   min-width: 0;
   padding: 5px 8px;
   font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: rgba(255, 255, 255, 0.96);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.92));
+  background: var(--aicut-controls-hover, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.12));
   border-radius: 6px;
   -moz-appearance: textfield;
 }
@@ -173,25 +175,26 @@
 }
 
 .aicut-keyframe-panel__row input:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--aicut-controls-active, rgba(255, 255, 255, 0.1));
 }
 
 .aicut-keyframe-panel__row input:focus {
   outline: none;
   border-color: var(--color-brand, #ff3386);
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 0 0 2px rgba(255, 51, 134, 0.18);
+  background: var(--aicut-controls-active, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 0 0 2px rgba(255, 51, 134, 0.22);
 }
 
-/* Small dot to the right of each input — filled = prop has keyframes,
-   outlined = static value only. */
+/* Small dot to the right of each input — filled = this prop pins
+   THIS moment, outlined = doesn't (display shows the interpolated
+   value; editing will create a kf at this time). */
 .aicut-keyframe-panel__badge {
   display: inline-block;
   width: 8px;
   height: 8px;
   margin-left: 2px;
   border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.36);
+  border: 1.5px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.36));
   background: transparent;
   flex: 0 0 8px;
   transition:
@@ -209,7 +212,7 @@
   gap: 6px;
   margin-top: 4px;
   padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.08));
 }
 
 .aicut-keyframe-panel__reset {
@@ -218,9 +221,9 @@
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.02em;
-  color: rgba(255, 255, 255, 0.85);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  background: var(--aicut-controls-hover, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.14));
   border-radius: 6px;
   cursor: pointer;
   transition:
@@ -230,9 +233,8 @@
 }
 
 .aicut-keyframe-panel__reset:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.22);
+  background: var(--aicut-controls-active, rgba(255, 255, 255, 0.1));
+  border-color: var(--color-brand, #ff3386);
 }
 
 .aicut-keyframe-panel__reset:disabled {
@@ -258,24 +260,34 @@
   pointer-events: auto;
   cursor: move;
   box-sizing: border-box;
-  transition: border-color 80ms ease-out;
+  transition:
+    border-color 100ms ease-out,
+    border-style 100ms ease-out,
+    box-shadow 120ms ease-out;
 }
 
-/* Flipped to a warning hue while the user is dragging the content
-   past the output frame edges (letterbox is exposed). */
+/* Warn state — content doesn't fully cover the output frame, i.e.
+   letterbox is exposed. Strong visual distinction from the brand
+   pink: a solid 2px red border + soft red glow, so even on dark
+   themes where brand and warning hues read similar it's obvious. */
 .aicut-keyframe-overlay__frame--warn {
-  border-color: var(--color-error, #ff4d4f);
+  border-style: solid;
+  border-width: 2px;
+  border-color: #ff3b30;
+  box-shadow:
+    0 0 0 1px rgba(255, 59, 48, 0.35),
+    0 0 14px rgba(255, 59, 48, 0.55);
 }
 
 .aicut-keyframe-overlay__handle {
   position: absolute;
   width: 12px;
   height: 12px;
-  background: #fff;
+  background: var(--aicut-controls-bg, #1f1f22);
   border: 1.5px solid var(--color-brand, #ff3386);
   border-radius: 2px;
   pointer-events: auto;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
   transition: transform 80ms ease-out;
 }
 
