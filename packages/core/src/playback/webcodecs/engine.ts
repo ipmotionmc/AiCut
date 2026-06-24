@@ -1,4 +1,5 @@
 import type { Sample } from "mp4box";
+import { getEffectiveTransform } from "../../keyframes/index.js";
 import type { Clip, Ms, Project } from "../../types.js";
 import type {
   PlaybackEngine,
@@ -71,6 +72,20 @@ export class WebCodecsEngine implements PlaybackEngine {
   private lastFrameTs = 0;
   private decodedFramesTotal = 0;
   private destroyed = false;
+  /** Output frame rect (fixed bounds, no transform) in CSS pixels. */
+  private lastOutputRect: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null = null;
+  /** Post-transform content rect in CSS pixels. */
+  private lastFrameRect: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null = null;
 
   onTimeUpdate?: (ms: Ms) => void;
   onEnded?: () => void;
@@ -205,6 +220,16 @@ export class WebCodecsEngine implements PlaybackEngine {
     for (const src of this.sources.values()) this.teardownSource(src);
     this.sources.clear();
     this.mount.remove();
+  }
+
+  getOutputFrameRect():
+    | { x: number; y: number; w: number; h: number }
+    | null {
+    return this.lastOutputRect;
+  }
+
+  getFrameRect(): { x: number; y: number; w: number; h: number } | null {
+    return this.lastFrameRect;
   }
 
   // --- internals -------------------------------------------------------
@@ -559,12 +584,44 @@ export class WebCodecsEngine implements PlaybackEngine {
       if (chosenFrame) {
         const vw = chosenFrame.displayWidth || chosenFrame.codedWidth;
         const vh = chosenFrame.displayHeight || chosenFrame.codedHeight;
-        const scale = Math.min(cw / vw, ch / vh);
-        const dw = vw * scale;
-        const dh = vh * scale;
-        const dx = (cw - dw) / 2;
-        const dy = (ch - dh) / 2;
-        this.ctx.drawImage(chosenFrame, dx, dy, dw, dh);
+        const baseScale = Math.min(cw / vw, ch / vh);
+        const dw = vw * baseScale;
+        const dh = vh * baseScale;
+        // panX/panY are in CSS pixels — multiply by DPR for the
+        // DPR-scaled canvas coordinate space.
+        const dpr = window.devicePixelRatio || 1;
+        const t = getEffectiveTransform(clip, localMs);
+        // Output frame (no transform) — clip to it so PiP / pan show
+        // letterbox bg instead of editor chrome.
+        const outX = (cw - dw) / 2;
+        const outY = (ch - dh) / 2;
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(outX, outY, dw, dh);
+        this.ctx.clip();
+        this.ctx.translate(cw / 2 + t.panX * dpr, ch / 2 + t.panY * dpr);
+        this.ctx.scale(t.scale, t.scale);
+        this.ctx.drawImage(chosenFrame, -dw / 2, -dh / 2, dw, dh);
+        this.ctx.restore();
+        this.lastOutputRect = {
+          x: outX / dpr,
+          y: outY / dpr,
+          w: dw / dpr,
+          h: dh / dpr,
+        };
+        const cssCx = cw / (2 * dpr) + t.panX;
+        const cssCy = ch / (2 * dpr) + t.panY;
+        const cssW = (dw * t.scale) / dpr;
+        const cssH = (dh * t.scale) / dpr;
+        this.lastFrameRect = {
+          x: cssCx - cssW / 2,
+          y: cssCy - cssH / 2,
+          w: cssW,
+          h: cssH,
+        };
+      } else {
+        this.lastFrameRect = null;
+        this.lastOutputRect = null;
       }
       // Keep the decoder fed for upcoming frames.
       this.feedDecoder(src);

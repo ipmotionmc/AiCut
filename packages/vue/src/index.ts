@@ -5,6 +5,7 @@ export type {
   MediaSource,
   Track,
   Clip,
+  Keyframe,
   Ms,
   Theme,
   EditorApi,
@@ -14,6 +15,7 @@ export type {
   PlaybackEngineFactory,
   PlaybackEngineOptions,
   CanvasCompositorEngineOptions,
+  EffectiveTransform,
 } from "@aicut/core";
 export {
   createEmptyProject,
@@ -28,4 +30,8 @@ export {
   RULER_HEIGHT,
   HEADER_WIDTH,
   setTimelineMetrics,
+  IDENTITY_TRANSFORM,
+  isIdentityTransform,
+  getEffectiveTransform,
+  getTransformAtTimelineTime,
 } from "@aicut/core";

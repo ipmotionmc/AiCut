@@ -22,12 +22,20 @@ import { applyTheme } from "./theme.js";
 import { type Locale, mergeLocale } from "./i18n.js";
 import type {
   Clip,
+  EasingKind,
+  Keyframe,
+  KeyframeProp,
   MediaSource,
   Ms,
   Project,
   Theme,
   Track,
 } from "./types.js";
+import {
+  getEffectiveTransform,
+  interpolateProp,
+  upsertKeyframe,
+} from "./keyframes/index.js";
 import { EditorUI } from "./ui/index.js";
 
 export interface EditorOptions {
@@ -81,6 +89,27 @@ export interface EditorOptions {
    * Reasonable range: [120, 480].
    */
   timelineHeight?: number;
+  /**
+   * Per-clip keyframe animation (X / Y / Scale). Off by default; flip
+   * `enabled: true` to surface keyframe markers on the timeline and
+   * route the canvas / WebCodecs engines through `getEffectiveTransform`
+   * when painting. Data is preserved either way — disabling just hides
+   * the editing UI and renders identity transforms.
+   *
+   * HtmlVideoEngine cannot apply per-frame transforms (it shows a raw
+   * `<video>`), so keyframes are silently ignored on that engine
+   * regardless of this flag. Swap to `CanvasCompositorEngine` or
+   * `WebCodecsEngine` for live preview.
+   */
+  keyframes?: { enabled?: boolean };
+  /**
+   * Show the |◀ / ▶| "jump to clip start / end" toolbar buttons and
+   * bind the I / O keyboard shortcuts. Off by default — hosts opt in
+   * the same way they do for keyframes. When off the buttons are
+   * completely hidden (display: none) so they don't take up toolbar
+   * space, and the I / O keys fall through to the page.
+   */
+  clipEdgeNav?: { enabled?: boolean };
 }
 
 export interface EditorEventMap {
@@ -97,6 +126,16 @@ export interface EditorEventMap {
   error: { error: Error };
   /** Currently selected clip id, or null. */
   selectionChange: { clipId: string | null };
+  /** Currently selected keyframe (parent clip + keyframe id), or null.
+   *  Selecting a keyframe also selects its parent clip — listeners
+   *  watching `selectionChange` get notified independently. */
+  keyframeSelectionChange: {
+    target: { clipId: string; keyframeId: string } | null;
+  };
+  /** Keyframe-mode toggle changed (Editor.setKeyframesEnabled). */
+  keyframesEnabledChange: { enabled: boolean };
+  /** Jump-to-clip-edge nav toggle changed (Editor.setClipEdgeNavEnabled). */
+  clipEdgeNavEnabledChange: { enabled: boolean };
   /** Zoom (px/sec) changed. */
   scaleChange: { pxPerSec: number };
   /** Snap toggle changed. */
@@ -177,11 +216,141 @@ export interface EditorApi {
   getSelection(): string | null;
   setSelection(clipId: string | null): void;
 
+  // keyframes
+  isKeyframesEnabled(): boolean;
+  setKeyframesEnabled(enabled: boolean): void;
+  isClipEdgeNavEnabled(): boolean;
+  setClipEdgeNavEnabled(enabled: boolean): void;
+  /** Screen-space CSS-pixel rect of the active rendered frame, post
+   *  transform, relative to the editor preview. Null when none. */
+  getActiveFrameRect():
+    | { x: number; y: number; w: number; h: number }
+    | null;
+  /** Output frame rect (fixed bounds, no transform). The overlay
+   *  draws the dashed border here. */
+  getActiveOutputFrameRect():
+    | { x: number; y: number; w: number; h: number }
+    | null;
+  /**
+   * Upsert a per-property keyframe at the given clip-local time. If a
+   * keyframe for the same `prop` already exists within ~1 frame of
+   * `time` it gets its value updated; else a new one is appended.
+   * Returns the keyframe's id, or null when the clip can't be found.
+   *
+   * Defaults: `time` = playhead in clip-local coords; `value` = the
+   * currently interpolated value for that prop (so adding doesn't
+   * cause a visible jump).
+   */
+  addKeyframe(
+    clipId: string,
+    prop: KeyframeProp,
+    opts?: { time?: Ms; value?: number },
+  ): string | null;
+  removeKeyframe(clipId: string, keyframeId: string): boolean;
+  moveKeyframe(clipId: string, keyframeId: string, timeMs: Ms): boolean;
+  /** Change one keyframe's value (single number, since each kf is
+   *  per-property). */
+  setKeyframeValue(
+    clipId: string,
+    keyframeId: string,
+    value: number,
+  ): boolean;
+  /**
+   * Change one keyframe's outgoing easing curve. Shapes only the
+   * segment from this kf to the NEXT kf in time on the same prop.
+   * The kf's value is untouched.
+   */
+  setKeyframeEasing(
+    clipId: string,
+    keyframeId: string,
+    easing: EasingKind,
+  ): boolean;
+  /**
+   * Batch-set the outgoing easing on every kf at one moment in time
+   * (within the 16ms tolerance that the rest of the API uses) on a
+   * single clip. Mirrors the panel's "one dropdown for the moment"
+   * UX so all three props (panX / panY / scale) at the selected
+   * moment animate with the same curve. Single history entry.
+   */
+  setKeyframesEasingAtTime(
+    clipId: string,
+    timeMs: Ms,
+    easing: EasingKind,
+  ): boolean;
+  /**
+   * CapCut-style auto-record: write `value` for `prop` at the playhead.
+   * - If the prop already has keyframes → upsert a keyframe at the
+   *   playhead with this value.
+   * - If the prop has no keyframes → just update the static base
+   *   (panX / panY / scale on the clip) so the visual changes
+   *   without committing the user to an animation track yet.
+   * Returns true if the project changed.
+   */
+  setValueAtPlayhead(
+    clipId: string,
+    prop: KeyframeProp,
+    value: number,
+  ): boolean;
+  getSelectedKeyframe(): { clipId: string; keyframeId: string } | null;
+  setSelectedKeyframe(
+    target: { clipId: string; keyframeId: string } | null,
+  ): void;
+  /**
+   * Toolbar-style toggle. If ANY keyframe exists at the playhead time
+   * on the selected clip, remove every keyframe at that time (all
+   * props). Otherwise, capture one keyframe per prop (panX, panY,
+   * scale) at the playhead with the currently interpolated values.
+   * Returns true when the project changed.
+   */
+  toggleKeyframeAtPlayhead(): boolean;
+  /**
+   * Clear every keyframe AND every static transform value on a clip,
+   * restoring the identity pose (panX=0, panY=0, scale=1). Single
+   * history entry. */
+  resetClipTransform(clipId: string): boolean;
+  /**
+   * Pin all three transform props (panX, panY, scale) to identity
+   * (0, 0, 1) at one specific clip-local time. Upserts on each prop —
+   * keyframes that already exist at that time get their values
+   * overwritten; props with no kf there get one added. Single history
+   * entry. Used by the panel's Reset button when a keyframe is selected.
+   */
+  resetKeyframesAtTime(clipId: string, timeMs: Ms): boolean;
+  /**
+   * Move the playhead to a clip edge. "end" intentionally lands 1ms
+   * INSIDE the clip (clipEnd - 1) so the playhead remains inside the
+   * clip — that lets the user immediately press the keyframe button
+   * (or the I/O shortcut) and have it find the right clip + drop a
+   * keyframe at clip-local time `duration - 1ms`. Without the -1ms
+   * offset the playhead lands on the seam and `toggleKeyframeAtPlayhead`
+   * picks the next clip (or none at all).
+   * Returns true when the seek actually moved.
+   */
+  seekToClipEdge(clipId: string, edge: "start" | "end"): boolean;
+  /** Convenience for the toolbar: act on the currently-selected clip. */
+  seekToSelectedClipEdge(edge: "start" | "end"): boolean;
+
   // history
   canUndo(): boolean;
   canRedo(): boolean;
   undo(): boolean;
   redo(): boolean;
+  /**
+   * Open a "drag session". While open, every internal `pushHistory`
+   * call captures the pre-session snapshot ONCE — subsequent calls
+   * during the same session are no-ops. The session commits a single
+   * history entry on `endInteraction()` (or is dropped entirely if
+   * the project ended up unchanged). Nestable: nested begin/end pairs
+   * count by depth and only the outermost commits.
+   *
+   * Hosts call this around continuous gestures (drag the preview
+   * overlay, scrub a numeric slider, wheel-zoom) so a single user
+   * gesture becomes ONE undo entry instead of 30-100. Without this,
+   * each pointermove of an overlay drag pushes its own history entry
+   * and the user has to mash Cmd+Z that many times to fully undo.
+   */
+  beginInteraction(): void;
+  endInteraction(): void;
 
   /**
    * Bookend slot at the very left of the top toolbar — host appends
@@ -237,6 +406,14 @@ export class Editor implements EditorApi {
   private history = new HistoryStack();
 
   private selectedClipId: string | null = null;
+  private selectedKeyframe: { clipId: string; keyframeId: string } | null =
+    null;
+  private keyframesEnabled: boolean;
+  private clipEdgeNavEnabled: boolean;
+  /** Drag-session bookkeeping for ripple-merge undo. See
+   *  beginInteraction / endInteraction docs on EditorApi. */
+  private interactionDepth = 0;
+  private interactionStartSnapshot: string | null = null;
   private pxPerSec: number;
   private snap: boolean;
   private locale: Locale;
@@ -248,6 +425,8 @@ export class Editor implements EditorApi {
     this.pxPerSec = clampScale(opts.initialScale ?? DEFAULT_PX_PER_SEC);
     this.snap = opts.initialSnap !== false;
     this.locale = mergeLocale(opts.locale);
+    this.keyframesEnabled = opts.keyframes?.enabled === true;
+    this.clipEdgeNavEnabled = opts.clipEdgeNav?.enabled === true;
 
     // Must run before EditorUI builds the Timeline — those layout
     // values are read at canvas init time.
@@ -285,6 +464,12 @@ export class Editor implements EditorApi {
       onDeleteClip: (id) => this.removeClip(id),
       onMoveClip: (id, opts) => this.moveClip(id, opts),
       onResizeClip: (id, edits) => this.resizeClip(id, edits),
+      onSelectKeyframe: (target) => this.setSelectedKeyframe(target),
+      onMoveKeyframe: (clipId, keyframeId, timeMs) =>
+        this.moveKeyframe(clipId, keyframeId, timeMs),
+      onKeyframeToggle: () => this.toggleKeyframeAtPlayhead(),
+      onSeekClipStart: () => this.seekToSelectedClipEdge("start"),
+      onSeekClipEnd: () => this.seekToSelectedClipEdge("end"),
     });
 
     const engineFactory: PlaybackEngineFactory =
@@ -832,6 +1017,9 @@ export class Editor implements EditorApi {
       for (const c of t.clips) {
         if (c.id === ignoreClipId) continue;
         targets.push(c.start, clipEnd(c));
+        if (c.keyframes) {
+          for (const kf of c.keyframes) targets.push(c.start + kf.time);
+        }
       }
     }
     let best: Ms = timeMs;
@@ -856,6 +1044,396 @@ export class Editor implements EditorApi {
     if (clipId === this.selectedClipId) return;
     this.selectedClipId = clipId;
     this.bus.emit("selectionChange", { clipId });
+    // Clearing the clip selection or moving to a different clip
+    // clears any orphan keyframe selection — selecting a keyframe
+    // outside the current clip would be confusing UX.
+    if (
+      this.selectedKeyframe &&
+      this.selectedKeyframe.clipId !== clipId
+    ) {
+      this.selectedKeyframe = null;
+      this.bus.emit("keyframeSelectionChange", { target: null });
+    }
+    this.ui.render();
+  }
+
+  // ---- keyframes ------------------------------------------------------
+
+  isKeyframesEnabled(): boolean {
+    return this.keyframesEnabled;
+  }
+
+  /**
+   * Screen-space CSS-pixel rect of the actively painted frame
+   * (post-transform), relative to the editor's preview element.
+   * Null when no clip is active, the engine doesn't expose
+   * `getFrameRect`, or the rect isn't computed yet. Used by the
+   * library's keyframe-editing overlay.
+   */
+  getActiveFrameRect():
+    | { x: number; y: number; w: number; h: number }
+    | null {
+    return this.engine.getFrameRect?.() ?? null;
+  }
+
+  /**
+   * Screen-space CSS-pixel rect of the OUTPUT FRAME (the fixed
+   * stage that clips the rendered video). Different from
+   * `getActiveFrameRect` which includes the keyframe transform —
+   * this one stays put as the user drags / scales the content.
+   * Used by the overlay to anchor the dashed border + drag body.
+   */
+  getActiveOutputFrameRect():
+    | { x: number; y: number; w: number; h: number }
+    | null {
+    return this.engine.getOutputFrameRect?.() ?? null;
+  }
+
+  setKeyframesEnabled(enabled: boolean): void {
+    if (enabled === this.keyframesEnabled) return;
+    this.keyframesEnabled = enabled;
+    // Disabling clears any active keyframe selection (the UI for it
+    // is about to disappear).
+    if (!enabled && this.selectedKeyframe) {
+      this.selectedKeyframe = null;
+      this.bus.emit("keyframeSelectionChange", { target: null });
+    }
+    this.bus.emit("keyframesEnabledChange", { enabled });
+    this.ui.render();
+  }
+
+  isClipEdgeNavEnabled(): boolean {
+    return this.clipEdgeNavEnabled;
+  }
+
+  setClipEdgeNavEnabled(enabled: boolean): void {
+    if (enabled === this.clipEdgeNavEnabled) return;
+    this.clipEdgeNavEnabled = enabled;
+    this.bus.emit("clipEdgeNavEnabledChange", { enabled });
+    this.ui.render();
+  }
+
+  addKeyframe(
+    clipId: string,
+    prop: KeyframeProp,
+    opts: { time?: Ms; value?: number } = {},
+  ): string | null {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    if (!trk || !cl) return null;
+    const duration = clipDuration(cl);
+    const playheadLocal = this.engine.getTime() - cl.start;
+    const rawTime = opts.time ?? playheadLocal;
+    const time = Math.max(0, Math.min(duration, Math.round(rawTime)));
+    const value = opts.value ?? interpolateProp(cl, prop, time);
+    this.pushHistory();
+    cl.keyframes = upsertKeyframe(cl.keyframes, prop, time, value, () =>
+      createId("kf"),
+    );
+    cl.keyframes.sort((a, b) => {
+      if (a.prop !== b.prop) return a.prop.localeCompare(b.prop);
+      return a.time - b.time;
+    });
+    this.afterMutation();
+    const created = cl.keyframes.find(
+      (k) => k.prop === prop && Math.abs(k.time - time) < 16,
+    );
+    return created?.id ?? null;
+  }
+
+  removeKeyframe(clipId: string, keyframeId: string): boolean {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    if (!trk || !cl || !cl.keyframes) return false;
+    const idx = cl.keyframes.findIndex((k) => k.id === keyframeId);
+    if (idx < 0) return false;
+    this.pushHistory();
+    const next = cl.keyframes.slice();
+    next.splice(idx, 1);
+    cl.keyframes = next.length > 0 ? next : undefined;
+    if (
+      this.selectedKeyframe &&
+      this.selectedKeyframe.clipId === clipId &&
+      this.selectedKeyframe.keyframeId === keyframeId
+    ) {
+      this.selectedKeyframe = null;
+      this.bus.emit("keyframeSelectionChange", { target: null });
+    }
+    this.afterMutation();
+    return true;
+  }
+
+  moveKeyframe(clipId: string, keyframeId: string, timeMs: Ms): boolean {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    const kf = cl?.keyframes?.find((k) => k.id === keyframeId);
+    if (!trk || !cl || !kf || !cl.keyframes) return false;
+    const duration = clipDuration(cl);
+    const clamped = Math.max(0, Math.min(duration, Math.round(timeMs)));
+    if (clamped === kf.time) return false;
+    // Reject moves that would collide with another keyframe on the
+    // SAME prop at the exact same time — different props can coexist.
+    if (
+      cl.keyframes.some(
+        (k) =>
+          k.id !== keyframeId && k.prop === kf.prop && k.time === clamped,
+      )
+    ) {
+      return false;
+    }
+    this.pushHistory();
+    kf.time = clamped;
+    cl.keyframes.sort((a, b) => {
+      if (a.prop !== b.prop) return a.prop.localeCompare(b.prop);
+      return a.time - b.time;
+    });
+    this.afterMutation();
+    return true;
+  }
+
+  setKeyframeValue(
+    clipId: string,
+    keyframeId: string,
+    value: number,
+  ): boolean {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    const kf = cl?.keyframes?.find((k) => k.id === keyframeId);
+    if (!trk || !cl || !kf) return false;
+    if (Math.abs(kf.value - value) < 1e-9) return false;
+    this.pushHistory();
+    kf.value = value;
+    this.afterMutation();
+    return true;
+  }
+
+  setKeyframeEasing(
+    clipId: string,
+    keyframeId: string,
+    easing: EasingKind,
+  ): boolean {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    const kf = cl?.keyframes?.find((k) => k.id === keyframeId);
+    if (!trk || !cl || !kf) return false;
+    const current = kf.easing ?? "linear";
+    if (current === easing) return false;
+    this.pushHistory();
+    if (easing === "linear") {
+      // Strip the field rather than store the default — keeps the
+      // serialized project minimal for hosts that diff JSON.
+      delete kf.easing;
+    } else {
+      kf.easing = easing;
+    }
+    this.afterMutation();
+    return true;
+  }
+
+  setKeyframesEasingAtTime(
+    clipId: string,
+    timeMs: Ms,
+    easing: EasingKind,
+  ): boolean {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    if (!trk || !cl || !cl.keyframes) return false;
+    const t = Math.round(timeMs);
+    const matches = cl.keyframes.filter((k) => Math.abs(k.time - t) < 16);
+    if (matches.length === 0) return false;
+    const anyChange = matches.some((k) => (k.easing ?? "linear") !== easing);
+    if (!anyChange) return false;
+    this.pushHistory();
+    for (const kf of matches) {
+      if (easing === "linear") delete kf.easing;
+      else kf.easing = easing;
+    }
+    this.afterMutation();
+    return true;
+  }
+
+  setValueAtPlayhead(
+    clipId: string,
+    prop: KeyframeProp,
+    value: number,
+  ): boolean {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    if (!trk || !cl) return false;
+    const duration = clipDuration(cl);
+    const playheadLocal = this.engine.getTime() - cl.start;
+    const time = Math.max(0, Math.min(duration, Math.round(playheadLocal)));
+    const hasKf = cl.keyframes?.some((k) => k.prop === prop) ?? false;
+    if (hasKf) {
+      // Upsert at playhead → animation gets another anchor.
+      this.pushHistory();
+      cl.keyframes = upsertKeyframe(cl.keyframes, prop, time, value, () =>
+        createId("kf"),
+      );
+      cl.keyframes.sort((a, b) => {
+        if (a.prop !== b.prop) return a.prop.localeCompare(b.prop);
+        return a.time - b.time;
+      });
+      this.afterMutation();
+      return true;
+    }
+    // No keyframes for this prop yet → update the static base. The
+    // user can promote it to an animated property later by clicking
+    // the toolbar keyframe button.
+    if ((cl[prop] ?? (prop === "scale" ? 1 : 0)) === value) return false;
+    this.pushHistory();
+    cl[prop] = value;
+    this.afterMutation();
+    return true;
+  }
+
+  getSelectedKeyframe(): { clipId: string; keyframeId: string } | null {
+    return this.selectedKeyframe;
+  }
+
+  resetClipTransform(clipId: string): boolean {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    if (!trk || !cl) return false;
+    const dirty =
+      (cl.keyframes && cl.keyframes.length > 0) ||
+      cl.panX !== undefined ||
+      cl.panY !== undefined ||
+      cl.scale !== undefined;
+    if (!dirty) return false;
+    this.pushHistory();
+    delete cl.panX;
+    delete cl.panY;
+    delete cl.scale;
+    cl.keyframes = undefined;
+    if (
+      this.selectedKeyframe &&
+      this.selectedKeyframe.clipId === clipId
+    ) {
+      this.selectedKeyframe = null;
+      this.bus.emit("keyframeSelectionChange", { target: null });
+    }
+    this.afterMutation();
+    return true;
+  }
+
+  resetKeyframesAtTime(clipId: string, timeMs: Ms): boolean {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    if (!trk || !cl) return false;
+    const duration = clipDuration(cl);
+    const t = Math.max(0, Math.min(duration, Math.round(timeMs)));
+    // Identity values for each prop. Upsert in one batch so the
+    // history stack records a single "reset" entry, not three.
+    this.pushHistory();
+    let kfs = cl.keyframes ?? [];
+    kfs = upsertKeyframe(kfs, "panX", t, 0, () => createId("kf"));
+    kfs = upsertKeyframe(kfs, "panY", t, 0, () => createId("kf"));
+    kfs = upsertKeyframe(kfs, "scale", t, 1, () => createId("kf"));
+    kfs.sort((a, b) => {
+      if (a.prop !== b.prop) return a.prop.localeCompare(b.prop);
+      return a.time - b.time;
+    });
+    cl.keyframes = kfs;
+    this.afterMutation();
+    return true;
+  }
+
+  seekToClipEdge(clipId: string, edge: "start" | "end"): boolean {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    if (!trk || !cl) return false;
+    // "end" lands 1ms inside the clip so the playhead stays inside —
+    // toggleKeyframeAtPlayhead and friends look up the clip via the
+    // playhead time, and a playhead landing exactly on the clip-end
+    // seam picks up the *next* clip (or nothing). The 1ms backoff
+    // costs nothing perceptually and keeps the keyframe-add workflow
+    // single-click. See seekToClipEdge doc in the API surface.
+    const target =
+      edge === "start" ? cl.start : Math.max(cl.start, clipEnd(cl) - 1);
+    if (this.engine.getTime() === target) return false;
+    this.seek(target);
+    return true;
+  }
+
+  seekToSelectedClipEdge(edge: "start" | "end"): boolean {
+    if (!this.selectedClipId) return false;
+    return this.seekToClipEdge(this.selectedClipId, edge);
+  }
+
+  toggleKeyframeAtPlayhead(): boolean {
+    const clipId = this.selectedClipId;
+    if (!clipId) return false;
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    if (!trk || !cl) return false;
+    const localMs = this.engine.getTime() - cl.start;
+    const duration = clipDuration(cl);
+    if (localMs < 0 || localMs > duration) return false;
+    const t = Math.round(localMs);
+    const existing = cl.keyframes?.filter((k) => Math.abs(k.time - t) < 16);
+    if (existing && existing.length > 0) {
+      this.pushHistory();
+      const ids = new Set(existing.map((k) => k.id));
+      const next = cl.keyframes!.filter((k) => !ids.has(k.id));
+      cl.keyframes = next.length > 0 ? next : undefined;
+      if (
+        this.selectedKeyframe &&
+        ids.has(this.selectedKeyframe.keyframeId)
+      ) {
+        this.selectedKeyframe = null;
+        this.bus.emit("keyframeSelectionChange", { target: null });
+      }
+      this.afterMutation();
+      return true;
+    }
+    // Capture one keyframe per prop at the playhead. Use the currently
+    // interpolated values so the preview doesn't jump.
+    const current = getEffectiveTransform(cl, t);
+    this.pushHistory();
+    let kfs = cl.keyframes ?? [];
+    kfs = upsertKeyframe(kfs, "panX", t, current.panX, () => createId("kf"));
+    kfs = upsertKeyframe(kfs, "panY", t, current.panY, () => createId("kf"));
+    kfs = upsertKeyframe(kfs, "scale", t, current.scale, () => createId("kf"));
+    kfs.sort((a, b) => {
+      if (a.prop !== b.prop) return a.prop.localeCompare(b.prop);
+      return a.time - b.time;
+    });
+    cl.keyframes = kfs;
+    // Auto-select the new moment so the left panel pops up
+    // immediately — saves the user a second click. Pick the panX kf
+    // as the deterministic anchor (the moment's grouping logic
+    // doesn't care which sibling is the anchor).
+    const anchor = kfs.find(
+      (k) => k.prop === "panX" && Math.abs(k.time - t) < 16,
+    );
+    if (anchor) {
+      this.selectedKeyframe = { clipId, keyframeId: anchor.id };
+      this.bus.emit("keyframeSelectionChange", {
+        target: this.selectedKeyframe,
+      });
+    }
+    this.afterMutation();
+    return true;
+  }
+
+  setSelectedKeyframe(
+    target: { clipId: string; keyframeId: string } | null,
+  ): void {
+    if (
+      target?.clipId === this.selectedKeyframe?.clipId &&
+      target?.keyframeId === this.selectedKeyframe?.keyframeId
+    ) {
+      return;
+    }
+    this.selectedKeyframe = target;
+    // Couple selection to the parent clip — clicking a keyframe makes
+    // the host's clip-level UI light up too.
+    if (target && target.clipId !== this.selectedClipId) {
+      this.selectedClipId = target.clipId;
+      this.bus.emit("selectionChange", { clipId: target.clipId });
+    }
+    this.bus.emit("keyframeSelectionChange", { target });
     this.ui.render();
   }
 
@@ -873,6 +1451,7 @@ export class Editor implements EditorApi {
     const prev = this.history.undo(this.project);
     if (!prev) return false;
     this.project = prev;
+    this.reconcileSelectionsWithProject();
     this.engine.setProject(this.project);
     this.bus.emit("change", { project: this.getProject() });
     this.emitHistory();
@@ -884,11 +1463,62 @@ export class Editor implements EditorApi {
     const next = this.history.redo(this.project);
     if (!next) return false;
     this.project = next;
+    this.reconcileSelectionsWithProject();
     this.engine.setProject(this.project);
     this.bus.emit("change", { project: this.getProject() });
     this.emitHistory();
     this.ui.render();
     return true;
+  }
+
+  beginInteraction(): void {
+    this.interactionDepth += 1;
+  }
+
+  endInteraction(): void {
+    if (this.interactionDepth === 0) return;
+    this.interactionDepth -= 1;
+    if (this.interactionDepth > 0) return; // still nested
+    const snapshot = this.interactionStartSnapshot;
+    this.interactionStartSnapshot = null;
+    if (snapshot == null) return; // no mutation happened inside
+    // Drop no-op sessions — if the project ended up identical to its
+    // pre-session state (e.g. user pressed mouse, made no real move,
+    // released), don't pollute history with an empty entry.
+    const now = JSON.stringify(this.project);
+    if (now === snapshot) return;
+    this.history.push(JSON.parse(snapshot) as Project);
+    this.emitHistory();
+  }
+
+  /**
+   * Selections (clipId + selectedKeyframe) live OUTSIDE the project
+   * snapshot, so undo / redo can leave them pointing at ids that no
+   * longer exist. Defend against dangling refs by clearing anything
+   * the restored project doesn't actually contain — and emit the
+   * paired change events so panels / overlays hide cleanly instead
+   * of holding zombie references.
+   */
+  private reconcileSelectionsWithProject(): void {
+    if (this.selectedKeyframe) {
+      const trk = findTrackOfClip(this.project, this.selectedKeyframe.clipId);
+      const cl = trk?.clips.find((c) => c.id === this.selectedKeyframe!.clipId);
+      const kf = cl?.keyframes?.find(
+        (k) => k.id === this.selectedKeyframe!.keyframeId,
+      );
+      if (!kf) {
+        this.selectedKeyframe = null;
+        this.bus.emit("keyframeSelectionChange", { target: null });
+      }
+    }
+    if (this.selectedClipId) {
+      const trk = findTrackOfClip(this.project, this.selectedClipId);
+      const cl = trk?.clips.find((c) => c.id === this.selectedClipId);
+      if (!cl) {
+        this.selectedClipId = null;
+        this.bus.emit("selectionChange", { clipId: null });
+      }
+    }
   }
 
   // ---- events ---------------------------------------------------------
@@ -942,6 +1572,16 @@ export class Editor implements EditorApi {
   }
 
   private pushHistory(): void {
+    // Inside a drag session, only the FIRST pushHistory captures —
+    // subsequent calls during the same session coalesce. endInteraction
+    // is the one that actually pushes the captured snapshot onto the
+    // stack. See beginInteraction / endInteraction docs.
+    if (this.interactionDepth > 0) {
+      if (this.interactionStartSnapshot == null) {
+        this.interactionStartSnapshot = JSON.stringify(this.project);
+      }
+      return;
+    }
     this.history.push(this.project);
     this.emitHistory();
   }

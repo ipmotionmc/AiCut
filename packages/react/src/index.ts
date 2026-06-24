@@ -7,6 +7,7 @@ export type {
   MediaSource,
   Track,
   Clip,
+  Keyframe,
   Ms,
   Theme,
   EditorApi,
@@ -15,6 +16,7 @@ export type {
   PlaybackEngineFactory,
   PlaybackEngineOptions,
   CanvasCompositorEngineOptions,
+  EffectiveTransform,
 } from "@aicut/core";
 export {
   createEmptyProject,
@@ -32,4 +34,10 @@ export {
   RULER_HEIGHT,
   HEADER_WIDTH,
   setTimelineMetrics,
+  // Pure-math keyframe helpers — hosts can read effective transforms
+  // for previews / thumbnails without touching the playback engine.
+  IDENTITY_TRANSFORM,
+  isIdentityTransform,
+  getEffectiveTransform,
+  getTransformAtTimelineTime,
 } from "@aicut/core";

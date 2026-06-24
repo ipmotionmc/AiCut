@@ -5,12 +5,34 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+// resolveSourceURL maps a frontend source URL to something ffmpeg can
+// open. HTTP(s)/file:// pass through; an absolute-looking "/foo.mov"
+// is treated as a Vite-style public path and resolved under
+// AICUT_ASSETS_DIR when set. Without the env var we pass through
+// unchanged and let ffmpeg report the missing file.
+//
+// Matches the TS backend's resolveSourceUrl exactly so the two
+// backends behave identically on the same project JSON.
+var protocolPrefix = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+\-.]*://`)
+
+func resolveSourceURL(url string) string {
+	if protocolPrefix.MatchString(url) {
+		return url
+	}
+	if dir := os.Getenv("AICUT_ASSETS_DIR"); dir != "" && strings.HasPrefix(url, "/") {
+		return filepath.Join(dir, url)
+	}
+	return url
+}
 
 // ProgressEvent matches the SSE wire format the demo consumes. Stays
 // in lockstep with backends/ts/src/render.ts ProgressEvent.
@@ -64,14 +86,40 @@ func renderProject(ctx context.Context, req ExportRequest, outputPath string, on
 		args := []string{
 			"-y",
 			"-ss", msToSec(clip.In),
-			"-i", src.URL,
+			"-i", resolveSourceURL(src.URL),
 			"-t", msToSec(durMs),
 			"-c:v", "libx264",
 			"-preset", "veryfast",
 			"-c:a", "aac",
 			"-movflags", "+faststart",
 		}
-		if req.Output != nil && req.Output.Width > 0 && req.Output.Height > 0 {
+		hasKeyframes := len(clip.Keyframes) > 0
+		hasOutputDims := req.Output != nil && req.Output.Width > 0 && req.Output.Height > 0
+		if hasKeyframes && !hasOutputDims {
+			// Match the TS backend's warn so silent kf skips don't go
+			// unnoticed — operator gets a clear "your animation went
+			// nowhere because you didn't pass output dims" hint.
+			log.Printf(
+				"[render] clip %s has %d keyframe(s) but no output width/height — pass output: { width, height } in the request to apply keyframe animation.",
+				clip.ID, len(clip.Keyframes),
+			)
+		}
+		if hasKeyframes && hasOutputDims {
+			// Animated path — filter_complex mirrors the frontend PiP
+			// semantics (fixed black bg, animated content inside). See
+			// buildKeyframeFilterComplex for the math.
+			fps := 30
+			if req.Output.FPS > 0 {
+				fps = req.Output.FPS
+			}
+			durSec := float64(durMs) / 1000.0
+			fc := buildKeyframeFilterComplex(clip, req.Output.Width, req.Output.Height, fps, durSec)
+			args = append(args,
+				"-filter_complex", fc,
+				"-map", "[out]",
+				"-map", "0:a?",
+			)
+		} else if req.Output != nil && req.Output.Width > 0 && req.Output.Height > 0 {
 			w := strconv.Itoa(req.Output.Width)
 			h := strconv.Itoa(req.Output.Height)
 			args = append(args, "-vf",
@@ -157,6 +205,27 @@ func renderProject(ctx context.Context, req ExportRequest, outputPath string, on
 		onProgress(ProgressEvent{Phase: "concat", Overall: 1, TotalClips: totalClips})
 	}
 	return nil
+}
+
+// buildKeyframeFilterComplex compiles a -filter_complex graph that
+// applies pan / scale keyframe animation to a single clip. Mirrors
+// the TS backend's buildKeyframeFilterComplex; both pipe a fitted
+// source through an animated scale into a fixed black background
+// at an animated overlay position. eval=frame is required to
+// re-evaluate the expressions per output frame (default is `init`).
+func buildKeyframeFilterComplex(clip Clip, width, height, fps int, durSec float64) string {
+	scaleExpr := compileKeyframeExpression(clip.Keyframes, "scale", floatOr(clip.Scale, 1))
+	panXExpr := compileKeyframeExpression(clip.Keyframes, "panX", floatOr(clip.PanX, 0))
+	panYExpr := compileKeyframeExpression(clip.Keyframes, "panY", floatOr(clip.PanY, 0))
+	wExpr := fmt.Sprintf("trunc(iw*(%s)/2)*2", scaleExpr)
+	hExpr := fmt.Sprintf("trunc(ih*(%s)/2)*2", scaleExpr)
+	parts := []string{
+		fmt.Sprintf("[0:v]scale=%d:%d:force_original_aspect_ratio=decrease,setsar=1[fitted]", width, height),
+		fmt.Sprintf("[fitted]scale=w='%s':h='%s':eval=frame[zoomed]", wExpr, hExpr),
+		fmt.Sprintf("color=c=black:s=%dx%d:r=%d:d=%s,format=yuv420p[bg]", width, height, fps, strconv.FormatFloat(durSec, 'f', 3, 64)),
+		fmt.Sprintf("[bg][zoomed]overlay=x='(W-w)/2+(%s)':y='(H-h)/2+(%s)':eval=frame:format=auto[out]", panXExpr, panYExpr),
+	}
+	return strings.Join(parts, ";")
 }
 
 func findVideoTrack(p Project) (Track, bool) {

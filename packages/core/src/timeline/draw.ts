@@ -1,5 +1,11 @@
 import { formatLabel, type Locale } from "../i18n.js";
-import type { Clip, MediaSource, Project, Track } from "../types.js";
+import type {
+  Clip,
+  Keyframe,
+  MediaSource,
+  Project,
+  Track,
+} from "../types.js";
 import { fmtClockMs } from "../ui/format.js";
 import type { ThumbnailRibbon } from "../ui/thumbnails.js";
 import {
@@ -11,6 +17,7 @@ import {
   SCROLLBAR_THICKNESS,
   TRACK_HEIGHT,
   contentHeight,
+  contentLeftX,
   contentWidth,
   formatRulerLabel,
   niceTickSeconds,
@@ -57,6 +64,21 @@ export interface DrawState {
   scrollbarActiveX: boolean;
   /** Resolved locale used for canvas-painted labels. */
   locale: Locale;
+  /** When true, paint a diamond marker on each clip per keyframe.
+   *  Wired to `Editor.isKeyframesEnabled()`. */
+  keyframesEnabled: boolean;
+  /** Currently selected keyframe (rendered with brand-color fill). */
+  selectedKeyframe: { clipId: string; keyframeId: string } | null;
+  /** Currently hovered keyframe (rendered with brand outline). */
+  hoveredKeyframe: { clipId: string; keyframeId: string } | null;
+  /** While a keyframe-drag is in flight, the dragged diamond paints
+   *  at this ghost time instead of its committed time so the visual
+   *  follows the cursor. */
+  keyframeDragGhost: {
+    clipId: string;
+    keyframeId: string;
+    ghostTimeMs: number;
+  } | null;
   /**
    * In-flight drag preview. While set, the clip with `clipId` is
    * drawn faded at its real position AND a fully-opaque "ghost" of it
@@ -95,7 +117,7 @@ export function drawAll(
   ctx.fillStyle = style.bg;
   ctx.fillRect(0, 0, W, H);
 
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   const trackAreaW = W - baseX - SCROLLBAR_THICKNESS;
   const trackAreaH = H - RULER_HEIGHT - SCROLLBAR_THICKNESS;
 
@@ -143,18 +165,32 @@ export function drawAll(
   drawCoverageGaps(ctx, state, style);
   ctx.restore();
 
-  // --- Pass 5: Snap guide + playhead (scroll X, full visible track Y) -
+  // --- Pass 5: Snap guide only (playhead moves to the top layer) -----
   ctx.save();
   ctx.beginPath();
   ctx.rect(baseX, 0, trackAreaW, H - SCROLLBAR_THICKNESS);
   ctx.clip();
   drawSnapGuide(ctx, state, style);
-  drawPlayhead(ctx, state, style);
   ctx.restore();
 
   // --- Pass 6: Scrollbars (no clip — overlay at edges) ---------------
   drawScrollbarV(ctx, state, style);
   drawScrollbarH(ctx, state, style);
+
+  // --- Pass 7: Playhead — drawn LAST so it sits on top of every
+  // other layer (ruler ticks, scrollbar gutters, coverage tint).
+  // Clip excludes the header column but INCLUDES the left/right
+  // padding, so the time-bubble at t=0 can extend into the pad zone
+  // instead of being half-eaten by a tight clip anchored at baseX.
+  // The bubble itself is still clamped inside the playable area in
+  // drawPlayhead so it never crosses the header edge regardless.
+  const playheadLeft = state.showHeader ? HEADER_WIDTH : 0;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(playheadLeft, 0, W - playheadLeft, H);
+  ctx.clip();
+  drawPlayhead(ctx, state, style);
+  ctx.restore();
 }
 
 /**
@@ -172,7 +208,7 @@ function drawCoverageGaps(
 ): void {
   const gaps = uncoveredIntervals(state.project);
   if (gaps.length === 0) return;
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   // Span the visible track area, not the (potentially huge) total —
   // pre-clipped by drawAll's pass-2 region anyway, but explicit
   // height keeps the hatch math clean.
@@ -229,7 +265,7 @@ function drawDragGhost(
   }
   if (!real) return;
 
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   const widthPx = Math.max(2, ((real.out - real.in) / 1000) * state.pxPerSec);
   const startX =
     baseX + (ghost.ghostStart / 1000) * state.pxPerSec - state.scrollLeft;
@@ -347,7 +383,7 @@ function drawRuler(
   style: DrawStyle,
 ): void {
   const { pxPerSec, scrollLeft, viewportWidth: W } = state;
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   const rulerW = W - baseX;
 
   ctx.fillStyle = style.bg;
@@ -421,7 +457,7 @@ function drawTrackRow(
   thumbs: ThumbnailRibbon,
 ): void {
   const { viewportWidth: W } = state;
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   const y = trackY(trackIndex);
 
   // Track surface: just the default tint. Drop-target highlight is now
@@ -493,7 +529,7 @@ function drawClipAt(
   warn: boolean,
 ): void {
   const { pxPerSec, scrollLeft } = state;
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   const startX = baseX + (startMs / 1000) * pxPerSec - scrollLeft;
   const widthPx = Math.max(2, ((clip.out - clip.in) / 1000) * pxPerSec);
   const y = trackY(trackIndex) + CLIP_INSET;
@@ -563,6 +599,62 @@ function drawClipAt(
     ctx.fillRect(startX + 2, y + 12, 2, h - 24);
     ctx.fillRect(startX + widthPx - 4, y + 12, 2, h - 24);
   }
+
+  // Keyframe markers — one diamond per UNIQUE moment in time (a
+  // moment is a cluster of per-prop keyframes at the same time —
+  // typically the panX/panY/scale trio from a single toolbar click).
+  // Painted on the clip body vertical center; selected = brand fill,
+  // hovered = brighter + slightly bigger.
+  if (
+    !dim &&
+    state.keyframesEnabled &&
+    clip.keyframes &&
+    clip.keyframes.length > 0
+  ) {
+    const diamondY = y + h / 2;
+    const halfSize = 5; // visible diamond is 10 × 10 px
+    // Group keyframes by time (within 16 ms of each other = "same moment").
+    const moments = groupKeyframesByTime(clip.keyframes, 16);
+    const ghost = state.keyframeDragGhost;
+    for (const moment of moments) {
+      // The dragged kf within this moment (if any) carries the
+      // ghost time. We just paint one diamond per moment though, so
+      // any one kf belonging to it is enough to detect the ghost.
+      const draggedHere = ghost
+        ? moment.kfs.find(
+            (k) => ghost.clipId === clip.id && ghost.keyframeId === k.id,
+          )
+        : undefined;
+      const effectiveTime = draggedHere ? ghost!.ghostTimeMs : moment.time;
+      const kfX = startX + (effectiveTime / 1000) * pxPerSec;
+      if (kfX < baseX - halfSize || kfX > state.viewportWidth + halfSize) continue;
+      const isSelected =
+        state.selectedKeyframe?.clipId === clip.id &&
+        moment.kfs.some((k) => k.id === state.selectedKeyframe?.keyframeId);
+      const isHovered =
+        state.hoveredKeyframe?.clipId === clip.id &&
+        moment.kfs.some((k) => k.id === state.hoveredKeyframe?.keyframeId);
+      const drawSize = isHovered ? halfSize + 1.5 : halfSize;
+      ctx.beginPath();
+      ctx.moveTo(kfX, diamondY - drawSize);
+      ctx.lineTo(kfX + drawSize, diamondY);
+      ctx.lineTo(kfX, diamondY + drawSize);
+      ctx.lineTo(kfX - drawSize, diamondY);
+      ctx.closePath();
+      ctx.fillStyle = isSelected
+        ? style.selectedRing
+        : isHovered
+          ? "#ffffff"
+          : withAlpha(style.text, 0.85);
+      ctx.fill();
+      ctx.strokeStyle = isHovered
+        ? style.selectedRing
+        : "rgba(0, 0, 0, 0.65)";
+      ctx.lineWidth = isHovered ? 1.5 : 1;
+      ctx.stroke();
+    }
+  }
+
   ctx.restore();
 }
 
@@ -639,7 +731,7 @@ function drawPlayhead(
   state: DrawState,
   style: DrawStyle,
 ): void {
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   const x = baseX + (state.timeMs / 1000) * state.pxPerSec - state.scrollLeft;
   if (x < baseX - 2 || x > state.viewportWidth + 2) return;
 
@@ -652,17 +744,24 @@ function drawPlayhead(
   ctx.stroke();
 
   // Time bubble centered on the playhead at the top of the ruler.
+  // Clamped to the content area's bounds so it doesn't get clipped
+  // (or hidden behind the header column) when the playhead sits at
+  // t=0 or scrolled to the very end. The triangle stays anchored to
+  // the playhead line so the visual link survives the clamp.
   const label = fmtClockMs(state.timeMs);
   ctx.font = "10px system-ui, -apple-system, sans-serif";
   const padX = 6;
   const w = ctx.measureText(label).width + padX * 2;
   const h = 14;
-  const bx = x - w / 2;
+  const contentRight = state.viewportWidth - SCROLLBAR_THICKNESS;
+  const rawBx = x - w / 2;
+  const bx = Math.max(baseX, Math.min(contentRight - w, rawBx));
   const by = 2;
   ctx.fillStyle = style.playhead;
   roundRect(ctx, bx, by, w, h, 4);
   ctx.fill();
-  // Triangle hanging below the bubble.
+  // Triangle hanging below the bubble — keeps the visual link to the
+  // playhead line even when the bubble is clamped.
   ctx.beginPath();
   ctx.moveTo(x - 4, by + h);
   ctx.lineTo(x + 4, by + h);
@@ -741,7 +840,7 @@ function drawScrollbarH(
   style: DrawStyle,
 ): void {
   if (state.scrollbarOpacityX <= 0.01) return;
-  const baseX = state.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(state.showHeader);
   const visibleW = state.viewportWidth - baseX - SCROLLBAR_THICKNESS;
   const contentW = contentWidth(state.project, state.pxPerSec);
   if (contentW <= visibleW) return;
@@ -870,4 +969,28 @@ function parseColor(s: string): [number, number, number] | null {
   const m = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
   if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
   return null;
+}
+
+/**
+ * Cluster per-property keyframes by clip-local time. Two keyframes
+ * within `epsilonMs` are considered the same "moment" (a UX concept
+ * — the user thinks of "this point in time" as a single keyframe
+ * regardless of which props are pinned). Used for one-diamond-per-
+ * moment rendering and for moment-aware hit-testing.
+ */
+export function groupKeyframesByTime(
+  kfs: Keyframe[],
+  epsilonMs: number,
+): Array<{ time: number; kfs: Keyframe[] }> {
+  const sorted = [...kfs].sort((a, b) => a.time - b.time);
+  const out: Array<{ time: number; kfs: Keyframe[] }> = [];
+  for (const k of sorted) {
+    const last = out[out.length - 1];
+    if (last && Math.abs(k.time - last.time) < epsilonMs) {
+      last.kfs.push(k);
+    } else {
+      out.push({ time: k.time, kfs: [k] });
+    }
+  }
+  return out;
 }

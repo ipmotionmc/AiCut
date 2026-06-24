@@ -99,6 +99,357 @@
   min-height: 220px;
 }
 
+/* Keyframe transform panel — floats on the preview's top-left when
+   keyframe mode is on AND a keyframe is selected. Adapts to the
+   editor theme via the same `--aicut-controls-*` tokens the rest of
+   the chrome uses, so dark / light / custom themes get a coherent
+   look without a separate "floating panel" palette. */
+.aicut-keyframe-panel {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 188px;
+  padding: 12px 14px 10px;
+  border-radius: 10px;
+  background: var(--aicut-controls-bg, #1f1f22);
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  font: 12px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  border: 1px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+
+.aicut-keyframe-panel__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  /* Slightly muted variant of controls-text — same hue, less weight. */
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  opacity: 0.75;
+}
+
+.aicut-keyframe-panel__time {
+  font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  opacity: 0.55;
+}
+
+.aicut-keyframe-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.aicut-keyframe-panel__row label {
+  flex: 0 0 44px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  opacity: 0.7;
+}
+
+.aicut-keyframe-panel__row input {
+  flex: 1;
+  width: 84px;
+  min-width: 0;
+  padding: 5px 8px;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.92));
+  background: var(--aicut-controls-hover, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  -moz-appearance: textfield;
+}
+
+.aicut-keyframe-panel__row input::-webkit-outer-spin-button,
+.aicut-keyframe-panel__row input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.aicut-keyframe-panel__row input:hover {
+  background: var(--aicut-controls-active, rgba(255, 255, 255, 0.1));
+}
+
+.aicut-keyframe-panel__row input:focus {
+  outline: none;
+  border-color: var(--color-brand, #ff3386);
+  background: var(--aicut-controls-active, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 0 0 2px rgba(255, 51, 134, 0.22);
+}
+
+/* Small dot to the right of each input — filled = this prop pins
+   THIS moment, outlined = doesn't (display shows the interpolated
+   value; editing will create a kf at this time). */
+.aicut-keyframe-panel__badge {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 2px;
+  border-radius: 50%;
+  border: 1.5px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.36));
+  background: transparent;
+  flex: 0 0 8px;
+  transition:
+    background-color 100ms ease-out,
+    border-color 100ms ease-out;
+}
+.aicut-keyframe-panel__badge--on {
+  background: var(--color-brand, #ff3386);
+  border-color: var(--color-brand, #ff3386);
+  box-shadow: 0 0 6px rgba(255, 51, 134, 0.5);
+}
+
+/* Custom easing dropdown — themed to match the rest of the panel.
+   Trigger acts like a button, the floating menu is brand-aware and
+   uses a subtle gradient + box-shadow for elevation. */
+.aicut-keyframe-panel__dropdown {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+
+.aicut-keyframe-panel__dropdown-trigger {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px 5px 10px;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: left;
+  cursor: pointer;
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.92));
+  background: var(--aicut-controls-hover, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  transition:
+    border-color 120ms ease-out,
+    background-color 120ms ease-out,
+    box-shadow 120ms ease-out;
+}
+.aicut-keyframe-panel__dropdown-trigger:hover {
+  background: var(--aicut-controls-active, rgba(255, 255, 255, 0.1));
+  border-color: var(--color-brand, #ff3386);
+}
+.aicut-keyframe-panel__dropdown-trigger:focus-visible {
+  outline: none;
+  border-color: var(--color-brand, #ff3386);
+  box-shadow: 0 0 0 2px rgba(255, 51, 134, 0.22);
+}
+.aicut-keyframe-panel__dropdown-trigger--open {
+  border-color: var(--color-brand, #ff3386);
+  background: var(--aicut-controls-active, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 0 0 2px rgba(255, 51, 134, 0.22);
+}
+.aicut-keyframe-panel__dropdown-trigger--disabled,
+.aicut-keyframe-panel__dropdown-trigger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.aicut-keyframe-panel__dropdown-trigger-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Chevron — pure CSS triangle, rotates when the menu opens. */
+.aicut-keyframe-panel__dropdown-chevron {
+  flex: 0 0 6px;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+  opacity: 0.75;
+  transition:
+    transform 140ms ease-out,
+    opacity 120ms ease-out;
+  transform-origin: 50% 35%;
+}
+.aicut-keyframe-panel__dropdown-trigger--open
+  .aicut-keyframe-panel__dropdown-chevron {
+  transform: rotate(180deg);
+  opacity: 1;
+  color: var(--color-brand, #ff3386);
+}
+
+/* Floating menu. Positioned right under the trigger; the panel
+   uses `position: relative` on `.dropdown` so absolute-positioning
+   here means "anchored to the trigger". */
+.aicut-keyframe-panel__dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--aicut-controls-bg, rgba(20, 20, 22, 0.96));
+  border: 1px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(255, 51, 134, 0.06);
+  backdrop-filter: blur(8px);
+  animation: aicut-keyframe-dropdown-in 120ms ease-out;
+}
+@keyframes aicut-keyframe-dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.aicut-keyframe-panel__dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 26px;
+  position: relative;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.92));
+  border-radius: 5px;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition: background-color 80ms ease-out;
+}
+.aicut-keyframe-panel__dropdown-item:hover,
+.aicut-keyframe-panel__dropdown-item:focus {
+  background: var(--aicut-controls-active, rgba(255, 255, 255, 0.1));
+}
+.aicut-keyframe-panel__dropdown-item--selected {
+  color: var(--color-brand, #ff3386);
+}
+/* Checkmark for the selected item — drawn with two CSS borders. */
+.aicut-keyframe-panel__dropdown-item--selected::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  width: 4px;
+  height: 8px;
+  margin-top: -5px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.aicut-keyframe-panel__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.08));
+}
+
+.aicut-keyframe-panel__reset {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  background: var(--aicut-controls-hover, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.14));
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    background-color 80ms ease-out,
+    border-color 80ms ease-out,
+    color 80ms ease-out;
+}
+
+.aicut-keyframe-panel__reset:hover:not(:disabled) {
+  background: var(--aicut-controls-active, rgba(255, 255, 255, 0.1));
+  border-color: var(--color-brand, #ff3386);
+}
+
+.aicut-keyframe-panel__reset:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Direct-manipulation overlay on top of the preview — frame border
+   + corner handles. Hidden when keyframes are off (display:none from
+   the controlling class). Pointer events: the overlay itself passes
+   through; only the frame body + handles capture clicks. */
+.aicut-keyframe-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.aicut-keyframe-overlay__frame {
+  position: absolute;
+  border: 1.5px dashed var(--color-brand, #ff3386);
+  background: transparent;
+  pointer-events: auto;
+  cursor: move;
+  box-sizing: border-box;
+  transition:
+    border-color 100ms ease-out,
+    border-style 100ms ease-out,
+    box-shadow 120ms ease-out;
+}
+
+/* Warn state — content doesn't fully cover the output frame, i.e.
+   letterbox is exposed. Strong visual distinction from the brand
+   pink: a solid 2px red border + soft red glow, so even on dark
+   themes where brand and warning hues read similar it's obvious. */
+.aicut-keyframe-overlay__frame--warn {
+  border-style: solid;
+  border-width: 2px;
+  border-color: #ff3b30;
+  box-shadow:
+    0 0 0 1px rgba(255, 59, 48, 0.35),
+    0 0 14px rgba(255, 59, 48, 0.55);
+}
+
+.aicut-keyframe-overlay__handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--aicut-controls-bg, #1f1f22);
+  border: 1.5px solid var(--color-brand, #ff3386);
+  border-radius: 2px;
+  pointer-events: auto;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  transition: transform 80ms ease-out;
+}
+
+.aicut-keyframe-overlay__handle:hover {
+  transform: scale(1.3);
+}
+
+.aicut-keyframe-overlay__handle--tl,
+.aicut-keyframe-overlay__handle--br {
+  cursor: nwse-resize;
+}
+
+.aicut-keyframe-overlay__handle--tr,
+.aicut-keyframe-overlay__handle--bl {
+  cursor: nesw-resize;
+}
+
 .aicut-fullscreen-exit {
   position: absolute;
   top: 16px;

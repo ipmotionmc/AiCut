@@ -233,6 +233,49 @@ const factory = computed(() =>
 
 `WebCodecsEngine` v1 covers single-track MP4/MOV playback (H.264 / HEVC / VP9 / AV1 — whatever the browser's `VideoDecoder` supports). Multi-track compositing, audio, transitions land in follow-up releases.
 
+## Keyframes (panX / panY / scale animation)
+
+Off by default. Flip the `keyframes` prop and **all three** playback engines (HTML5, Canvas, WebCodecs) start interpolating per-clip transforms between adjacent keyframes. Diamond markers appear on the timeline; drag them, edit values via the floating panel, snap them to each other.
+
+```vue
+<script setup lang="ts">
+import { ref } from "vue";
+const kfEnabled = ref(true);
+const edgeNav = ref(true);
+function onKfSelection(t: { clipId: string; keyframeId: string } | null) {
+  console.log(t);
+}
+</script>
+
+<template>
+  <VideoEditor
+    ref="editor"
+    :default-project="project"
+    :keyframes="{ enabled: kfEnabled }"
+    :clip-edge-nav="{ enabled: edgeNav }"
+    @keyframe-selection-change="onKfSelection"
+  />
+</template>
+```
+
+```ts
+// Per-property mutators on the editor API.
+api.addKeyframe("clip-1", "scale", { time: 0, value: 1 });
+api.addKeyframe("clip-1", "scale", { time: 2000, value: 2.5, easing: "easeInOut" });
+api.setKeyframeValue("clip-1", kfId, 1.8);
+api.setKeyframeEasing("clip-1", kfId, "easeOut");
+
+// Toolbar-style "K at playhead" drops all 3 props at once.
+api.setSelection("clip-1");
+api.toggleKeyframeAtPlayhead();
+```
+
+`Keyframe`, `KeyframeProp`, `EasingKind`, `EffectiveTransform`, `getEffectiveTransform`, `getTransformAtTimelineTime`, `IDENTITY_TRANSFORM`, `isIdentityTransform` are all re-exported from `@aicut/vue` for thumbnail / preview rendering outside the editor.
+
+**Backend export:** both `@aicut/backend-ts` and `@aicut/backend-go` compile keyframes to ffmpeg `t`-expressions (`scale=…:eval=frame` + `overlay=…:eval=frame`). Pass `output: { width, height, fps }` in the export request — required for the keyframe filter graph to apply.
+
+See [@aicut/core's keyframes section](https://www.npmjs.com/package/@aicut/core#keyframes-per-clip-panx--pany--scale-animation) for the full API.
+
 ## `<LightingEditor>` (opt-in sub-entry)
 
 A 3D lighting director for AI relighting flows — separate sub-entry; three.js bundles only here.

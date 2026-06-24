@@ -41,6 +41,20 @@ const props = defineProps<{
    * 100% and shows an internal scrollbar when track count overflows.
    */
   timelineHeight?: number;
+  /**
+   * Per-clip keyframe animation (X / Y / Scale). Reactive — set
+   * `{ enabled: true }` to surface keyframe diamonds on the timeline
+   * and route the canvas-based engines through the transform pipeline.
+   * Data is preserved when disabled.
+   */
+  keyframes?: { enabled?: boolean };
+  /**
+   * Jump-to-clip-edge toolbar cluster (|◀ ▶|) + I/O keyboard shortcuts.
+   * Reactive — set `{ enabled: true }` to surface the buttons next to
+   * the keyframe diamond and bind the shortcuts. Off hides the buttons
+   * entirely (no toolbar space cost).
+   */
+  clipEdgeNav?: { enabled?: boolean };
 }>();
 
 const emit = defineEmits<{
@@ -51,6 +65,10 @@ const emit = defineEmits<{
   (e: "play"): void;
   (e: "pause"): void;
   (e: "selectionChange", clipId: string | null): void;
+  (
+    e: "keyframeSelectionChange",
+    target: { clipId: string; keyframeId: string } | null,
+  ): void;
   (e: "error", error: Error): void;
 }>();
 
@@ -76,6 +94,8 @@ onMounted(() => {
     ...(props.timelineHeight != null
       ? { timelineHeight: props.timelineHeight }
       : {}),
+    ...(props.keyframes != null ? { keyframes: props.keyframes } : {}),
+    ...(props.clipEdgeNav != null ? { clipEdgeNav: props.clipEdgeNav } : {}),
   });
 
   offs.push(
@@ -86,6 +106,9 @@ onMounted(() => {
     editor.on("pause", () => emit("pause")),
     editor.on("selectionChange", ({ clipId }) =>
       emit("selectionChange", clipId),
+    ),
+    editor.on("keyframeSelectionChange", ({ target }) =>
+      emit("keyframeSelectionChange", target),
     ),
     editor.on("error", ({ error }) => emit("error", error)),
   );
@@ -106,6 +129,30 @@ watch(
   () => props.locale,
   (locale) => {
     if (locale && editor) editor.setLocale(locale);
+  },
+);
+
+// Reactive — flip keyframe mode without remount. Data preserved.
+watch(
+  () => props.keyframes?.enabled,
+  (enabled) => {
+    if (!editor) return;
+    const desired = enabled === true;
+    if (editor.isKeyframesEnabled() !== desired) {
+      editor.setKeyframesEnabled(desired);
+    }
+  },
+);
+
+// Reactive — flip clip-edge nav cluster (|◀ ▶|) + I/O shortcuts.
+watch(
+  () => props.clipEdgeNav?.enabled,
+  (enabled) => {
+    if (!editor) return;
+    const desired = enabled === true;
+    if (editor.isClipEdgeNavEnabled() !== desired) {
+      editor.setClipEdgeNavEnabled(desired);
+    }
   },
 );
 

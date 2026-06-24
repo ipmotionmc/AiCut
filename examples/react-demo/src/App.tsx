@@ -1,4 +1,11 @@
-import { useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import {
   CanvasCompositorEngine,
   TRACK_HEIGHT,
@@ -176,6 +183,335 @@ function FramePicker() {
   );
 }
 
+/**
+ * Settings popover for the export action. Floats below the "导出"
+ * button. Click-outside / Esc dismisses (Cancel button does the same).
+ * Confirm calls back into the parent which triggers `api.requestExport`
+ * after stashing the latest output settings.
+ */
+type ExportAspectKey = "16:9" | "9:16" | "1:1" | "4:3";
+function ExportPopover(props: {
+  aspect: ExportAspectKey;
+  resIdx: number;
+  fps: number;
+  resolutions: Record<
+    ExportAspectKey,
+    Array<{ label: string; width: number; height: number }>
+  >;
+  fpsOptions: number[];
+  onChangeAspect: (a: ExportAspectKey) => void;
+  onChangeResIdx: (i: number) => void;
+  onChangeFps: (f: number) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  // Click-outside + Esc — same pattern as the keyframe panel dropdown.
+  // rAF defers the listener so the same click that opened us doesn't
+  // immediately close us via outside-click.
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) props.onCancel();
+    };
+    const onKeydown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") props.onCancel();
+    };
+    const handle = requestAnimationFrame(() => {
+      document.addEventListener("click", onDocClick, true);
+      document.addEventListener("keydown", onKeydown);
+    });
+    return () => {
+      cancelAnimationFrame(handle);
+      document.removeEventListener("click", onDocClick, true);
+      document.removeEventListener("keydown", onKeydown);
+    };
+  }, [props]);
+  const opts = props.resolutions[props.aspect];
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      data-testid="demo-export-popover"
+      style={{
+        position: "absolute",
+        top: "calc(100% + 8px)",
+        right: 0,
+        zIndex: 100,
+        minWidth: 240,
+        padding: 12,
+        background: "var(--aicut-controls-bg, #1a1a1d)",
+        border: "1px solid var(--aicut-controls-border, rgba(255,255,255,0.12))",
+        borderRadius: 8,
+        boxShadow: "0 8px 28px rgba(0,0,0,0.32)",
+        color: "var(--aicut-controls-text, rgba(255,255,255,0.92))",
+        fontSize: 12,
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+      }}
+    >
+      <div style={{ fontWeight: 600, fontSize: 13 }}>导出设置</div>
+      <Row label="比例">
+        <PopoverSelect
+          testId="demo-export-aspect"
+          value={props.aspect}
+          options={(Object.keys(props.resolutions) as ExportAspectKey[]).map(
+            (a) => ({ value: a, label: a }),
+          )}
+          onChange={(v) => props.onChangeAspect(v)}
+        />
+      </Row>
+      <Row label="分辨率">
+        <PopoverSelect
+          testId="demo-export-resolution"
+          value={props.resIdx}
+          options={opts.map((r, i) => ({ value: i, label: r.label }))}
+          onChange={(v) => props.onChangeResIdx(v)}
+        />
+      </Row>
+      <Row label="帧率">
+        <PopoverSelect
+          testId="demo-export-fps"
+          value={props.fps}
+          options={props.fpsOptions.map((f) => ({
+            value: f,
+            label: `${f} fps`,
+          }))}
+          onChange={(v) => props.onChangeFps(v)}
+        />
+      </Row>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          justifyContent: "flex-end",
+          marginTop: 4,
+        }}
+      >
+        <button
+          type="button"
+          onClick={props.onCancel}
+          style={{
+            ...demoSlotBtnStyle,
+            background:
+              "var(--aicut-controls-hover, rgba(255,255,255,0.06))",
+          }}
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          data-testid="demo-export-confirm"
+          onClick={props.onConfirm}
+          style={{
+            ...demoSlotBtnStyle,
+            background: "var(--color-brand, #ff3386)",
+            color: "#fff",
+            fontWeight: 600,
+          }}
+        >
+          确定
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Row(props: { label: string; children: ReactNode }) {
+  return (
+    <label
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+      }}
+    >
+      <span style={{ opacity: 0.72 }}>{props.label}</span>
+      {props.children}
+    </label>
+  );
+}
+
+/**
+ * Custom themed select — button trigger + floating menu. Native
+ * <select> dropdowns are OS-painted (foreign font, no theme), which
+ * looked off inside the export popover. This keeps the value type
+ * generic so we can use it for strings (aspect) or numbers (resIdx,
+ * fps) without coercion.
+ *
+ * Click-outside / Esc closes; selected item gets the brand color +
+ * a CSS checkmark. Nests fine inside an outer popover because the
+ * outer's "click-inside-me-doesn't-close" check still passes —
+ * clicking on the trigger / menu items lands inside the OUTER ref.
+ */
+function PopoverSelect<T extends string | number>(props: {
+  value: T;
+  options: Array<{ value: T; label: string }>;
+  onChange: (v: T) => void;
+  testId?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const handle = requestAnimationFrame(() => {
+      document.addEventListener("click", onDocClick, true);
+      document.addEventListener("keydown", onKey);
+    });
+    return () => {
+      cancelAnimationFrame(handle);
+      document.removeEventListener("click", onDocClick, true);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  const current = props.options.find((o) => o.value === props.value);
+  return (
+    <div
+      ref={ref}
+      style={{ position: "relative", display: "inline-block", minWidth: 140 }}
+      data-testid={props.testId}
+    >
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        style={{
+          width: "100%",
+          height: 28,
+          padding: "0 26px 0 10px",
+          textAlign: "left",
+          background:
+            "var(--aicut-controls-hover, rgba(255,255,255,0.06))",
+          border:
+            "1px solid " +
+            (open
+              ? "var(--color-brand, #ff3386)"
+              : "var(--aicut-controls-border, rgba(255,255,255,0.16))"),
+          borderRadius: 6,
+          color: "inherit",
+          fontFamily: "inherit",
+          fontSize: 12,
+          cursor: "pointer",
+          position: "relative",
+          boxShadow: open ? "0 0 0 2px rgba(255,51,134,0.22)" : undefined,
+          transition: "border-color 120ms ease-out, box-shadow 120ms ease-out",
+        }}
+      >
+        <span
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            display: "block",
+          }}
+        >
+          {current?.label ?? ""}
+        </span>
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            right: 9,
+            top: "50%",
+            width: 0,
+            height: 0,
+            borderLeft: "4px solid transparent",
+            borderRight: "4px solid transparent",
+            borderTop: "5px solid currentColor",
+            marginTop: -2,
+            opacity: 0.75,
+            transform: open ? "rotate(180deg)" : "none",
+            transformOrigin: "50% 35%",
+            color: open ? "var(--color-brand, #ff3386)" : "currentColor",
+            transition: "transform 120ms ease-out",
+          }}
+        />
+      </button>
+      {open ? (
+        <ul
+          role="listbox"
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            left: 0,
+            right: 0,
+            margin: 0,
+            padding: 4,
+            listStyle: "none",
+            background: "var(--aicut-controls-bg, #1a1a1d)",
+            border:
+              "1px solid var(--aicut-controls-border, rgba(255,255,255,0.16))",
+            borderRadius: 6,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.32)",
+            zIndex: 200,
+            maxHeight: 240,
+            overflowY: "auto",
+          }}
+        >
+          {props.options.map((opt) => {
+            const selected = opt.value === props.value;
+            return (
+              <li
+                key={String(opt.value)}
+                role="option"
+                aria-selected={selected}
+                onClick={() => {
+                  props.onChange(opt.value);
+                  setOpen(false);
+                }}
+                style={{
+                  padding: "6px 10px 6px 24px",
+                  position: "relative",
+                  borderRadius: 4,
+                  cursor: "pointer",
+                  color: selected
+                    ? "var(--color-brand, #ff3386)"
+                    : "inherit",
+                  background: "transparent",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background =
+                    "var(--aicut-controls-active, rgba(255,255,255,0.1))";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
+              >
+                {selected ? (
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: "absolute",
+                      left: 8,
+                      top: "50%",
+                      width: 4,
+                      height: 8,
+                      marginTop: -5,
+                      borderRight: "2px solid currentColor",
+                      borderBottom: "2px solid currentColor",
+                      transform: "rotate(45deg)",
+                    }}
+                  />
+                ) : null}
+                {opt.label}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 // Mirror .aicut-icon-btn chrome exactly — same height, radius, no
 // border, background tints on hover. Using `appearance: none` on the
 // <select> is required: macOS' native popup-button has a minimum
@@ -225,6 +561,85 @@ interface ExportStatus {
   error?: string;
 }
 
+/**
+ * Compact live indicator that takes the timeline-toolbar's right
+ * slot (where the "导出" button used to live). Renders empty when
+ * idle, a brand-tinted progress pill while encoding/concatenating,
+ * and an error chip if the last export failed. The full status
+ * card with the file link is still in the sidebar; this is just
+ * the at-a-glance progress so the user doesn't have to look away
+ * from the timeline while waiting.
+ */
+function ExportStatusPill({ status }: { status: ExportStatus }) {
+  if (status.running) {
+    const pct = Math.round((status.overall ?? 0) * 100);
+    const label =
+      status.phase === "concat"
+        ? `合并中 ${pct}%`
+        : status.totalClips != null && status.clipIndex != null
+          ? `编码 ${status.clipIndex + 1}/${status.totalClips} · ${pct}%`
+          : `编码中 ${pct}%`;
+    return (
+      <span
+        data-testid="demo-export-pill"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          height: 24,
+          padding: "0 10px",
+          borderRadius: 12,
+          fontSize: 11,
+          lineHeight: 1,
+          fontVariantNumeric: "tabular-nums",
+          color: "var(--color-brand, #ff3386)",
+          background: "rgba(255,51,134,0.10)",
+          border: "1px solid rgba(255,51,134,0.32)",
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            display: "inline-block",
+            width: 6,
+            height: 6,
+            borderRadius: 3,
+            background: "var(--color-brand, #ff3386)",
+            animation: "aicut-pulse 1.2s ease-in-out infinite",
+          }}
+        />
+        {label}
+      </span>
+    );
+  }
+  if (status.error) {
+    return (
+      <span
+        data-testid="demo-export-pill-error"
+        title={status.error}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          height: 24,
+          padding: "0 10px",
+          borderRadius: 12,
+          fontSize: 11,
+          color: "#ff3b30",
+          background: "rgba(255,59,48,0.10)",
+          border: "1px solid rgba(255,59,48,0.32)",
+          maxWidth: 280,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        导出失败 — {status.error}
+      </span>
+    );
+  }
+  return null;
+}
+
 const BACKENDS = {
   ts: { label: "TypeScript (8787)", url: "http://127.0.0.1:8787" },
   go: { label: "Go (8788)", url: "http://127.0.0.1:8788" },
@@ -238,6 +653,49 @@ export function App() {
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
   const [themeName, setThemeName] = useState<"dark" | "light">("dark");
   const [aspect, setAspect] = useState<"16:9" | "9:16" | "1:1">("16:9");
+  // Export popover state. The user opens it via the "导出" button,
+  // picks aspect / resolution / fps, then Confirm posts. Mirrors how
+  // real NLEs gate export behind a settings dialog so accidental
+  // single-clicks don't kick off a 30-second encode at the wrong
+  // dimensions. The keyframe-compilation branch on the backend is
+  // ALSO gated on width+height, so silently exporting at "no dims"
+  // would skip animation entirely — bug we just fixed.
+  type ExportAspect = "16:9" | "9:16" | "1:1" | "4:3";
+  const RESOLUTIONS: Record<
+    ExportAspect,
+    Array<{ label: string; width: number; height: number }>
+  > = {
+    "16:9": [
+      { label: "480p (854×480)", width: 854, height: 480 },
+      { label: "720p (1280×720)", width: 1280, height: 720 },
+      { label: "1080p (1920×1080)", width: 1920, height: 1080 },
+      { label: "1440p (2560×1440)", width: 2560, height: 1440 },
+      { label: "4K (3840×2160)", width: 3840, height: 2160 },
+    ],
+    "9:16": [
+      { label: "480p (480×854)", width: 480, height: 854 },
+      { label: "720p (720×1280)", width: 720, height: 1280 },
+      { label: "1080p (1080×1920)", width: 1080, height: 1920 },
+    ],
+    "1:1": [
+      { label: "720×720", width: 720, height: 720 },
+      { label: "1080×1080", width: 1080, height: 1080 },
+      { label: "1440×1440", width: 1440, height: 1440 },
+    ],
+    "4:3": [
+      { label: "480p (640×480)", width: 640, height: 480 },
+      { label: "720p (1024×768)", width: 1024, height: 768 },
+      { label: "1080p (1440×1080)", width: 1440, height: 1080 },
+    ],
+  };
+  const FPS_OPTIONS = [24, 30, 60];
+  const [exportPopoverOpen, setExportPopoverOpen] = useState(false);
+  const [exportAspect, setExportAspect] = useState<ExportAspect>("16:9");
+  // Index into RESOLUTIONS[exportAspect] — keep as index so changing
+  // aspect can fall back to "same tier" (e.g. 1080p) without remembering
+  // the old (w, h) tuple. Default to 1080p slot for 16:9.
+  const [exportResIdx, setExportResIdx] = useState(2);
+  const [exportFps, setExportFps] = useState(30);
   const [showToolbarLeft, setShowToolbarLeft] = useState(true);
   const [showToolbarRight, setShowToolbarRight] = useState(true);
   const [showHeader, setShowHeader] = useState(true);
@@ -268,6 +726,15 @@ export function App() {
   // scrolls). Reactive — no remount needed, the React wrapper
   // pushes it through as a CSS custom property update.
   const [timelineHeight, setTimelineHeight] = useState<number>(240);
+  // Keyframe mode toggle — surfaces diamond markers on the timeline +
+  // routes the canvas / WebCodecs engines through the transform
+  // pipeline. Data round-trips either way, so flipping off and back on
+  // doesn't lose the keyframes.
+  const [keyframesEnabled, setKeyframesEnabled] = useState<boolean>(false);
+  // Jump-to-clip-edge nav cluster (|◀ ▶|) + I/O keyboard shortcuts.
+  // Off by default — the buttons take toolbar space and the I/O keys
+  // would shadow page typing, so hosts opt in like they do for kfs.
+  const [clipEdgeNavEnabled, setClipEdgeNavEnabled] = useState<boolean>(false);
   const playbackEngine: PlaybackEngineFactory = useMemo(() => {
     if (engineKind === "canvas") {
       return (opts) => new CanvasCompositorEngine({ ...opts, debug: true });
@@ -285,17 +752,43 @@ export function App() {
   backendKindRef.current = backendKind;
   const theme = useMemo(() => THEMES[themeName], [themeName]);
 
-  const runBackendExport = async (project: Project): Promise<void> => {
+  const runBackendExport = async (
+    project: Project,
+    output: { width: number; height: number; fps: number },
+  ): Promise<void> => {
     exportAbortRef.current?.abort();
     const ac = new AbortController();
     exportAbortRef.current = ac;
     const baseUrl = BACKENDS[backendKindRef.current].url;
     setExportStatus({ running: true, overall: 0, phase: "encode" });
+    // Resolve dev-server-relative URLs (e.g. "/a.mov") into absolute
+    // http URLs the backend's ffmpeg can fetch. Demo seeds use Vite's
+    // /public/ paths which are only meaningful to the browser; the
+    // backend opens whatever string we send via `-i`, and "/a.mov"
+    // would try to read from the filesystem root. Leave already-
+    // absolute URLs (http(s)://, file://) untouched.
+    const projectForExport: Project = {
+      ...project,
+      sources: project.sources.map((s) => {
+        if (s.url.startsWith("/") && !s.url.startsWith("//")) {
+          return { ...s, url: `${window.location.origin}${s.url}` };
+        }
+        return s;
+      }),
+    };
     try {
       const res = await fetch(`${baseUrl}/export`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ project }),
+        // Output dims gate the kf compilation on the backend — without
+        // them ffmpeg gets neither `-vf` nor `-filter_complex` and
+        // keyframe transforms are silently skipped. The popover always
+        // supplies all three so we never accidentally regress to "no
+        // dims" again.
+        body: JSON.stringify({
+          project: projectForExport,
+          output,
+        }),
         signal: ac.signal,
       });
       if (!res.ok || !res.body) {
@@ -387,6 +880,8 @@ export function App() {
           playbackEngine={playbackEngine}
           trackHeight={trackHeight}
           timelineHeight={timelineHeight}
+          keyframes={{ enabled: keyframesEnabled }}
+          clipEdgeNav={{ enabled: clipEdgeNavEnabled }}
           style={{ height: "100%" }}
           headerLeft={
             showHeader ? (
@@ -408,19 +903,62 @@ export function App() {
                 >
                   Share
                 </button>
-                <button
-                  type="button"
-                  className="demo-slot-btn"
-                  data-testid="demo-header-export"
-                  onClick={() => apiRef.current?.requestExport()}
-                  style={{
-                    ...demoSlotBtnStyle,
-                    background: "var(--color-brand, #ff3386)",
-                    color: "#fff",
-                  }}
-                >
-                  Export
-                </button>
+                <span style={{ position: "relative", display: "inline-block" }}>
+                  <button
+                    type="button"
+                    className="demo-slot-btn"
+                    data-testid="demo-header-export"
+                    disabled={exportStatus.running}
+                    onClick={() => setExportPopoverOpen((v) => !v)}
+                    style={{
+                      ...demoSlotBtnStyle,
+                      background: exportStatus.running
+                        ? "var(--aicut-controls-hover, rgba(255,255,255,0.08))"
+                        : "var(--color-brand, #ff3386)",
+                      color: exportStatus.running
+                        ? "var(--aicut-controls-text, rgba(255,255,255,0.6))"
+                        : "#fff",
+                      cursor: exportStatus.running ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {exportStatus.running ? "导出中…" : "Export"}
+                  </button>
+                  {exportPopoverOpen && !exportStatus.running ? (
+                    <ExportPopover
+                      aspect={exportAspect}
+                      resIdx={exportResIdx}
+                      fps={exportFps}
+                      onChangeAspect={(a) => {
+                        setExportAspect(a);
+                        setExportResIdx((i) =>
+                          Math.min(i, RESOLUTIONS[a].length - 1),
+                        );
+                      }}
+                      onChangeResIdx={setExportResIdx}
+                      onChangeFps={setExportFps}
+                      onCancel={() => setExportPopoverOpen(false)}
+                      onConfirm={() => {
+                        const api = apiRef.current;
+                        if (!api) {
+                          setExportStatus({
+                            running: false,
+                            error: "Editor API not ready yet",
+                          });
+                          return;
+                        }
+                        setExportPopoverOpen(false);
+                        setExportStatus({
+                          running: true,
+                          overall: 0,
+                          phase: "encode",
+                        });
+                        api.requestExport();
+                      }}
+                      resolutions={RESOLUTIONS}
+                      fpsOptions={FPS_OPTIONS}
+                    />
+                  ) : null}
+                </span>
               </>
             ) : null
           }
@@ -446,44 +984,7 @@ export function App() {
           }
           toolbarRight={
             showToolbarRight ? (
-              <button
-                type="button"
-                data-testid="demo-export"
-                className="demo-slot-btn"
-                disabled={exportStatus.running}
-                onClick={() => {
-                  // Instant feedback BEFORE the event-bus round-trip,
-                  // so a click is obviously registered even if the
-                  // editor instance is mid-recreation or the listener
-                  // chain has an issue.
-                  console.log("[demo] export clicked", apiRef.current);
-                  const api = apiRef.current;
-                  if (!api) {
-                    setExportStatus({
-                      running: false,
-                      error: "Editor API not ready yet",
-                    });
-                    return;
-                  }
-                  if (typeof api.requestExport !== "function") {
-                    setExportStatus({
-                      running: false,
-                      error:
-                        "api.requestExport is not a function — stale build?",
-                    });
-                    return;
-                  }
-                  setExportStatus({
-                    running: true,
-                    overall: 0,
-                    phase: "encode",
-                  });
-                  api.requestExport();
-                }}
-                style={demoSlotBtnStyle}
-              >
-                {exportStatus.running ? "导出中…" : "导出"}
-              </button>
+              <ExportStatusPill status={exportStatus} />
             ) : null
           }
           onReady={(api) => {
@@ -531,7 +1032,13 @@ export function App() {
           onChange={(p) => setSavedJson(JSON.stringify(p, null, 2))}
           onExport={(p) => {
             setExportJson(JSON.stringify(p, null, 2));
-            void runBackendExport(p);
+            const res = RESOLUTIONS[exportAspect][exportResIdx]
+              ?? RESOLUTIONS[exportAspect][0]!;
+            void runBackendExport(p, {
+              width: res.width,
+              height: res.height,
+              fps: exportFps,
+            });
           }}
         />
       </div>
@@ -648,6 +1155,39 @@ export function App() {
             paint a HUD badge identifying who's drawing.
           </p>
         </div>
+
+        <h2>Keyframes</h2>
+        <div className="demo-row demo-checkbox-row">
+          <label>
+            <input
+              type="checkbox"
+              data-testid="demo-keyframes-toggle"
+              checked={keyframesEnabled}
+              onChange={(e) => setKeyframesEnabled(e.target.checked)}
+            />
+            <span>Enable keyframe animation (X / Y / Scale)</span>
+          </label>
+        </div>
+        <div className="demo-row demo-checkbox-row">
+          <label>
+            <input
+              type="checkbox"
+              data-testid="demo-clip-edge-nav-toggle"
+              checked={clipEdgeNavEnabled}
+              onChange={(e) => setClipEdgeNavEnabled(e.target.checked)}
+            />
+            <span>Enable "jump to clip start / end" (|◀ ▶|, I / O)</span>
+          </label>
+        </div>
+        <p className="demo-engine-help">
+          Library-provided UI: a "+ keyframe" button appears in the
+          toolbar; clicking pins the current X / Y / Scale at the
+          playhead. Selected clips show a dashed frame border in the
+          preview with drag-to-translate + corner-handles-to-scale.
+          The numeric panel pops up in the preview's top-left whenever
+          a keyframe is selected. (HtmlVideoEngine renders identity —
+          swap to Canvas / WebCodecs for live animated preview.)
+        </p>
 
         <h2>Header</h2>
         <div className="demo-row demo-checkbox-row">

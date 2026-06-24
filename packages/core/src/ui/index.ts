@@ -1,8 +1,16 @@
-import { clipDuration, findClipContaining, findTrackOfClip } from "../model.js";
+import {
+  bigFrameStepMs,
+  clipDuration,
+  findClipContaining,
+  findTrackOfClip,
+  frameStepMs,
+} from "../model.js";
 import type { Editor } from "../editor.js";
 import { Timeline } from "../timeline/index.js";
 import type { Clip, Ms } from "../types.js";
 import type { Locale } from "../i18n.js";
+import { KeyframeOverlay } from "./keyframe-overlay.js";
+import { KeyframePanel } from "./keyframe-panel.js";
 import { Toolbar, type ToolbarCallbacks } from "./toolbar.js";
 
 /**
@@ -22,6 +30,14 @@ export interface UICallbacks extends ToolbarCallbacks {
   onResizeClip: (
     clipId: string,
     edits: Partial<Pick<Clip, "in" | "out" | "start">>,
+  ) => void;
+  onSelectKeyframe: (
+    target: { clipId: string; keyframeId: string } | null,
+  ) => void;
+  onMoveKeyframe: (
+    clipId: string,
+    keyframeId: string,
+    timeMs: Ms,
   ) => void;
 }
 
@@ -44,6 +60,8 @@ export class EditorUI {
   private toolbar: Toolbar;
   private timelineHost: HTMLDivElement;
   private timeline: Timeline;
+  private keyframePanel: KeyframePanel;
+  private keyframeOverlay: KeyframeOverlay;
   private fullscreen = false;
   private onDocKeydown: ((e: KeyboardEvent) => void) | null = null;
 
@@ -101,10 +119,14 @@ export class EditorUI {
       snap: editor.getSnap(),
       autoFit: true,
       locale,
+      keyframesEnabled: editor.isKeyframesEnabled(),
+      selectedKeyframe: editor.getSelectedKeyframe(),
       onSeek: cb.onSeek,
       onSelectClip: cb.onSelectClip,
       onMoveClip: cb.onMoveClip,
       onResizeClip: cb.onResizeClip,
+      onSelectKeyframe: cb.onSelectKeyframe,
+      onMoveKeyframe: cb.onMoveKeyframe,
       onScaleChange: cb.onScaleChange,
       onDeleteTrack: (trackId) => editor.removeTrack(trackId),
       // Mirror the editor's smart routing into the drag preview so
@@ -129,6 +151,14 @@ export class EditorUI {
         };
       },
     });
+
+    // Keyframe panel — floats over the preview's left edge; visible
+    // only when keyframes mode is on AND a keyframe is selected.
+    this.keyframePanel = new KeyframePanel(this.preview, editor, locale);
+    // Keyframe overlay — frame border + scale handles on top of the
+    // preview; drives drag-to-translate and corner-handle-to-scale
+    // gestures via direct manipulation. Hidden when keyframes off.
+    this.keyframeOverlay = new KeyframeOverlay(this.preview, editor);
 
     this.attachKeyboard(cb);
   }
@@ -189,6 +219,13 @@ export class EditorUI {
     const pxPerSec = this.editor.getScale();
     const snap = this.editor.getSnap();
 
+    const kfEnabled = this.editor.isKeyframesEnabled();
+    const kfState = this.computeKeyframeToolbarState(
+      project,
+      selectedClipId,
+      time,
+      kfEnabled,
+    );
     this.toolbar.render({
       playing: this.editor.isPlaying(),
       time,
@@ -197,8 +234,11 @@ export class EditorUI {
       canRedo: this.editor.canRedo(),
       canSplit: this.canSplitAt(time),
       canTrim: this.canTrimAt(time, selectedClipId),
+      canSeekClipEdge: selectedClipId != null,
+      clipEdgeNavEnabled: this.editor.isClipEdgeNavEnabled(),
       snap,
       pxPerSec,
+      ...kfState,
     });
 
     this.timeline.setProject(project);
@@ -206,11 +246,24 @@ export class EditorUI {
     this.timeline.setScale(pxPerSec);
     this.timeline.setSelection(selectedClipId);
     this.timeline.setSnap(snap);
+    this.timeline.setKeyframeState({
+      enabled: this.editor.isKeyframesEnabled(),
+      selected: this.editor.getSelectedKeyframe(),
+    });
+    this.keyframePanel.render();
   }
 
   /** Playback-fast path: nudge playhead + toolbar time label only. */
   onTimeTick(timeMs: Ms): void {
     this.timeline.setTime(timeMs);
+    const selectedClipId = this.editor.getSelection();
+    const kfEnabled = this.editor.isKeyframesEnabled();
+    const kfState = this.computeKeyframeToolbarState(
+      this.editor.getProject(),
+      selectedClipId,
+      timeMs,
+      kfEnabled,
+    );
     this.toolbar.render({
       playing: this.editor.isPlaying(),
       time: timeMs,
@@ -218,9 +271,12 @@ export class EditorUI {
       canUndo: this.editor.canUndo(),
       canRedo: this.editor.canRedo(),
       canSplit: this.canSplitAt(timeMs),
-      canTrim: this.canTrimAt(timeMs, this.editor.getSelection()),
+      canTrim: this.canTrimAt(timeMs, selectedClipId),
+      canSeekClipEdge: selectedClipId != null,
+      clipEdgeNavEnabled: this.editor.isClipEdgeNavEnabled(),
       snap: this.editor.getSnap(),
       pxPerSec: this.editor.getScale(),
+      ...kfState,
     });
   }
 
@@ -234,6 +290,7 @@ export class EditorUI {
     this.fullscreenExitBtn.title = locale.exitFullscreenTitle;
     this.fullscreenExitBtn.textContent = locale.exitFullscreen;
     this.timeline.setLocale(locale);
+    this.keyframePanel.setLocale(locale);
     this.render();
   }
 
@@ -244,11 +301,64 @@ export class EditorUI {
     }
     this.toolbar.destroy();
     this.timeline.destroy();
+    this.keyframePanel.destroy();
+    this.keyframeOverlay.destroy();
     this.root.innerHTML = "";
     this.root.classList.remove("aicut-root", "aicut-fullscreen");
   }
 
   // ---- helpers --------------------------------------------------------
+
+  /** Walk the selected clip + playhead state to figure out (a) whether
+   *  the keyframe button should be enabled, and (b) whether a keyframe
+   *  already exists at the playhead's clip-local time (so the button
+   *  swaps to "remove" mode). */
+  private computeKeyframeToolbarState(
+    project: { tracks: { clips: Clip[] }[] },
+    selectedClipId: string | null,
+    time: Ms,
+    keyframesEnabled: boolean,
+  ): { canKeyframe: boolean; hasKeyframeAtPlayhead: boolean; keyframesEnabled: boolean } {
+    if (!keyframesEnabled || !selectedClipId) {
+      return {
+        canKeyframe: false,
+        hasKeyframeAtPlayhead: false,
+        keyframesEnabled,
+      };
+    }
+    let clip: Clip | null = null;
+    for (const t of project.tracks) {
+      const c = t.clips.find((cl) => cl.id === selectedClipId);
+      if (c) {
+        clip = c;
+        break;
+      }
+    }
+    if (!clip) {
+      return {
+        canKeyframe: false,
+        hasKeyframeAtPlayhead: false,
+        keyframesEnabled,
+      };
+    }
+    const localMs = time - clip.start;
+    const duration = clipDuration(clip);
+    if (localMs < 0 || localMs > duration) {
+      return {
+        canKeyframe: false,
+        hasKeyframeAtPlayhead: false,
+        keyframesEnabled,
+      };
+    }
+    const roundedLocal = Math.round(localMs);
+    const hasKf =
+      clip.keyframes?.some((k) => k.time === roundedLocal) ?? false;
+    return {
+      canKeyframe: true,
+      hasKeyframeAtPlayhead: hasKf,
+      keyframesEnabled,
+    };
+  }
 
   private canSplitAt(timeMs: Ms): boolean {
     const project = this.editor.getProject();
@@ -293,6 +403,27 @@ export class EditorUI {
       } else if (e.code === "KeyW") {
         e.preventDefault();
         cb.onTrimRight();
+      } else if (e.code === "KeyI" && this.editor.isClipEdgeNavEnabled()) {
+        e.preventDefault();
+        cb.onSeekClipStart();
+      } else if (e.code === "KeyO" && this.editor.isClipEdgeNavEnabled()) {
+        e.preventDefault();
+        cb.onSeekClipEnd();
+      } else if (e.code === "ArrowLeft" || e.code === "ArrowRight") {
+        // Frame-stepping nav — matches Premiere / Final Cut / CapCut /
+        // After Effects: ← / → = one frame, Shift+← / → = 10 frames.
+        // Step size derived from Project.fps (defaults to 30 when
+        // unset) so a 60 fps project nudges in half-frames relative
+        // to a 30 fps one.
+        e.preventDefault();
+        const project = this.editor.getProject();
+        const step = e.shiftKey ? bigFrameStepMs(project) : frameStepMs(project);
+        const dir = e.code === "ArrowLeft" ? -1 : 1;
+        const next = Math.max(
+          0,
+          Math.min(this.editor.getDuration(), this.editor.getTime() + dir * step),
+        );
+        cb.onSeek(next);
       } else if ((e.metaKey || e.ctrlKey) && e.code === "KeyZ") {
         e.preventDefault();
         if (e.shiftKey) cb.onRedo();

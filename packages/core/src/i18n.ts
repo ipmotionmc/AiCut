@@ -16,7 +16,6 @@ export interface Locale {
   split: string;
   trimLeft: string;
   trimRight: string;
-  speedComingSoon: string;
   playPause: string;
   fullscreen: string;
   snap: string;
@@ -27,6 +26,43 @@ export interface Locale {
   zoomOut: string;
   zoomIn: string;
   reset: string;
+  /** Toolbar tooltip when no keyframe exists at the playhead. */
+  keyframeAdd: string;
+  /** Toolbar tooltip when one exists — clicking removes it. */
+  keyframeRemove: string;
+  /** Toolbar tooltip — jump the playhead to the selected clip's start. */
+  seekClipStart: string;
+  /** Toolbar tooltip — jump the playhead to the selected clip's end. */
+  seekClipEnd: string;
+
+  // Keyframe panel chrome
+  /** Header text on the keyframe parameter panel. */
+  keyframePanelTitle: string;
+  /** Row label for the X-translation numeric input. */
+  keyframePanelLabelX: string;
+  /** Row label for the Y-translation numeric input. */
+  keyframePanelLabelY: string;
+  /** Row label for the scale numeric input. */
+  keyframePanelLabelScale: string;
+  /** Row label for the easing dropdown. */
+  keyframePanelLabelEasing: string;
+  /** Reset button label — pins this kf to identity (0, 0, 1). */
+  keyframePanelReset: string;
+  /** Reset button tooltip. */
+  keyframePanelResetTitle: string;
+  /** Badge tooltip — kf for THIS prop is pinned at this moment. */
+  keyframePanelBadgePinned: string;
+  /** Badge tooltip — prop has kfs elsewhere but not at this moment. */
+  keyframePanelBadgeAnimated: string;
+  /** Badge tooltip — prop has no kfs (riding the static base). */
+  keyframePanelBadgeStatic: string;
+  /** Time display suffix — appended after the seconds value. */
+  keyframePanelTimeSuffix: string;
+  // Easing dropdown options (curve names)
+  keyframeEasingLinear: string;
+  keyframeEasingEaseIn: string;
+  keyframeEasingEaseOut: string;
+  keyframeEasingEaseInOut: string;
 
   // Fullscreen exit overlay
   exitFullscreen: string;
@@ -43,12 +79,11 @@ export interface Locale {
 
 /** English. The library default — chosen over Chinese as the OSS norm. */
 export const localeEn: Locale = {
-  undo: "Undo",
-  redo: "Redo",
-  split: "Split",
-  trimLeft: "Trim left edge",
-  trimRight: "Trim right edge",
-  speedComingSoon: "Speed (coming soon)",
+  undo: "Undo (⌘Z)",
+  redo: "Redo (⇧⌘Z)",
+  split: "Split (K)",
+  trimLeft: "Trim left edge (Q)",
+  trimRight: "Trim right edge (W)",
   playPause: "Play / Pause (Space)",
   fullscreen: "Fullscreen preview",
   snap: "Snap",
@@ -57,6 +92,26 @@ export const localeEn: Locale = {
   zoomOut: "Zoom out",
   zoomIn: "Zoom in",
   reset: "Reset edits (keep sources)",
+  keyframeAdd: "Add keyframe at playhead",
+  keyframeRemove: "Remove keyframe at playhead",
+  seekClipStart: "Jump to clip start (I)",
+  seekClipEnd: "Jump to clip end (O)",
+  keyframePanelTitle: "Keyframe",
+  keyframePanelLabelX: "X",
+  keyframePanelLabelY: "Y",
+  keyframePanelLabelScale: "Scale",
+  keyframePanelLabelEasing: "Easing",
+  keyframePanelReset: "Reset to 0 0 1",
+  keyframePanelResetTitle:
+    "Pin this keyframe to identity (panX=0, panY=0, scale=1)",
+  keyframePanelBadgePinned: "Pinned at this moment",
+  keyframePanelBadgeAnimated: "Animated — but not pinned at this exact moment",
+  keyframePanelBadgeStatic: "Static value",
+  keyframePanelTimeSuffix: "s",
+  keyframeEasingLinear: "Linear",
+  keyframeEasingEaseIn: "Ease in",
+  keyframeEasingEaseOut: "Ease out",
+  keyframeEasingEaseInOut: "Ease in-out",
   exitFullscreen: "Exit fullscreen",
   exitFullscreenTitle: "Exit fullscreen (Esc)",
   newTrack: "+ New track",
@@ -66,12 +121,11 @@ export const localeEn: Locale = {
 
 /** Simplified Chinese. */
 export const localeZh: Locale = {
-  undo: "撤销",
-  redo: "重做",
-  split: "分割",
-  trimLeft: "向左裁剪",
-  trimRight: "向右裁剪",
-  speedComingSoon: "变速（即将到来）",
+  undo: "撤销 (⌘Z)",
+  redo: "重做 (⇧⌘Z)",
+  split: "分割 (K)",
+  trimLeft: "向左裁剪 (Q)",
+  trimRight: "向右裁剪 (W)",
   playPause: "播放 / 暂停 (Space)",
   fullscreen: "全屏预览",
   snap: "吸附",
@@ -80,6 +134,26 @@ export const localeZh: Locale = {
   zoomOut: "缩小",
   zoomIn: "放大",
   reset: "重置编辑（保留视频源）",
+  keyframeAdd: "添加关键帧",
+  keyframeRemove: "删除当前关键帧",
+  seekClipStart: "跳到片段起点 (I)",
+  seekClipEnd: "跳到片段末尾 (O)",
+  keyframePanelTitle: "关键帧",
+  keyframePanelLabelX: "X 位移",
+  keyframePanelLabelY: "Y 位移",
+  keyframePanelLabelScale: "缩放",
+  keyframePanelLabelEasing: "缓动",
+  keyframePanelReset: "重置为 0 0 1",
+  keyframePanelResetTitle:
+    "将该关键帧重置为初始姿态（panX=0, panY=0, scale=1）",
+  keyframePanelBadgePinned: "已在该时刻固定",
+  keyframePanelBadgeAnimated: "整段有动画，但当前时刻没有锁点",
+  keyframePanelBadgeStatic: "未动画（沿用静态值）",
+  keyframePanelTimeSuffix: "秒",
+  keyframeEasingLinear: "线性",
+  keyframeEasingEaseIn: "缓入",
+  keyframeEasingEaseOut: "缓出",
+  keyframeEasingEaseInOut: "缓入缓出",
   exitFullscreen: "退出全屏",
   exitFullscreenTitle: "退出全屏 (Esc)",
   newTrack: "+ 新轨道",

@@ -1,3 +1,4 @@
+import { getEffectiveTransform } from "../keyframes/index.js";
 import type { Clip, Ms, Project } from "../types.js";
 import type {
   PlaybackEngine,
@@ -47,6 +48,20 @@ export class CanvasCompositorEngine implements PlaybackEngine {
   private rafHandle: number | null = null;
   private lastFrameTs = 0;
   private paintedFrames = 0;
+  /** Output frame rect (no transform) — fixed bounds. */
+  private lastOutputRect: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null = null;
+  /** Post-transform content rect. */
+  private lastFrameRect: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null = null;
 
   onTimeUpdate?: (ms: Ms) => void;
   onEnded?: () => void;
@@ -362,18 +377,66 @@ export class CanvasCompositorEngine implements PlaybackEngine {
     this.ctx.clearRect(0, 0, cw, ch);
     const clip = this.currentClipId ? this.clipById(this.currentClipId) : null;
     const v = clip ? this.videos.get(clip.sourceId) : null;
-    if (v && v.videoWidth > 0 && v.videoHeight > 0) {
+    if (v && v.videoWidth > 0 && v.videoHeight > 0 && clip) {
       const vw = v.videoWidth;
       const vh = v.videoHeight;
-      const scale = Math.min(cw / vw, ch / vh);
-      const dw = vw * scale;
-      const dh = vh * scale;
-      const dx = (cw - dw) / 2;
-      const dy = (ch - dh) / 2;
-      this.ctx.drawImage(v, dx, dy, dw, dh);
+      const baseScale = Math.min(cw / vw, ch / vh);
+      const dw = vw * baseScale;
+      const dh = vh * baseScale;
+      const cx = cw / 2;
+      const cy = ch / 2;
+      // Compose keyframe transform on top of the centered letterbox.
+      // Identity transform (no keyframes / disabled) → math reduces to
+      // a plain centered drawImage, same as before.
+      // panX/panY are in CSS pixels (so "100" reads the same across
+      // DPR=1 and DPR=2 monitors). Multiply by DPR for the canvas
+      // coordinate space.
+      const dpr = window.devicePixelRatio || 1;
+      const t = getEffectiveTransform(clip, this.timeMs - clip.start);
+      // Output frame in canvas pixels — fixed bounds we clip to so
+      // pan / zoom show the letterbox bg, not editor chrome.
+      const outX = (cw - dw) / 2;
+      const outY = (ch - dh) / 2;
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.rect(outX, outY, dw, dh);
+      this.ctx.clip();
+      this.ctx.translate(cx + t.panX * dpr, cy + t.panY * dpr);
+      this.ctx.scale(t.scale, t.scale);
+      this.ctx.drawImage(v, -dw / 2, -dh / 2, dw, dh);
+      this.ctx.restore();
       this.paintedFrames += 1;
+      this.lastOutputRect = {
+        x: outX / dpr,
+        y: outY / dpr,
+        w: dw / dpr,
+        h: dh / dpr,
+      };
+      const cssCx = cw / (2 * dpr) + t.panX;
+      const cssCy = ch / (2 * dpr) + t.panY;
+      const cssW = (dw * t.scale) / dpr;
+      const cssH = (dh * t.scale) / dpr;
+      this.lastFrameRect = {
+        x: cssCx - cssW / 2,
+        y: cssCy - cssH / 2,
+        w: cssW,
+        h: cssH,
+      };
+    } else {
+      this.lastFrameRect = null;
+      this.lastOutputRect = null;
     }
     this.updateBadge();
+  }
+
+  getOutputFrameRect():
+    | { x: number; y: number; w: number; h: number }
+    | null {
+    return this.lastOutputRect;
+  }
+
+  getFrameRect(): { x: number; y: number; w: number; h: number } | null {
+    return this.lastFrameRect;
   }
 
   private updateBadge(): void {

@@ -224,6 +224,50 @@ When both `headerLeft` and `headerRight` are empty the header bar collapses enti
 
 ---
 
+## 🎞 Keyframe animation
+
+CapCut-style **per-property keyframes** for `panX`, `panY`, and `scale` — pin a value at any moment, the engine animates between them. Authored in the editor, previewed live by any playback engine, **compiled to ffmpeg expressions on export** so the rendered mp4 matches the preview frame-for-frame.
+
+```ts
+clip.keyframes = [
+  { id: "k1", prop: "scale", time: 0,    value: 1                       },
+  { id: "k2", prop: "scale", time: 2000, value: 2.5, easing: "easeInOut" },
+  { id: "k3", prop: "scale", time: 4000, value: 1                       },
+];
+```
+
+| Capability | Notes |
+| :--- | :--- |
+| **Per-property model** | `panX` / `panY` / `scale` animate independently. Pre-easing tuple-keyframes auto-migrate via `normalizeProject`. |
+| **Easing curves** | `linear` / `easeIn` / `easeOut` / `easeInOut` (cubic). Stored on the leaving kf — matches AE / Premiere / CapCut convention. Omitted = linear (back-compat). |
+| **Editor UI** | Toolbar diamond toggle, draggable preview overlay (translate body / scale corners / pinch wheel), floating numeric panel with easing dropdown, **timeline diamond markers** with drag-to-retime + snap. |
+| **Backend export** | `compileKeyframeExpression` emits a `gte(t,A)*lt(t,B)*…` sum compiled into `scale=...:eval=frame` + `overlay=…:eval=frame` filters. Both `@aicut/backend-ts` and `@aicut/backend-go` support it identically. |
+| **PiP semantics** | Output frame is fixed; pan/scale moves the *content* inside it (`overflow: hidden` in the HTML engine, `ctx.clip()` in canvas, ffmpeg `overlay` onto a fixed-size `color` background on the backend). |
+| **Lossless splits** | `splitClipAt` mid-segment **inserts interpolated boundary keyframes** so cutting and not moving the halves plays back identically to the un-cut clip. |
+| **Drag-burst undo** | `Editor.beginInteraction()` / `endInteraction()` coalesce a 30+ tick drag into ONE history entry. Wheel-pinch debounces 200ms. |
+| **Reactive props** | `<VideoEditor keyframes={{ enabled }} />` toggles the editing UI without losing data. Off ⇒ chrome stays identical to today, kfs round-trip unchanged. |
+
+The full design — clip-local time, history snapshot strategy, ffmpeg expression format — lives in [`packages/core/src/keyframes/`](./packages/core/src/keyframes) and [`backends/ts/src/keyframe-expression.ts`](./backends/ts/src/keyframe-expression.ts).
+
+---
+
+## ⌨️ Keyboard shortcuts
+
+Bound on the editor root and (where applicable) the standalone Timeline. All shortcuts no-op while focus is in an `<input>` / `<textarea>`.
+
+| Action | Key | Notes |
+| :--- | :--- | :--- |
+| Play / Pause | `Space` | |
+| Undo / Redo | `⌘Z` / `⇧⌘Z` | macOS; `Ctrl+Z` on Windows/Linux |
+| Split at playhead | `K` | |
+| Trim left / right edge | `Q` / `W` | |
+| Step one frame | `←` / `→` | Uses `Project.fps` (default 30) |
+| Step ten frames | `⇧←` / `⇧→` | |
+| Jump to clip start / end | `I` / `O` | Requires `clipEdgeNav.enabled` |
+| Delete selected clip | `⌫` / `Delete` | |
+
+---
+
 ## 🛰️ Export backends + live progress
 
 The editor never calls a backend on its own. `onExport` hands the host a JSON `Project`; from there your app POSTs it wherever. We ship two **reference backends** that produce a real mp4 via ffmpeg:
@@ -424,6 +468,8 @@ The script is idempotent — already-published versions are skipped, so a re-run
 - [x] Pluggable `PlaybackEngine` interface (HTML5 default, host can inject)
 - [x] WebCodecs preview engine for frame-accurate seek (`@aicut/core/webcodecs`, PoC: single-track MP4)
 - [x] Density knobs — `timelineHeight` (reactive), `trackHeight`, `rulerHeight` for compact viewports
+- [x] Per-clip keyframe animation (X / Y / Scale) + easing curves (linear / easeIn / easeOut / easeInOut)
+- [x] Backend ffmpeg compilation of keyframes — animated `scale` + `overlay` filter graph with per-frame `t`-expressions, both TS + Go
 - [ ] Speed adjustment (timeline already reserves the slot)
 - [ ] Audio track rendering + waveform thumbnails
 - [ ] WebCodecs engine: multi-track compositing + transitions

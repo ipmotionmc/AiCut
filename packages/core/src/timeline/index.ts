@@ -1,5 +1,10 @@
 import { type Locale, mergeLocale } from "../i18n.js";
-import { normalizeProject, projectDuration } from "../model.js";
+import {
+  bigFrameStepMs,
+  frameStepMs,
+  normalizeProject,
+  projectDuration,
+} from "../model.js";
 import type { Clip, Ms, Project } from "../types.js";
 import { ThumbnailRibbon } from "../ui/thumbnails.js";
 import {
@@ -14,9 +19,11 @@ import {
   SCROLLBAR_INSET,
   SCROLLBAR_MIN_THUMB,
   SCROLLBAR_THICKNESS,
+  TIMELINE_PAD_RIGHT,
   TRACK_HEIGHT,
   clampScale,
   contentHeight,
+  contentLeftX,
   contentWidth,
   findClip,
   snapTargets,
@@ -77,6 +84,25 @@ export interface TimelineOptions {
   onChange?: (project: Project) => void;
 
   /**
+   * Hosts wire these to forward keyframe edits to the Editor. The
+   * Timeline only paints + hit-tests; mutation goes through these
+   * callbacks so the Editor can push history + emit events.
+   */
+  onSelectKeyframe?: (
+    target: { clipId: string; keyframeId: string } | null,
+  ) => void;
+  onMoveKeyframe?: (
+    clipId: string,
+    keyframeId: string,
+    timeMs: Ms,
+  ) => void;
+
+  /** Host-driven state mirror — Editor passes these on every render
+   *  via `Timeline.setKeyframeState`. */
+  keyframesEnabled?: boolean;
+  selectedKeyframe?: { clipId: string; keyframeId: string } | null;
+
+  /**
    * Lets the host predict where a drop will actually land — used to
    * keep the drag-ghost visual honest. The Editor wires this to its
    * smart routing (intended → source → other → new track), so the
@@ -111,7 +137,19 @@ interface DragTrim {
 interface DragScrub {
   kind: "scrub";
 }
-type DragCtx = DragMove | DragTrim | DragScrub;
+interface DragKeyframe {
+  kind: "keyframe-drag";
+  clipId: string;
+  keyframeId: string;
+  trackIndex: number;
+  pointerStartX: number;
+  originalTimeMs: Ms;
+  /** Latest snapped time during the drag — committed once on pointer-up
+   *  so the history stack records one entry per drag, not one per
+   *  rAF tick. Draw uses this to render the ghost position. */
+  ghostTimeMs: Ms;
+}
+type DragCtx = DragMove | DragTrim | DragScrub | DragKeyframe;
 
 const SNAP_PX = 8;
 const DEFAULT_SCALE = 80;
@@ -151,6 +189,10 @@ export class Timeline {
   private readOnly: boolean;
   private autoFitEnabled: boolean;
   private locale: Locale;
+  private keyframesEnabled = false;
+  private selectedKeyframe:
+    | { clipId: string; keyframeId: string }
+    | null = null;
 
   private scrollLeft = 0;
   private scrollTop = 0;
@@ -174,6 +216,9 @@ export class Timeline {
   } | null = null;
   private hoveredClipId: string | null = null;
   private hoveredTrackIndex: number | null = null;
+  private hoveredKeyframe:
+    | { clipId: string; keyframeId: string }
+    | null = null;
   private hoverCursor: string = "default";
   private dropTargetTrackIndex: number | null = null;
   private snapX: number | null = null;
@@ -219,6 +264,8 @@ export class Timeline {
     this.readOnly = opts.readOnly === true;
     this.autoFitEnabled = opts.autoFit !== false;
     this.locale = mergeLocale(opts.locale);
+    this.keyframesEnabled = opts.keyframesEnabled === true;
+    this.selectedKeyframe = opts.selectedKeyframe ?? null;
 
     this.root.classList.add("aicut-timeline-canvas");
     this.root.innerHTML = "";
@@ -282,6 +329,7 @@ export class Timeline {
 
     this.attachPointer();
     this.attachWheel();
+    this.attachKeyboard();
     this.attachResize();
     this.resizeCanvas();
     this.scheduleRender();
@@ -391,7 +439,7 @@ export class Timeline {
       height: number;
     }>;
   } {
-    const baseX = this.showHeader ? HEADER_WIDTH : 0;
+    const baseX = contentLeftX(this.showHeader);
     const clips: Array<{
       id: string;
       trackIndex: number;
@@ -467,7 +515,7 @@ export class Timeline {
   }
 
   private computeFitScale(): number | null {
-    const baseX = this.showHeader ? HEADER_WIDTH : 0;
+    const baseX = contentLeftX(this.showHeader);
     const w = this.viewportWidth - baseX - 24;
     const dur = projectDuration(this.project);
     if (w <= 0 || dur <= 0) return null;
@@ -475,10 +523,12 @@ export class Timeline {
   }
 
   private maxScrollLeft(): number {
-    const baseX = this.showHeader ? HEADER_WIDTH : 0;
+    const baseX = contentLeftX(this.showHeader);
     const visibleW = this.viewportWidth - baseX - SCROLLBAR_THICKNESS;
     const cw = contentWidth(this.project, this.pxPerSec);
-    return Math.max(0, cw - visibleW + 24);
+    // Tail pad keeps the right padding visible even when scrolled to
+    // the project's end, mirroring the left content padding.
+    return Math.max(0, cw - visibleW + TIMELINE_PAD_RIGHT);
   }
 
   private maxScrollTop(): number {
@@ -602,7 +652,42 @@ export class Timeline {
       scrollbarActiveY: this.scrollbarDrag?.axis === "v",
       scrollbarActiveX: this.scrollbarDrag?.axis === "h",
       locale: this.locale,
+      keyframesEnabled: this.keyframesEnabled,
+      selectedKeyframe: this.selectedKeyframe,
+      hoveredKeyframe: this.hoveredKeyframe,
+      keyframeDragGhost:
+        this.drag?.kind === "keyframe-drag"
+          ? {
+              clipId: this.drag.clipId,
+              keyframeId: this.drag.keyframeId,
+              ghostTimeMs: this.drag.ghostTimeMs,
+            }
+          : null,
     };
+  }
+
+  /** Host-pushed state — Editor calls this when its keyframe mode
+   *  changes or when a keyframe is selected/deselected externally. */
+  setKeyframeState(state: {
+    enabled?: boolean;
+    selected?: { clipId: string; keyframeId: string } | null;
+  }): void {
+    let dirty = false;
+    if (state.enabled !== undefined && state.enabled !== this.keyframesEnabled) {
+      this.keyframesEnabled = state.enabled;
+      dirty = true;
+    }
+    if (state.selected !== undefined) {
+      const a = this.selectedKeyframe;
+      const b = state.selected;
+      const same =
+        a?.clipId === b?.clipId && a?.keyframeId === b?.keyframeId;
+      if (!same) {
+        this.selectedKeyframe = b;
+        dirty = true;
+      }
+    }
+    if (dirty) this.scheduleRender();
   }
 
   private readStyle(): DrawStyle {
@@ -636,6 +721,7 @@ export class Timeline {
     this.canvas.addEventListener("pointerleave", () => {
       if (!this.drag && !this.scrollbarDrag) {
         this.hoveredClipId = null;
+        this.hoveredKeyframe = null;
         this.hoverCursor = "default";
         this.hoverScrollbarY = false;
         this.hoverScrollbarX = false;
@@ -680,7 +766,7 @@ export class Timeline {
       return;
     }
     if (target.kind === "scrollbar-track-h") {
-      const baseX = this.showHeader ? HEADER_WIDTH : 0;
+      const baseX = contentLeftX(this.showHeader);
       const page = Math.max(
         80,
         this.viewportWidth - baseX - SCROLLBAR_THICKNESS,
@@ -729,6 +815,37 @@ export class Timeline {
       );
       this.timeMs = ms;
       this.opts.onSeek?.(ms);
+      this.scheduleRender();
+      return;
+    }
+
+    if (target.kind === "keyframe") {
+      // Look up the current keyframe time (clip-local).
+      const found = findClip(this.project, target.clipId);
+      const kf = found?.clip.keyframes?.find((k) => k.id === target.keyframeId);
+      if (!found || !kf) return;
+      this.selectedKeyframe = {
+        clipId: target.clipId,
+        keyframeId: target.keyframeId,
+      };
+      this.opts.onSelectKeyframe?.({
+        clipId: target.clipId,
+        keyframeId: target.keyframeId,
+      });
+      // Also jump the playhead to the keyframe — matches CapCut. Lets
+      // the user instantly see + edit the pinned transform.
+      const absMs = found.clip.start + kf.time;
+      this.timeMs = absMs;
+      this.opts.onSeek?.(absMs);
+      this.drag = {
+        kind: "keyframe-drag",
+        clipId: target.clipId,
+        keyframeId: target.keyframeId,
+        trackIndex: target.trackIndex,
+        pointerStartX: x,
+        originalTimeMs: kf.time,
+        ghostTimeMs: kf.time,
+      };
       this.scheduleRender();
       return;
     }
@@ -814,7 +931,7 @@ export class Timeline {
           this.scrollbarDrag.scrollStart +
           (y - this.scrollbarDrag.pointerStart) * ratio;
       } else {
-        const baseX = this.showHeader ? HEADER_WIDTH : 0;
+        const baseX = contentLeftX(this.showHeader);
         const visibleW = this.viewportWidth - baseX - SCROLLBAR_THICKNESS;
         const contentW = contentWidth(this.project, this.pxPerSec);
         const trackLen = visibleW - SCROLLBAR_INSET * 2;
@@ -842,10 +959,20 @@ export class Timeline {
       let cursor = "default";
       let onScrollbarV = false;
       let onScrollbarH = false;
+      let nextHoverKeyframe: { clipId: string; keyframeId: string } | null =
+        null;
       if (target.kind === "clip") {
         nextHover = target.clipId;
         nextHoverTrack = target.trackIndex;
         cursor = this.readOnly ? "pointer" : "grab";
+      } else if (target.kind === "keyframe") {
+        nextHover = target.clipId;
+        nextHoverTrack = target.trackIndex;
+        nextHoverKeyframe = {
+          clipId: target.clipId,
+          keyframeId: target.keyframeId,
+        };
+        cursor = "pointer";
       } else if (
         target.kind === "clip-handle-left" ||
         target.kind === "clip-handle-right"
@@ -880,17 +1007,24 @@ export class Timeline {
       const hoverChanged =
         onScrollbarV !== this.hoverScrollbarY ||
         onScrollbarH !== this.hoverScrollbarX;
+      const kfHoverChanged =
+        (nextHoverKeyframe?.clipId ?? null) !==
+          (this.hoveredKeyframe?.clipId ?? null) ||
+        (nextHoverKeyframe?.keyframeId ?? null) !==
+          (this.hoveredKeyframe?.keyframeId ?? null);
       if (
         nextHover !== this.hoveredClipId ||
         nextHoverTrack !== this.hoveredTrackIndex ||
         cursor !== this.hoverCursor ||
-        hoverChanged
+        hoverChanged ||
+        kfHoverChanged
       ) {
         this.hoveredClipId = nextHover;
         this.hoveredTrackIndex = nextHoverTrack;
         this.hoverCursor = cursor;
         this.hoverScrollbarY = onScrollbarV;
         this.hoverScrollbarX = onScrollbarH;
+        this.hoveredKeyframe = nextHoverKeyframe;
         this.scheduleRender();
       }
       return;
@@ -913,6 +1047,30 @@ export class Timeline {
       this.processMoveDrag(x, y);
       this.scheduleRender();
       this.maybeStartDragAutoScroll();
+      return;
+    }
+
+    if (this.drag.kind === "keyframe-drag") {
+      // Compute the snapped clip-local time and stash it on the drag
+      // struct. The actual mutation is deferred to pointer-up so the
+      // history stack gets a single entry per drag (not one per tick).
+      const found = findClip(this.project, this.drag.clipId);
+      if (!found) return;
+      const clip = found.clip;
+      const duration = clip.out - clip.in;
+      const dxPx = x - this.drag.pointerStartX;
+      const dxMs = (dxPx / this.pxPerSec) * 1000;
+      const nextLocal = Math.max(
+        0,
+        Math.min(duration, this.drag.originalTimeMs + dxMs),
+      );
+      const snappedAbs = this.applySnap(clip.start + nextLocal, null);
+      const snappedLocal = Math.max(
+        0,
+        Math.min(duration, snappedAbs - clip.start),
+      );
+      this.drag.ghostTimeMs = Math.round(snappedLocal);
+      this.scheduleRender();
       return;
     }
 
@@ -1102,6 +1260,14 @@ export class Timeline {
         });
         this.opts.onChange?.(this.getProject());
       }
+    } else if (drag.kind === "keyframe-drag") {
+      if (drag.ghostTimeMs !== drag.originalTimeMs) {
+        this.opts.onMoveKeyframe?.(
+          drag.clipId,
+          drag.keyframeId,
+          drag.ghostTimeMs,
+        );
+      }
     } else if (drag.kind === "trim-left" || drag.kind === "trim-right") {
       const found = findClip(this.project, drag.clipId);
       if (found) {
@@ -1114,6 +1280,40 @@ export class Timeline {
       }
     }
     this.scheduleRender();
+  }
+
+  private attachKeyboard(): void {
+    // Make the canvas focusable so it can receive keydown. Without
+    // tabIndex the browser's accessibility tree refuses to deliver
+    // key events to a <canvas>. -1 means "focusable by click but not
+    // by tab" — the timeline isn't a primary tab stop, but it
+    // accepts focus when the user clicks on it.
+    this.canvas.tabIndex = -1;
+    this.canvas.style.outline = "none"; // suppress the focus ring
+    this.canvas.addEventListener("keydown", (e) => {
+      if (e.code !== "ArrowLeft" && e.code !== "ArrowRight") return;
+      // Frame-stepping nav — step size derived from Project.fps
+      // (defaults to 30). Same helpers as EditorUI so behavior stays
+      // consistent whether the timeline is embedded or standalone.
+      e.preventDefault();
+      const step = e.shiftKey
+        ? bigFrameStepMs(this.project)
+        : frameStepMs(this.project);
+      const dir = e.code === "ArrowLeft" ? -1 : 1;
+      const dur = projectDuration(this.project);
+      const next = Math.max(0, Math.min(dur, this.timeMs + dir * step));
+      if (next === this.timeMs) return;
+      this.timeMs = next;
+      this.opts.onSeek?.(next);
+      this.scheduleRender();
+    });
+    // Auto-focus on pointer-down so the very first arrow press after
+    // clicking the timeline actually moves the playhead. Without this
+    // the canvas only gets focus on the second interaction, which
+    // feels broken.
+    this.canvas.addEventListener("pointerdown", () => {
+      if (document.activeElement !== this.canvas) this.canvas.focus();
+    });
   }
 
   private attachWheel(): void {
@@ -1137,7 +1337,7 @@ export class Timeline {
           this.pxPerSec = next;
           this.hasAutoFitted = true;
           // Re-anchor: keep the time under the cursor visually pinned.
-          const baseX = this.showHeader ? HEADER_WIDTH : 0;
+          const baseX = contentLeftX(this.showHeader);
           this.scrollLeft =
             (anchorMs / 1000) * this.pxPerSec - (cursorX - baseX);
           this.clampScroll();
@@ -1210,6 +1410,7 @@ export class Timeline {
       viewportWidth: this.viewportWidth,
       viewportHeight: this.viewportHeight,
       isDragging: this.drag?.kind === "move",
+      keyframesEnabled: this.keyframesEnabled,
     });
   }
 
@@ -1234,7 +1435,7 @@ export class Timeline {
       }
     }
     if (best !== ms) {
-      const baseX = this.showHeader ? HEADER_WIDTH : 0;
+      const baseX = contentLeftX(this.showHeader);
       this.snapX = baseX + (best / 1000) * this.pxPerSec - this.scrollLeft;
     } else {
       this.snapX = null;

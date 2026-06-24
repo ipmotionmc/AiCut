@@ -16,6 +16,15 @@ export interface ToolbarCallbacks {
   onReset: () => void;
   onSnapToggle: () => void;
   onScaleChange: (pxPerSec: number) => void;
+  /** Add a keyframe at the playhead — or remove the existing one if
+   *  a keyframe already sits exactly at the playhead's clip-local time
+   *  (CapCut-style toggle on the same button). */
+  onKeyframeToggle: () => void;
+  /** Move the playhead to the selected clip's start / end. End seek
+   *  intentionally lands 1ms inside the clip so subsequent
+   *  keyframe-add finds the clip — see Editor.seekToSelectedClipEdge. */
+  onSeekClipStart: () => void;
+  onSeekClipEnd: () => void;
 }
 
 interface ToolbarState {
@@ -28,6 +37,24 @@ interface ToolbarState {
   canTrim: boolean;
   snap: boolean;
   pxPerSec: number;
+  /** True when keyframe mode is enabled AND the selected clip
+   *  contains the playhead — only then is the button clickable. */
+  canKeyframe: boolean;
+  /** True when a keyframe exists at the exact playhead time on the
+   *  selected clip. Drives the button icon (filled vs outlined) and
+   *  the tooltip (remove vs add). */
+  hasKeyframeAtPlayhead: boolean;
+  /** Only render the keyframe button at all when keyframe mode is on,
+   *  matching the user's "demo只一个开关" requirement — chrome stays
+   *  identical to today when the feature is disabled. */
+  keyframesEnabled: boolean;
+  /** Enable the |◀ / ▶| jump-to-clip-edge buttons. Mirrors the
+   *  selection-driven gating used by split / trim. */
+  canSeekClipEdge: boolean;
+  /** Host opt-in for the clip-edge nav cluster. Matches the keyframes
+   *  toggle pattern: when off the |◀ / ▶| buttons are completely
+   *  hidden (display: none) so they don't take up toolbar real estate. */
+  clipEdgeNavEnabled: boolean;
 }
 
 /**
@@ -62,6 +89,9 @@ export class Toolbar {
   private splitBtn!: HTMLButtonElement;
   private trimLeftBtn!: HTMLButtonElement;
   private trimRightBtn!: HTMLButtonElement;
+  private seekClipStartBtn!: HTMLButtonElement;
+  private seekClipEndBtn!: HTMLButtonElement;
+  private keyframeBtn!: HTMLButtonElement;
   private playBtn!: HTMLButtonElement;
   private playIcon!: HTMLSpanElement;
   private timeLabel!: HTMLSpanElement;
@@ -90,9 +120,39 @@ export class Toolbar {
     this.splitBtn = mkIconButton("split", locale.split, () => cb.onSplit(), "aicut-split");
     this.trimLeftBtn = mkIconButton("trimLeft", locale.trimLeft, () => cb.onTrimLeft(), "aicut-trim-left");
     this.trimRightBtn = mkIconButton("trimRight", locale.trimRight, () => cb.onTrimRight(), "aicut-trim-right");
-    const speedBtn = mkIconButton("speed", locale.speedComingSoon, () => undefined, "aicut-speed");
-    speedBtn.disabled = true;
-    left.append(this.undoBtn, this.redoBtn, this.splitBtn, this.trimLeftBtn, this.trimRightBtn, speedBtn);
+    this.seekClipStartBtn = mkIconButton(
+      "seekClipStart",
+      locale.seekClipStart,
+      () => cb.onSeekClipStart(),
+      "aicut-seek-clip-start",
+    );
+    this.seekClipStartBtn.style.display = "none"; // gated by render() on clipEdgeNavEnabled
+    this.keyframeBtn = mkIconButton(
+      "keyframeOutline",
+      locale.keyframeAdd,
+      () => cb.onKeyframeToggle(),
+      "aicut-keyframe",
+    );
+    this.keyframeBtn.style.display = "none"; // gated by render() on keyframesEnabled
+    this.seekClipEndBtn = mkIconButton(
+      "seekClipEnd",
+      locale.seekClipEnd,
+      () => cb.onSeekClipEnd(),
+      "aicut-seek-clip-end",
+    );
+    this.seekClipEndBtn.style.display = "none"; // gated by render() on clipEdgeNavEnabled
+    // Order: trim handles, then [|◀ ◇ ▶|] — start, kf, end — so the
+    // three nav buttons cluster around the keyframe affordance.
+    left.append(
+      this.undoBtn,
+      this.redoBtn,
+      this.splitBtn,
+      this.trimLeftBtn,
+      this.trimRightBtn,
+      this.seekClipStartBtn,
+      this.keyframeBtn,
+      this.seekClipEndBtn,
+    );
 
     const center = mkGroup("aicut-toolbar-center");
     this.timeLabel = mkSpan("aicut-time-current", "00:00", "aicut-time-current");
@@ -174,12 +234,60 @@ export class Toolbar {
       this.trimLeftBtn.disabled = !state.canTrim;
       this.trimRightBtn.disabled = !state.canTrim;
     }
+    if (
+      !this.lastState ||
+      this.lastState.clipEdgeNavEnabled !== state.clipEdgeNavEnabled
+    ) {
+      const display = state.clipEdgeNavEnabled ? "" : "none";
+      this.seekClipStartBtn.style.display = display;
+      this.seekClipEndBtn.style.display = display;
+    }
+    if (
+      !this.lastState ||
+      this.lastState.canSeekClipEdge !== state.canSeekClipEdge
+    ) {
+      this.seekClipStartBtn.disabled = !state.canSeekClipEdge;
+      this.seekClipEndBtn.disabled = !state.canSeekClipEdge;
+    }
     if (!this.lastState || this.lastState.snap !== state.snap) {
       this.snapBtn.setAttribute("aria-pressed", state.snap ? "true" : "false");
       this.snapBtn.classList.toggle("aicut-toggle-on", state.snap);
       this.snapBtn.title = state.snap
         ? this.locale.snapOnTitle
         : this.locale.snapOffTitle;
+    }
+    // Keyframe button — toggle visibility via display, swap icon to
+    // reflect whether a kf exists at the playhead, swap tooltip.
+    if (
+      !this.lastState ||
+      this.lastState.keyframesEnabled !== state.keyframesEnabled
+    ) {
+      this.keyframeBtn.style.display = state.keyframesEnabled ? "" : "none";
+    }
+    if (state.keyframesEnabled) {
+      if (
+        !this.lastState ||
+        this.lastState.hasKeyframeAtPlayhead !== state.hasKeyframeAtPlayhead
+      ) {
+        this.keyframeBtn.innerHTML = state.hasKeyframeAtPlayhead
+          ? ICONS.keyframeFilled
+          : ICONS.keyframeOutline;
+        const title = state.hasKeyframeAtPlayhead
+          ? this.locale.keyframeRemove
+          : this.locale.keyframeAdd;
+        this.keyframeBtn.title = title;
+        this.keyframeBtn.setAttribute("aria-label", title);
+        this.keyframeBtn.setAttribute(
+          "data-state",
+          state.hasKeyframeAtPlayhead ? "on" : "off",
+        );
+      }
+      if (
+        !this.lastState ||
+        this.lastState.canKeyframe !== state.canKeyframe
+      ) {
+        this.keyframeBtn.disabled = !state.canKeyframe;
+      }
     }
     if (!this.lastState || this.lastState.pxPerSec !== state.pxPerSec) {
       const ratio = scaleToSlider(state.pxPerSec);
@@ -218,12 +326,22 @@ export class Toolbar {
     applyTitle(this.splitBtn, locale.split);
     applyTitle(this.trimLeftBtn, locale.trimLeft);
     applyTitle(this.trimRightBtn, locale.trimRight);
+    applyTitle(this.seekClipStartBtn, locale.seekClipStart);
+    applyTitle(this.seekClipEndBtn, locale.seekClipEnd);
     applyTitle(this.playBtn, locale.playPause);
     applyTitle(this.fullscreenBtn, locale.fullscreen);
     applyTitle(this.snapBtn, locale.snap);
     applyTitle(this.zoomOutBtn, locale.zoomOut);
     applyTitle(this.zoomInBtn, locale.zoomIn);
     applyTitle(this.resetBtn, locale.reset);
+    // Keyframe button tooltip — picks add/remove off the lastState if
+    // we have one, otherwise default to add.
+    if (this.keyframeBtn) {
+      const hasKf = this.lastState?.hasKeyframeAtPlayhead === true;
+      const t = hasKf ? locale.keyframeRemove : locale.keyframeAdd;
+      this.keyframeBtn.title = t;
+      this.keyframeBtn.setAttribute("aria-label", t);
+    }
     // Force snap title re-evaluation on next render.
     if (this.lastState) {
       this.snapBtn.title = this.lastState.snap

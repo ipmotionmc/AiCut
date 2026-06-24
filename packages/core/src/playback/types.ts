@@ -48,6 +48,31 @@ export interface PlaybackEngine {
   /** Free all resources (DOM nodes, decoders, AudioContexts, rAF). */
   destroy(): void;
 
+  /**
+   * Optional. The **output frame rect** — the fixed bounds anything
+   * the engine renders is clipped to. The user's keyframe X / Y /
+   * scale move the content WITHIN this frame (think picture-in-
+   * picture, pan, zoom); anything outside is hidden by the engine.
+   *
+   * This rect does NOT change with the active transform — it's
+   * the stage. The overlay's dashed border is drawn here. Coords
+   * relative to `opts.host`. Returns null when no clip is active.
+   */
+  getOutputFrameRect?(): { x: number; y: number; w: number; h: number } | null;
+
+  /**
+   * Optional. Return the screen-space CSS-pixel rectangle of the
+   * actually-rendered content (the video frame after the active
+   * keyframe transform is applied). May extend outside the output
+   * frame — the engine clips to the output frame at paint time, but
+   * the overlay still wants the geometric rect to position scale
+   * handles on the visible content corners.
+   *
+   * Returns null when no clip is active. Engines that don't expose
+   * this leave keyframe handles attached to the output frame instead.
+   */
+  getFrameRect?(): { x: number; y: number; w: number; h: number } | null;
+
   // ---- Event hooks — set by the Editor after construction. Engines
   // call these when state changes. All optional; engines that can't
   // emit a particular event (e.g. no audio metadata) just never call

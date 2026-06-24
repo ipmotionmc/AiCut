@@ -8,6 +8,7 @@ import {
   SCROLLBAR_THICKNESS,
   TRACK_HEIGHT,
   contentHeight,
+  contentLeftX,
   contentWidth,
   trackIndexAt,
   trackY,
@@ -22,6 +23,7 @@ export type HitTarget =
   | { kind: "clip"; trackIndex: number; clipId: string }
   | { kind: "clip-handle-left"; trackIndex: number; clipId: string }
   | { kind: "clip-handle-right"; trackIndex: number; clipId: string }
+  | { kind: "keyframe"; trackIndex: number; clipId: string; keyframeId: string }
   | { kind: "phantom-new-track" }
   /** Drag the thumb itself — caller stores pointerStart + scrollStart. */
   | { kind: "scrollbar-thumb-v"; thumbY: number; thumbLen: number }
@@ -41,7 +43,13 @@ export interface HitContext {
   viewportWidth: number;
   viewportHeight: number;
   isDragging: boolean;
+  /** When true, hit-test keyframe diamonds before the broad clip body. */
+  keyframesEnabled: boolean;
 }
+
+/** Pixel half-width of the keyframe diamond hit zone — generous so a
+ *  small target is easy to grab even at low zoom. */
+const KEYFRAME_HIT_RADIUS = 8;
 
 /**
  * Pixel → semantic target. Branches in roughly this order:
@@ -59,7 +67,7 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
   // The bars overlay everything else, so a click on the thumb must NEVER
   // fall through to "select clip" / "seek". Check them before any other
   // region resolves.
-  const baseX = ctx.showHeader ? HEADER_WIDTH : 0;
+  const baseX = contentLeftX(ctx.showHeader);
   const visibleH = ctx.viewportHeight - RULER_HEIGHT - SCROLLBAR_THICKNESS;
   const contentH = contentHeight(ctx.project.tracks, ctx.isDragging);
   // Vertical bar
@@ -148,9 +156,40 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
   const track = ctx.project.tracks[ti]!;
   const ms = xToMs(x, ctx.pxPerSec, ctx.scrollLeft, ctx.showHeader);
 
-  // Closest clip whose timeline range contains `ms`, or whose edge is
-  // within HANDLE_PX of the cursor (so resize handles are grabbable
-  // even slightly outside the clip body).
+  // Pass 1 — when keyframes mode is on, scan every clip on the row
+  // for a diamond within KEYFRAME_HIT_RADIUS. Done BEFORE the per-
+  // clip handle / body pass because:
+  //   - A keyframe at the clip's start (clip-local time = 0) sits
+  //     exactly on top of the trim handle's hit zone. Without
+  //     priority here, the handle wins and the keyframe becomes
+  //     unclickable. Common case: user pins the opening pose with
+  //     keyframe at t=0 — exactly what the toolbar button creates.
+  //   - The hit radius (8 px) can also extend slightly outside the
+  //     clip body (e.g. into a small inter-clip gap), so checking
+  //     before the "ms inside clip" branch keeps the kf clickable
+  //     near edges.
+  // Trade-off: while keyframes mode is enabled, dragging the trim
+  // handle of a clip with a kf at t=0 needs you to grab a kf-free
+  // spot first. Acceptable since keyframe editing is the active mode.
+  if (ctx.keyframesEnabled) {
+    for (const clip of track.clips) {
+      if (!clip.keyframes || clip.keyframes.length === 0) continue;
+      const startX = msToXLocal(clip.start, ctx);
+      for (const kf of clip.keyframes) {
+        const kfX = startX + (kf.time / 1000) * ctx.pxPerSec;
+        if (Math.abs(x - kfX) <= KEYFRAME_HIT_RADIUS) {
+          return {
+            kind: "keyframe",
+            trackIndex: ti,
+            clipId: clip.id,
+            keyframeId: kf.id,
+          };
+        }
+      }
+    }
+  }
+
+  // Pass 2 — clip handles + body. Same logic as before.
   for (const clip of track.clips) {
     const start = clip.start;
     const end = clip.start + (clip.out - clip.in);
@@ -171,6 +210,5 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
 }
 
 function msToXLocal(ms: number, ctx: HitContext): number {
-  const base = ctx.showHeader ? HEADER_WIDTH : 0;
-  return base + (ms / 1000) * ctx.pxPerSec - ctx.scrollLeft;
+  return contentLeftX(ctx.showHeader) + (ms / 1000) * ctx.pxPerSec - ctx.scrollLeft;
 }
