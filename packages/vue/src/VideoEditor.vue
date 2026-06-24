@@ -35,6 +35,12 @@ const props = defineProps<{
   trackHeight?: number;
   /** Initial-only — pixel height of the timeline ruler (default 24). */
   rulerHeight?: number;
+  /**
+   * Pixel height of the whole bottom timeline area (default 240).
+   * Reactive — swap any time to recompact. The canvas inside fills
+   * 100% and shows an internal scrollbar when track count overflows.
+   */
+  timelineHeight?: number;
 }>();
 
 const emit = defineEmits<{
@@ -67,6 +73,9 @@ onMounted(() => {
     playbackEngine: props.playbackEngine,
     ...(props.trackHeight != null ? { trackHeight: props.trackHeight } : {}),
     ...(props.rulerHeight != null ? { rulerHeight: props.rulerHeight } : {}),
+    ...(props.timelineHeight != null
+      ? { timelineHeight: props.timelineHeight }
+      : {}),
   });
 
   offs.push(
@@ -97,6 +106,24 @@ watch(
   () => props.locale,
   (locale) => {
     if (locale && editor) editor.setLocale(locale);
+  },
+);
+
+// Reactive — sets the CSS custom property directly so the timeline
+// height can be tweaked without remounting.
+watch(
+  () => props.timelineHeight,
+  (timelineHeight) => {
+    const root = host.value;
+    if (!root) return;
+    if (timelineHeight != null && timelineHeight > 0) {
+      root.style.setProperty(
+        "--aicut-timeline-height",
+        `${Math.round(timelineHeight)}px`,
+      );
+    } else {
+      root.style.removeProperty("--aicut-timeline-height");
+    }
   },
 );
 

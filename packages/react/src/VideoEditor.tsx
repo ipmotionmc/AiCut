@@ -87,6 +87,13 @@ export interface VideoEditorProps {
   trackHeight?: number;
   /** Initial-only — pixel height of the timeline ruler (default 24). */
   rulerHeight?: number;
+  /**
+   * Pixel height of the whole bottom timeline area (default 240).
+   * Reactive — set anytime to change. The canvas inside fills 100%
+   * and shows an internal scrollbar when track count overflows.
+   * Useful range: [120, 480] depending on viewport.
+   */
+  timelineHeight?: number;
 }
 
 /**
@@ -133,6 +140,9 @@ export function VideoEditor(props: VideoEditorProps) {
       ...(cbRef.current.rulerHeight != null
         ? { rulerHeight: cbRef.current.rulerHeight }
         : {}),
+      ...(cbRef.current.timelineHeight != null
+        ? { timelineHeight: cbRef.current.timelineHeight }
+        : {}),
     });
     editorRef.current = editor;
     setSlots({
@@ -175,6 +185,22 @@ export function VideoEditor(props: VideoEditorProps) {
   useEffect(() => {
     if (props.locale) editorRef.current?.setLocale(props.locale);
   }, [props.locale]);
+
+  // Reactive — the underlying CSS custom property can be updated on
+  // the container any time; the timeline picks up the new height
+  // immediately via CSS. No remount required.
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    if (props.timelineHeight != null && props.timelineHeight > 0) {
+      host.style.setProperty(
+        "--aicut-timeline-height",
+        `${Math.round(props.timelineHeight)}px`,
+      );
+    } else {
+      host.style.removeProperty("--aicut-timeline-height");
+    }
+  }, [props.timelineHeight]);
 
   // Deps must include `slots`. Without it, the factory ran once during
   // the first commit — BEFORE the useEffect above had a chance to

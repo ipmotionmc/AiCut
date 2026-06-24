@@ -518,12 +518,15 @@ function drawClipAt(
   roundRect(ctx, startX, y, widthPx, h, 6);
   ctx.fill();
 
-  // Thumbnail strip.
+  // Thumbnail strip — passes the clip body height so thumbs stretch
+  // to fill when trackHeight is configured above the default. Otherwise
+  // the brand gradient (purple-ish on dark themes) shows through the
+  // bottom band of tall tracks.
   ctx.save();
   roundRect(ctx, startX, y, widthPx, h, 6);
   ctx.clip();
   ctx.translate(startX, y);
-  thumbs.paintStrip(ctx, clip.sourceId, clip.in, clip.out, widthPx);
+  thumbs.paintStrip(ctx, clip.sourceId, clip.in, clip.out, widthPx, h);
   ctx.restore();
 
   // Inner highlight (1px white inset).

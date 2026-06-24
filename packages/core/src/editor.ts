@@ -73,6 +73,14 @@ export interface EditorOptions {
    * range: [18, 36].
    */
   rulerHeight?: number;
+  /**
+   * Pixel height of the whole bottom timeline area (default 240). The
+   * canvas inside fills 100% of this and shows a vertical scrollbar
+   * when there are more tracks than fit. Lower this (~120–180) on
+   * small viewports so the preview takes more of the editor's height.
+   * Reasonable range: [120, 480].
+   */
+  timelineHeight?: number;
 }
 
 export interface EditorEventMap {
@@ -251,6 +259,15 @@ export class Editor implements EditorApi {
     }
 
     applyTheme(this.container, opts.theme);
+    if (opts.timelineHeight != null && opts.timelineHeight > 0) {
+      // CSS custom property — `.aicut-timeline` reads it via var() so
+      // every editor instance can have its own height even though we
+      // share the class. Falls back to 240px when unset.
+      this.container.style.setProperty(
+        "--aicut-timeline-height",
+        `${Math.round(opts.timelineHeight)}px`,
+      );
+    }
 
     this.ui = new EditorUI(this.container, this, {
       onPlayToggle: () => this.togglePlay(),

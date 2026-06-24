@@ -260,11 +260,14 @@ export function App() {
     "html" | "canvas" | "webcodecs"
   >("html");
   // Demo of EditorOptions.trackHeight — shrinking each track row
-  // tightens the timeline footprint, leaving more room for the
-  // preview. The library applies it process-wide via
-  // setTimelineMetrics, so we remount the editor (via key) whenever
-  // this changes so the new value takes effect on construction.
+  // tightens the timeline footprint. setTimelineMetrics is applied
+  // at construction so changes here force a remount via `key`.
   const [trackHeight, setTrackHeight] = useState<number>(56);
+  // Demo of EditorOptions.timelineHeight — controls the OUTER height
+  // of the bottom timeline area (the canvas inside fills 100% and
+  // scrolls). Reactive — no remount needed, the React wrapper
+  // pushes it through as a CSS custom property update.
+  const [timelineHeight, setTimelineHeight] = useState<number>(240);
   const playbackEngine: PlaybackEngineFactory = useMemo(() => {
     if (engineKind === "canvas") {
       return (opts) => new CanvasCompositorEngine({ ...opts, debug: true });
@@ -374,7 +377,8 @@ export function App() {
           // The engine + trackHeight both bind at construction —
           // flipping either forces React to remount the editor so the
           // new value takes effect. Playback state resets, acceptable
-          // for a demo.
+          // for a demo. `timelineHeight` is reactive (CSS custom prop
+          // under the hood) so it isn't in the key.
           key={`${engineKind}|${trackHeight}`}
           apiRef={apiRef}
           defaultProject={seed()}
@@ -382,6 +386,7 @@ export function App() {
           locale={locale}
           playbackEngine={playbackEngine}
           trackHeight={trackHeight}
+          timelineHeight={timelineHeight}
           style={{ height: "100%" }}
           headerLeft={
             showHeader ? (
@@ -556,7 +561,27 @@ export function App() {
         <h2>Timeline density</h2>
         <div className="demo-row demo-track-height-row">
           <label>
-            Track height: <strong>{trackHeight}px</strong>
+            Total timeline area: <strong>{timelineHeight}px</strong>
+          </label>
+          <input
+            type="range"
+            min={120}
+            max={400}
+            step={10}
+            value={timelineHeight}
+            data-testid="demo-timeline-height"
+            onChange={(e) => setTimelineHeight(Number(e.target.value))}
+          />
+          <p className="demo-engine-help">
+            Outer height of the bottom timeline section. Reactive —
+            the preview reclaims any space you take from this. The
+            canvas inside scrolls vertically when there are more
+            tracks than fit.
+          </p>
+        </div>
+        <div className="demo-row demo-track-height-row">
+          <label>
+            Track row height: <strong>{trackHeight}px</strong>
           </label>
           <input
             type="range"
@@ -568,9 +593,8 @@ export function App() {
             onChange={(e) => setTrackHeight(Number(e.target.value))}
           />
           <p className="demo-engine-help">
-            Smaller rows shrink the timeline footprint so the preview
-            has more vertical room — handy on laptop / small screens.
-            Changing this remounts the editor.
+            Height of each individual track row inside the timeline.
+            Changing this remounts the editor (process-wide setting).
           </p>
         </div>
 

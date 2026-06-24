@@ -89,6 +89,34 @@ test.describe("PlaybackEngine swap", () => {
   });
 
   /**
+   * timelineHeight knob: reactive (CSS custom property, no remount).
+   * Drag the slider and assert the outer .aicut-timeline element's
+   * bounding box height tracks the value.
+   */
+  test("timeline density: timelineHeight knob resizes the outer section", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const slider = page.getByTestId("demo-timeline-height");
+    await expect(slider).toBeVisible();
+
+    const timelineBox = page.getByTestId("aicut-timeline");
+
+    await slider.fill("360");
+    await page.waitForTimeout(80);
+    const tall = await timelineBox.evaluate((el) => el.getBoundingClientRect().height);
+
+    await slider.fill("140");
+    await page.waitForTimeout(80);
+    const short = await timelineBox.evaluate((el) => el.getBoundingClientRect().height);
+
+    expect(tall).toBeGreaterThan(short);
+    // Hit the actual target within a few px (rounding / borders).
+    expect(short).toBeGreaterThanOrEqual(135);
+    expect(short).toBeLessThanOrEqual(145);
+  });
+
+  /**
    * Track-height knob: the demo's slider changes EditorOptions.trackHeight,
    * which forces a remount and re-paints the timeline canvas with smaller
    * rows. We can't read pixels off the canvas easily, but we can verify
