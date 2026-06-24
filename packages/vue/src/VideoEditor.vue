@@ -35,6 +35,11 @@ const emit = defineEmits<{
 const host = ref<HTMLDivElement | null>(null);
 let editor: Editor | null = null;
 const offs: Array<() => void> = [];
+/** Header slot DOM nodes — set after editor mount so Vue Teleports
+ *  have a valid target. Library renders nothing here; named slots
+ *  `#headerLeft` / `#headerRight` portal whatever the host provides. */
+const headerLeftSlot = ref<HTMLElement | null>(null);
+const headerRightSlot = ref<HTMLElement | null>(null);
 
 onMounted(() => {
   if (!host.value) return;
@@ -57,6 +62,8 @@ onMounted(() => {
     editor.on("error", ({ error }) => emit("error", error)),
   );
 
+  headerLeftSlot.value = editor.headerLeft;
+  headerRightSlot.value = editor.headerRight;
   emit("ready", editor);
 });
 
@@ -79,6 +86,8 @@ onBeforeUnmount(() => {
   offs.length = 0;
   editor?.destroy();
   editor = null;
+  headerLeftSlot.value = null;
+  headerRightSlot.value = null;
 });
 
 defineExpose({
@@ -88,5 +97,12 @@ defineExpose({
 </script>
 
 <template>
-  <div ref="host" data-aicut-host="" />
+  <div ref="host" data-aicut-host="">
+    <Teleport v-if="headerLeftSlot" :to="headerLeftSlot">
+      <slot name="headerLeft" />
+    </Teleport>
+    <Teleport v-if="headerRightSlot" :to="headerRightSlot">
+      <slot name="headerRight" />
+    </Teleport>
+  </div>
 </template>

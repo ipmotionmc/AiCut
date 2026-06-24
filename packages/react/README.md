@@ -69,6 +69,9 @@ interface VideoEditorProps {
   theme?: Theme;                         // CSS-var overrides; reactive
   locale?: Partial<Locale>;              // EN default; pass localeZh for ZH
 
+  headerLeft?: ReactNode;                // optional header row above
+  headerRight?: ReactNode;               //   the preview — collapses
+                                          //   when both are empty
   toolbarLeft?: ReactNode;               // host controls — left bookend
   toolbarRight?: ReactNode;              //                 right bookend
 
@@ -90,9 +93,24 @@ interface VideoEditorProps {
 
 The `apiRef` value exposes the full **`EditorApi`** — `play`, `pause`, `seek`, `split`, `trimLeft`, `trimRight`, `setProject`, `getProject`, `addSource`, `addTrack`, `removeClip`, `undo`, `redo`, `setTheme`, `setLocale`, `requestExport`, and more. See [@aicut/core](https://www.npmjs.com/package/@aicut/core) for the complete surface.
 
-## Custom toolbar controls
+## Custom slots (header + toolbar)
 
-The editor's top toolbar reserves bookend slots for any React node. The library hides the visual separator until you put something in them.
+The editor reserves **four** host-fillable slots — all empty by default with no chrome cost. The optional header above the preview auto-collapses when both header slots are empty, so the default layout is byte-for-byte identical to before they existed.
+
+```tsx
+<VideoEditor
+  // Header row above the preview — invisible when both null
+  headerLeft={<strong>Untitled project</strong>}
+  headerRight={
+    <>
+      <button onClick={share}>Share</button>
+      <button onClick={() => apiRef.current?.requestExport()}>Export</button>
+    </>
+  }
+/>
+```
+
+### Toolbar bookends
 
 ```tsx
 <VideoEditor

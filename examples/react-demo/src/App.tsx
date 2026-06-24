@@ -225,6 +225,7 @@ export function App() {
   const [aspect, setAspect] = useState<"16:9" | "9:16" | "1:1">("16:9");
   const [showToolbarLeft, setShowToolbarLeft] = useState(true);
   const [showToolbarRight, setShowToolbarRight] = useState(true);
+  const [showHeader, setShowHeader] = useState(true);
   const [backendKind, setBackendKind] = useState<"ts" | "go">("ts");
   const [localeName, setLocaleName] = useState<"en" | "zh">("en");
   const locale: Locale = useMemo(
@@ -333,6 +334,42 @@ export function App() {
           theme={theme}
           locale={locale}
           style={{ height: "100%" }}
+          headerLeft={
+            showHeader ? (
+              <span className="demo-header-title">Untitled project</span>
+            ) : null
+          }
+          headerRight={
+            showHeader ? (
+              <>
+                <button
+                  type="button"
+                  className="demo-slot-btn"
+                  data-testid="demo-share"
+                  onClick={() => {
+                    const p = apiRef.current?.getProject();
+                    if (p) void navigator.clipboard?.writeText(JSON.stringify(p));
+                  }}
+                  style={demoSlotBtnStyle}
+                >
+                  Share
+                </button>
+                <button
+                  type="button"
+                  className="demo-slot-btn"
+                  data-testid="demo-header-export"
+                  onClick={() => apiRef.current?.requestExport()}
+                  style={{
+                    ...demoSlotBtnStyle,
+                    background: "var(--color-brand, #ff3386)",
+                    color: "#fff",
+                  }}
+                >
+                  Export
+                </button>
+              </>
+            ) : null
+          }
           toolbarLeft={
             showToolbarLeft ? (
               <label
@@ -458,6 +495,19 @@ export function App() {
           >
             {localeName === "en" ? "Switch to 中文" : "Switch to English"}
           </button>
+        </div>
+
+        <h2>Header</h2>
+        <div className="demo-row demo-checkbox-row">
+          <label>
+            <input
+              type="checkbox"
+              data-testid="demo-toggle-header"
+              checked={showHeader}
+              onChange={(e) => setShowHeader(e.target.checked)}
+            />
+            <span>Show header (title + Share + Export)</span>
+          </label>
         </div>
 
         <h2>Toolbar slots</h2>

@@ -79,6 +79,22 @@ interface VideoEditorProps {
 }
 ```
 
+## Slots
+
+Two named slots — `headerLeft` and `headerRight` — fill the optional header bar above the preview. Empty by default; the header collapses entirely when both are unused, so the default layout is identical to before they existed.
+
+```vue
+<VideoEditor :default-project="project">
+  <template #headerLeft>
+    <strong>Untitled project</strong>
+  </template>
+  <template #headerRight>
+    <button @click="share">Share</button>
+    <button @click="editor?.api()?.requestExport()">Export</button>
+  </template>
+</VideoEditor>
+```
+
 ## Events
 
 ```ts

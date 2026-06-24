@@ -131,16 +131,29 @@ Editor.create({ container, project, locale: localeZh });
 editor.setLocale({ undo: "Annuler" });   // partial override
 ```
 
-## Toolbar slots
+## Host slots
 
-Both the editor's toolbar and the standalone `Timeline`'s optional toolbar expose `toolbarLeft` / `toolbarRight` slot DOM elements. The library renders nothing into them — append your own buttons.
+The editor reserves four slot DOM elements for host-supplied controls. Library paints nothing into any of them; populated slots show, empty ones collapse.
 
 ```ts
+// Header above the preview — collapses entirely when both empty.
+editor.headerLeft.textContent = "Untitled project";
 const exportBtn = document.createElement("button");
 exportBtn.textContent = "Export";
 exportBtn.onclick = () => editor.requestExport();
-editor.toolbarRight.appendChild(exportBtn);
+editor.headerRight.appendChild(exportBtn);
+
+// Toolbar bookends (next to the built-in icons)
+editor.toolbarLeft.appendChild(aspectDropdown);
+editor.toolbarRight.appendChild(customIconBtn);
 ```
+
+| Slot | Where |
+| --- | --- |
+| `editor.headerLeft` / `editor.headerRight` | Optional header row above the preview |
+| `editor.toolbarLeft` / `editor.toolbarRight` | Bookends on the toolbar row |
+
+The standalone `Timeline` also exposes `toolbarLeft` / `toolbarRight` when constructed with `toolbar: true`.
 
 ## Lighting picker (opt-in sub-entry)
 

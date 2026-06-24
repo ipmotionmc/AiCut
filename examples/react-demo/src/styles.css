@@ -71,6 +71,14 @@ body,
   user-select: none;
 }
 
+/* Title text on the left of the editor header — picks up the
+   library's chrome text colour automatically. */
+.demo-header-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+}
+
 .demo-export-error {
   color: var(--color-error, #ff0909);
   font-size: 12px;

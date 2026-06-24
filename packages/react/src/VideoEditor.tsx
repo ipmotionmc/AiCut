@@ -59,6 +59,15 @@ export interface VideoEditorProps {
   toolbarLeft?: ReactNode;
   /** Same as `toolbarLeft` but at the very right of the toolbar. */
   toolbarRight?: ReactNode;
+  /**
+   * Rendered into the LEFT side of an optional header bar above the
+   * preview (project name, file menu, breadcrumbs). The header
+   * collapses entirely when both header slots are empty, so the
+   * default layout is identical to before this slot existed.
+   */
+  headerLeft?: ReactNode;
+  /** Right side of the editor header — conventionally Share / Export / profile. */
+  headerRight?: ReactNode;
 }
 
 /**
@@ -80,6 +89,8 @@ export function VideoEditor(props: VideoEditorProps) {
   const [slots, setSlots] = useState<{
     left: HTMLElement;
     right: HTMLElement;
+    headerLeft: HTMLElement;
+    headerRight: HTMLElement;
   } | null>(null);
 
   // Latest-callback refs so the effect that creates the editor doesn't
@@ -98,7 +109,12 @@ export function VideoEditor(props: VideoEditorProps) {
       locale: cbRef.current.locale,
     });
     editorRef.current = editor;
-    setSlots({ left: editor.toolbarLeft, right: editor.toolbarRight });
+    setSlots({
+      left: editor.toolbarLeft,
+      right: editor.toolbarRight,
+      headerLeft: editor.headerLeft,
+      headerRight: editor.headerRight,
+    });
 
     const offs = [
       editor.on("change", ({ project }) => cbRef.current.onChange?.(project)),
@@ -157,6 +173,12 @@ export function VideoEditor(props: VideoEditorProps) {
         : null}
       {slots && props.toolbarRight != null
         ? createPortal(props.toolbarRight, slots.right)
+        : null}
+      {slots && props.headerLeft != null
+        ? createPortal(props.headerLeft, slots.headerLeft)
+        : null}
+      {slots && props.headerRight != null
+        ? createPortal(props.headerRight, slots.headerRight)
         : null}
     </div>
   );

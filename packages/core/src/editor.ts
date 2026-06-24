@@ -155,6 +155,15 @@ export interface EditorApi {
   readonly toolbarLeft: HTMLElement;
   /** Right-side bookend slot — conventionally export / save / share. */
   readonly toolbarRight: HTMLElement;
+  /**
+   * Optional editor header above the preview. Host appends branding,
+   * project name, file menu, etc. on the left and Share / Export /
+   * profile / settings on the right. Layout is identical to today's
+   * editor when both slots are empty — CSS collapses the bar.
+   */
+  readonly headerLeft: HTMLElement;
+  /** Right-side header slot — conventionally Share / Export / etc. */
+  readonly headerRight: HTMLElement;
 
   // events
   on<K extends EditorEventName>(
@@ -249,6 +258,14 @@ export class Editor implements EditorApi {
 
   get toolbarRight(): HTMLElement {
     return this.ui.toolbarRight;
+  }
+
+  get headerLeft(): HTMLElement {
+    return this.ui.headerLeft;
+  }
+
+  get headerRight(): HTMLElement {
+    return this.ui.headerRight;
   }
 
   // ---- playback -------------------------------------------------------

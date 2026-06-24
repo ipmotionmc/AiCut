@@ -34,6 +34,11 @@ export interface UICallbacks extends ToolbarCallbacks {
 export class EditorUI {
   private root: HTMLElement;
   private editor: Editor;
+  private header: HTMLDivElement;
+  /** Host-extensible slot at the very left of the editor header. */
+  readonly headerLeft: HTMLDivElement;
+  /** Host-extensible slot at the very right of the editor header. */
+  readonly headerRight: HTMLDivElement;
   private preview: HTMLDivElement;
   private fullscreenExitBtn: HTMLButtonElement;
   private toolbar: Toolbar;
@@ -49,6 +54,20 @@ export class EditorUI {
 
     root.classList.add("aicut-root");
     root.innerHTML = "";
+
+    // Optional header above the preview — left/right bookend slots
+    // the host fills via React/Vue wrappers. Always rendered; CSS
+    // collapses it via :has() when both slots are empty so callers
+    // who don't use it see exactly today's layout.
+    this.header = document.createElement("div");
+    this.header.className = "aicut-header";
+    this.header.setAttribute("data-testid", "aicut-header");
+    this.headerLeft = document.createElement("div");
+    this.headerLeft.className = "aicut-header-slot aicut-header-left";
+    this.headerRight = document.createElement("div");
+    this.headerRight.className = "aicut-header-slot aicut-header-right";
+    this.header.append(this.headerLeft, this.headerRight);
+    root.appendChild(this.header);
 
     this.preview = document.createElement("div");
     this.preview.className = "aicut-preview-host";

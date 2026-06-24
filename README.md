@@ -40,7 +40,7 @@ Most "video editor in the browser" projects are either a finished SaaS (you can'
     <td>🛰️</td><td><b>BYO export backend with progress</b><br/>Reference <b>Fastify</b> (TypeScript) and <b>net/http</b> (Go) services with real-time <b>SSE progress</b> over ffmpeg.</td>
   </tr>
   <tr>
-    <td>🧩</td><td><b>Custom toolbar slots</b><br/>Bookend <code>toolbarLeft</code> / <code>toolbarRight</code> on both the editor and the standalone <code>&lt;Timeline&gt;</code>. The library renders nothing into them.</td>
+    <td>🧩</td><td><b>Custom slots everywhere</b><br/>Optional <code>headerLeft</code>/<code>headerRight</code> above the preview (project name, Share / Export, profile) and <code>toolbarLeft</code>/<code>toolbarRight</code> bookends on the toolbar. All collapse to zero when empty — default editor is unchanged for callers that don't use them.</td>
   </tr>
   <tr>
     <td>💡</td><td><b>Opt-in 3D lighting picker</b><br/>A separate <code>@aicut/core/lighting</code> entry powers an interactive sphere-and-image lighting director with perspective / front views, drag-snap directions, and a host-supplied AI smart panel. Three.js is bundled only on this sub-entry — the video-editor bundle stays small.</td>
@@ -183,14 +183,32 @@ Switching at runtime is a regular prop change — the toolbar re-titles and the 
 
 ---
 
-## 🧩 Custom toolbar slots
+## 🧩 Custom slots
 
-The editor's top toolbar reserves bookend slots (`toolbarLeft`, `toolbarRight`) for host-supplied controls — aspect ratios, export buttons, branding, AI badges, anything. The library paints nothing into them and renders no separator until they're populated.
+Four host-fillable slots on the editor — empty by default, no chrome cost. The same pattern is the standalone `<Timeline>`'s `toolbarLeft`/`toolbarRight` props.
+
+| Slot | Where | Typical use |
+| :--- | :--- | :--- |
+| `headerLeft` | Top header, left | Project name, file menu, breadcrumbs |
+| `headerRight` | Top header, right | Share / Export / profile / settings |
+| `toolbarLeft` | Toolbar, left bookend | Aspect ratio, size, branding |
+| `toolbarRight` | Toolbar, right bookend | Custom action icons |
+
+When both `headerLeft` and `headerRight` are empty the header bar collapses entirely — the default editor layout is byte-for-byte identical to before the slots existed.
 
 ![toolbar slots](./docs/screenshots/toolbar-slots.png)
 
 ```tsx
 <VideoEditor
+  // Header row above the preview — auto-hidden when both are null.
+  headerLeft={<span style={{ fontWeight: 600 }}>Untitled project</span>}
+  headerRight={
+    <>
+      <button onClick={share}>Share</button>
+      <button onClick={() => apiRef.current?.requestExport()}>Export</button>
+    </>
+  }
+  // Toolbar bookends — independent slots.
   toolbarLeft={
     <select value={aspect} onChange={(e) => setAspect(e.target.value)}>
       <option value="16:9">16:9</option>
@@ -203,8 +221,6 @@ The editor's top toolbar reserves bookend slots (`toolbarLeft`, `toolbarRight`) 
   }
 />
 ```
-
-The same prop shape exists on the standalone `<Timeline>` — pass `toolbar` plus your slot content.
 
 ---
 

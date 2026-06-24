@@ -52,7 +52,15 @@
   --aicut-playhead-color: var(--color-brand);
 
   display: grid;
-  grid-template-rows: 1fr auto auto;
+  /* Four explicit rows: header / preview / toolbar / timeline. When
+     the header is hidden (empty slots → display:none below), browsers
+     would otherwise auto-reflow the remaining three children into
+     rows 1/2/3 — which would put the preview in the `auto` row and
+     toolbar in the `1fr` row, causing the preview to collapse and a
+     big gap between toolbar and timeline. The explicit grid-row
+     assignments on the children pin each surface to its intended
+     row regardless of which siblings are present. */
+  grid-template-rows: auto 1fr auto auto;
   width: 100%;
   height: 100%;
   min-height: 480px;
@@ -128,6 +136,57 @@
 
 .aicut-root.aicut-fullscreen .aicut-fullscreen-exit {
   display: inline-flex;
+}
+
+/* ===== Header (opt-in via slots) ===== */
+
+/* Slim bar above the preview. Bookend left/right slots are host-
+   filled via the React wrapper's headerLeft/headerRight props or the
+   Vue named slots. Collapsed entirely when both slots are empty so
+   the default editor layout is byte-for-byte the same as before the
+   header existed. */
+.aicut-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 44px;
+  padding: 0 12px;
+  background: var(--aicut-controls-bg);
+  border-bottom: 1px solid var(--aicut-controls-border);
+  color: var(--aicut-controls-text);
+  font-size: 13px;
+  /* Sit above the preview so dropdowns/popovers from header buttons
+     can overflow naturally without z-index plumbing. */
+  position: relative;
+  z-index: 1;
+}
+
+/* Auto-hide when both slots are empty — keep today's default layout
+   exactly as it was for callers that don't use the header. With the
+   per-child grid-row assignments below, display:none here cleanly
+   removes the header without reflowing preview/toolbar/timeline. */
+.aicut-root:has(.aicut-header-left:empty):has(.aicut-header-right:empty)
+  .aicut-header {
+  display: none;
+}
+
+/* Pin each editor surface to its intended row. Required so the four
+   children can't auto-reflow when one (e.g. the header) is hidden. */
+.aicut-root > .aicut-header        { grid-row: 1; }
+.aicut-root > .aicut-preview-host  { grid-row: 2; }
+.aicut-root > .aicut-toolbar       { grid-row: 3; }
+.aicut-root > .aicut-timeline      { grid-row: 4; }
+
+.aicut-header-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.aicut-header-right {
+  margin-left: auto;
 }
 
 /* ===== Toolbar ===== */
