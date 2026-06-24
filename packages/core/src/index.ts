@@ -10,9 +10,21 @@ export type {
   MediaSource,
   Track,
   Clip,
+  Keyframe,
   Ms,
   Theme,
 } from "./types.js";
+
+// Keyframe interpolation — hosts can read the effective transform of a
+// clip at any time (e.g. for thumbnail previews) without touching the
+// playback engine. Pure math, zero deps.
+export {
+  IDENTITY_TRANSFORM,
+  isIdentityTransform,
+  getEffectiveTransform,
+  getTransformAtTimelineTime,
+  type EffectiveTransform,
+} from "./keyframes/index.js";
 export { createEmptyProject, normalizeProject } from "./model.js";
 export { createId } from "./ids.js";
 

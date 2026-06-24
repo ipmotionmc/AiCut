@@ -27,6 +27,36 @@ export interface Clip {
    * Persisted in the project JSON so a host can restore exactly.
    */
   speed?: number;
+  /**
+   * Optional per-clip transform animation. Each keyframe pins x / y / scale
+   * at a clip-local time (0 = clip's `in`); the canvas-based playback
+   * engines linearly interpolate between adjacent keyframes when keyframe
+   * mode is enabled on the Editor.
+   *
+   * Clip-local times mean keyframes follow when the clip is moved or
+   * trimmed — no rewrite needed.
+   *
+   * Absent / empty array = identity transform; legacy projects behave
+   * exactly as before. `normalizeProject` keeps the array sorted by `time`.
+   */
+  keyframes?: Keyframe[];
+}
+
+/**
+ * One pinned state of a clip's transform at a moment in clip-local time.
+ * Missing axis fields default to identity (x = 0, y = 0, scale = 1) when
+ * interpolating — host code can persist sparse keyframes.
+ */
+export interface Keyframe {
+  id: string;
+  /** Clip-local time in ms. 0 = clip's `in`. Bounds: [0, clip.out - clip.in]. */
+  time: Ms;
+  /** Pixel translate along the preview's local X axis. Default 0. */
+  x?: number;
+  /** Pixel translate along the preview's local Y axis. Default 0. */
+  y?: number;
+  /** Multiplier on intrinsic frame size. Default 1. */
+  scale?: number;
 }
 
 export interface Track {

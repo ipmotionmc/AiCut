@@ -1,5 +1,5 @@
 import { createId } from "./ids.js";
-import type { Clip, Ms, Project, Track } from "./types.js";
+import type { Clip, Keyframe, Ms, Project, Track } from "./types.js";
 
 export function createEmptyProject(): Project {
   return {
@@ -60,7 +60,20 @@ export function normalizeProject(project: Project): Project {
   const tracks = project.tracks.map<Track>((t) => {
     const clips = t.clips
       .filter((c) => c.out > c.in)
-      .map<Clip>((c) => ({ ...c, id: c.id || createId("clip") }))
+      .map<Clip>((c) => {
+        const out: Clip = { ...c, id: c.id || createId("clip") };
+        if (c.keyframes && c.keyframes.length > 0) {
+          // Sort by time + assign ids to any keyframe missing one. Drop
+          // empties / out-of-range keyframes (defensive — a host
+          // restoring a stale snapshot might have them).
+          const duration = c.out - c.in;
+          out.keyframes = c.keyframes
+            .filter((kf) => kf.time >= 0 && kf.time <= duration)
+            .map<Keyframe>((kf) => ({ ...kf, id: kf.id || createId("kf") }))
+            .sort((a, b) => a.time - b.time);
+        }
+        return out;
+      })
       .sort((a, b) => a.start - b.start);
     return { ...t, id: t.id || createId("track"), clips };
   });
@@ -78,6 +91,23 @@ export function splitClipAt(clip: Clip, localOffset: Ms): [Clip, Clip] | null {
     in: clip.in + localOffset,
     start: clip.start + localOffset,
   };
+  // Partition keyframes across the cut. Times are clip-local, so the
+  // right half's keyframes shift by -localOffset to keep their meaning.
+  if (clip.keyframes && clip.keyframes.length > 0) {
+    const leftKf: Keyframe[] = [];
+    const rightKf: Keyframe[] = [];
+    for (const kf of clip.keyframes) {
+      if (kf.time < localOffset) {
+        leftKf.push(kf);
+      } else {
+        // Re-id the shifted ones — the original kf belongs to the left
+        // half conceptually; the right half is a brand-new clip.
+        rightKf.push({ ...kf, id: createId("kf"), time: kf.time - localOffset });
+      }
+    }
+    left.keyframes = leftKf.length > 0 ? leftKf : undefined;
+    right.keyframes = rightKf.length > 0 ? rightKf : undefined;
+  }
   return [left, right];
 }
 
