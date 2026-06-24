@@ -2,8 +2,8 @@
 
 # 🎬 AiCut
 
-### A drop-in video editor component for **React** and **Vue**
-Canvas-rendered timeline · plain JSON projects · real export to mp4
+### Drop-in video editor + 3D lighting picker for **React** and **Vue**
+Canvas-rendered timeline · plain JSON projects · real mp4 export · opt-in three.js lighting
 
 <br />
 
@@ -41,6 +41,9 @@ Most "video editor in the browser" projects are either a finished SaaS (you can'
   </tr>
   <tr>
     <td>🧩</td><td><b>Custom toolbar slots</b><br/>Bookend <code>toolbarLeft</code> / <code>toolbarRight</code> on both the editor and the standalone <code>&lt;Timeline&gt;</code>. The library renders nothing into them.</td>
+  </tr>
+  <tr>
+    <td>💡</td><td><b>Opt-in 3D lighting picker</b><br/>A separate <code>@aicut/core/lighting</code> entry powers an interactive sphere-and-image lighting director with perspective / front views, drag-snap directions, and a host-supplied AI smart panel. Three.js is bundled only on this sub-entry — the video-editor bundle stays small.</td>
   </tr>
 </table>
 
@@ -247,6 +250,40 @@ Each backend resolves an ffmpeg binary in this order:
 
 ---
 
+## 💡 Lighting picker (opt-in)
+
+An independent 3D component for AI-relighting workflows. The host picks a frame, the picker shows it on a flat plane inside a wireframe sphere, and the user drags a light dot around the sphere surface to set direction. Brightness drives the cone-beam length; color tints the beam; a "Smart mode" drawer is a host-supplied slot (prompt, presets, generate button) the library renders with a × close + a header pill toggle to re-open.
+
+Three.js powers the scene and ships only on the **`@aicut/core/lighting`** sub-entry — consumers of the video editor pay nothing for it.
+
+<div align="center">
+
+![Lighting picker](./docs/screenshots/lighting-editor.png)
+
+</div>
+
+```tsx
+import { LightingEditor } from "@aicut/react/lighting";
+import "@aicut/core/styles.css";
+
+<LightingEditor
+  subjectImageUrl="/frames/subject.jpg"
+  smartEnabled
+  smartPanel={
+    <>
+      <textarea placeholder="Describe the lighting…" />
+      <button onClick={() => apiRef.current?.requestGenerate()}>Generate</button>
+    </>
+  }
+  onChange={(cfg) => console.log(cfg)}
+  onGenerate={(cfg) => fetch("/relight", { method: "POST", body: JSON.stringify(cfg) })}
+/>
+```
+
+The full `LightingConfig` (brightness, color, key direction unit-vector, key preset, rim toggle) is plain JSON — same philosophy as the video editor's project.
+
+---
+
 ## 🎯 Standalone Timeline (frame picker)
 
 The `<Timeline>` component works without the rest of the editor — useful for a frame-picker, a thumbnail strip, or a read-only preview.
@@ -336,9 +373,11 @@ The script is idempotent — already-published versions are skipped, so a re-run
 - [x] Top-toolbar slots for host-supplied controls
 - [x] SSE-progress export backends (TS + Go)
 - [x] Bundled `en` / `zh` locale packs + runtime switch
+- [x] 3D lighting picker (`@aicut/core/lighting` sub-entry)
 - [ ] Speed adjustment (timeline already reserves the slot)
 - [ ] Audio track rendering + waveform thumbnails
 - [ ] WebGL preview engine for frame-accurate seek + transitions
+- [ ] Lighting → relighting backend reference
 - [ ] Hosted demo site
 
 ---
@@ -352,6 +391,7 @@ The script is idempotent — already-published versions are skipped, so a re-run
   <img alt="Node.js" src="https://img.shields.io/badge/Node.js-5FA04E?style=for-the-badge&logo=nodedotjs&logoColor=white" />
   <img alt="Go" src="https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white" />
   <img alt="ffmpeg" src="https://img.shields.io/badge/ffmpeg-007808?style=for-the-badge&logo=ffmpeg&logoColor=white" />
+  <img alt="three.js" src="https://img.shields.io/badge/three.js-000000?style=for-the-badge&logo=threedotjs&logoColor=white" />
   <img alt="Vite" src="https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white" />
   <img alt="Fastify" src="https://img.shields.io/badge/Fastify-000000?style=for-the-badge&logo=fastify&logoColor=white" />
   <img alt="pnpm" src="https://img.shields.io/badge/pnpm-F69220?style=for-the-badge&logo=pnpm&logoColor=white" />

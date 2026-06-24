@@ -145,6 +145,48 @@ import { VideoEditor, localeZh } from "@aicut/react";
 
 `locale` is reactive too — runtime swap re-titles the toolbar and re-paints canvas labels in place.
 
+## `<LightingEditor>` (opt-in sub-entry)
+
+A 3D lighting director for AI relighting flows — separate component that doesn't pull three.js into the rest of your bundle.
+
+```tsx
+import { useRef } from "react";
+import {
+  LightingEditor,
+  type LightingEditorApi,
+  type LightingConfig,
+} from "@aicut/react/lighting";
+import "@aicut/core/styles.css";
+
+function Relight() {
+  const apiRef = useRef<LightingEditorApi | null>(null);
+  return (
+    <LightingEditor
+      apiRef={apiRef}
+      subjectImageUrl="/frames/subject.jpg"
+      smartEnabled
+      smartPanel={
+        <>
+          <textarea placeholder="Describe the mood…" />
+          <button onClick={() => apiRef.current?.requestGenerate()}>
+            Generate
+          </button>
+        </>
+      }
+      onChange={(cfg: LightingConfig) => console.log(cfg)}
+      onGenerate={(cfg) =>
+        fetch("/relight", {
+          method: "POST",
+          body: JSON.stringify(cfg),
+        })
+      }
+    />
+  );
+}
+```
+
+Props: `subjectImageUrl`, `defaultConfig`, `defaultView`, `theme`, `locale`, `smartEnabled`, `smartOpen`, `smartPanel`, `onChange`, `onGenerate`, `onSmartOpenChange`. The host's `smartPanel` is portaled into the editor's slot; the library renders the × close button + a "Smart mode" header pill to re-open it.
+
 ## Standalone `<Timeline>`
 
 Use the canvas timeline without the rest of the editor — frame-pickers, thumbnail strips, read-only previews.

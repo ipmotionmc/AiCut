@@ -1,7 +1,7 @@
 {
   "name": "@aicut/core",
-  "version": "0.1.1",
-  "description": "Framework-agnostic core for the AiCut video editor — canvas timeline, data model, HTML5 playback engine.",
+  "version": "0.2.0",
+  "description": "Framework-agnostic core for the AiCut video editor — canvas timeline, data model, HTML5 playback engine, plus an opt-in 3D lighting picker.",
   "license": "MIT",
   "author": "ziqiang <ziqiangytu@gmail.com>",
   "homepage": "https://github.com/ziqiangai/AiCut#readme",
@@ -34,7 +34,10 @@
     "davinci",
     "imovie",
     "veed",
-    "filmora"
+    "filmora",
+    "lighting",
+    "three.js",
+    "ai-relighting"
   ],
   "type": "module",
   "sideEffects": ["./styles/*.css"],
@@ -46,6 +49,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./lighting": {
+      "types": "./dist/lighting/index.d.ts",
+      "import": "./dist/lighting/index.js",
+      "require": "./dist/lighting/index.cjs"
     },
     "./styles.css": "./styles/theme.css"
   },
@@ -59,7 +67,11 @@
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "three": "^0.159.0"
+  },
   "devDependencies": {
+    "@types/three": "^0.159.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2"
   },

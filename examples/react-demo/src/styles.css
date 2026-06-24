@@ -166,3 +166,224 @@ body,
   background: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.95);
 }
+
+/* ===== Top nav for the demo router ===== */
+
+.demo-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.demo-topnav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 44px;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.demo-topnav-brand {
+  font-weight: 600;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.78);
+}
+
+.demo-topnav-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.demo-topnav-tab {
+  text-decoration: none;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.55);
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.demo-topnav-tab:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.demo-topnav-tab.active {
+  background: rgba(0, 0, 0, 0.06);
+  color: #000;
+  font-weight: 600;
+}
+
+.demo-page {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* The original .demo-shell used height: 100vh — now nested under
+   .demo-page it needs to fit the remaining viewport instead. */
+.demo-page .demo-shell {
+  height: 100%;
+}
+
+/* ===== Lighting demo page ===== */
+
+.lighting-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+  padding: 16px;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.lighting-editor-area {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+}
+
+.lighting-editor-area .aicut-lighting-editor {
+  width: 100%;
+}
+
+.lighting-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+}
+
+.lighting-sidebar h2 {
+  font-size: 14px;
+  margin: 4px 0;
+}
+
+.lighting-state {
+  margin: 0;
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 11px;
+  padding: 8px;
+  background: #f4f4f4;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 220px;
+  overflow: auto;
+}
+
+/* ===== Smart panel (host UI, rendered into the editor's slot) ===== */
+
+.ldemo-smart {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ldemo-smart-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--aicut-controls-text);
+}
+
+.ldemo-smart-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--aicut-controls-border);
+  background: var(--aicut-controls-bg);
+  color: var(--aicut-controls-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.ldemo-smart-upload {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--aicut-controls-border);
+  font-size: 12px;
+  color: var(--aicut-controls-text);
+  cursor: pointer;
+  width: fit-content;
+}
+
+.ldemo-smart-upload:hover {
+  border-color: var(--color-brand, #ff3386);
+  color: var(--color-brand, #ff3386);
+}
+
+.ldemo-smart-preset-title {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--aicut-controls-text) 70%, transparent);
+}
+
+.ldemo-smart-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.ldemo-smart-preset {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--aicut-controls-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--aicut-controls-text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ldemo-smart-preset:hover {
+  border-color: var(--color-brand, #ff3386);
+}
+
+.ldemo-smart-preset-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.ldemo-smart-preset-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ldemo-generate {
+  margin-top: 4px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 0;
+  background: var(--color-brand, #ff3386);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.ldemo-generate:hover {
+  background: color-mix(in srgb, var(--color-brand, #ff3386) 88%, black);
+}

@@ -142,6 +142,35 @@ exportBtn.onclick = () => editor.requestExport();
 editor.toolbarRight.appendChild(exportBtn);
 ```
 
+## Lighting picker (opt-in sub-entry)
+
+A separate component for AI relighting workflows — drag a light dot around a 3D sphere wrapping a subject frame, control brightness / color / direction. Three.js is bundled only on this sub-entry, so consumers of the video editor pay zero bytes for it.
+
+```ts
+import { LightingEditor } from "@aicut/core/lighting";
+import "@aicut/core/styles.css";
+
+const ed = LightingEditor.create({
+  container: document.getElementById("light")!,
+  subjectImageUrl: "/frames/subject.jpg",
+  smartEnabled: true,        // default; false → no slot column at all
+  smartOpen: true,           // default; user can toggle via × / header pill
+  onChange: (cfg) => console.log(cfg),
+  onGenerate: (cfg) => fetch("/relight", { method: "POST", body: JSON.stringify(cfg) }),
+});
+
+// Host appends UI into the smart slot (prompt textarea, presets, generate btn, …).
+ed.smartSlot.appendChild(myAiUI);
+
+// Runtime control:
+ed.setSmartOpen(false);
+ed.setSmartEnabled(false);
+ed.setView("front");
+ed.setConfig({ brightness: 0.8, color: "#ffaa3a" });
+```
+
+Locale extension `LightingLocale` (separate from the video editor's `Locale`) is also exported with `lightingLocaleEn` / `lightingLocaleZh`.
+
 ## Standalone Timeline
 
 ```ts

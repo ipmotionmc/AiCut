@@ -1,0 +1,74 @@
+/**
+ * Lighting-editor-specific string keys. Kept in a SEPARATE interface
+ * from the video editor's `Locale` so the timeline-only consumer's
+ * type doesn't grow unused fields, but exported so a single host
+ * locale object can spread both shapes together.
+ */
+export interface LightingLocale {
+  lightingGlobalTitle: string;
+  lightingSmartMode: string;
+  lightingBrightness: string;
+  lightingColor: string;
+  lightingKeyTitle: string;
+  lightingRim: string;
+  lightingViewPerspective: string;
+  lightingViewFront: string;
+  lightingResetParams: string;
+  /** Aria label / tooltip for the × button that closes the Smart panel. */
+  lightingSmartClose: string;
+  /** Tooltip / label for the controls-header Smart Mode toggle. */
+  lightingSmartToggle: string;
+  // Six canonical key-light direction buttons
+  lightingDirLeft: string;
+  lightingDirRight: string;
+  lightingDirTop: string;
+  lightingDirBottom: string;
+  lightingDirFront: string;
+  lightingDirBack: string;
+}
+
+export const lightingLocaleEn: LightingLocale = {
+  lightingGlobalTitle: "Global",
+  lightingSmartMode: "Smart mode",
+  lightingBrightness: "Brightness",
+  lightingColor: "Color",
+  lightingKeyTitle: "Key light",
+  lightingRim: "Rim light",
+  lightingViewPerspective: "Perspective",
+  lightingViewFront: "Front",
+  lightingResetParams: "Reset",
+  lightingSmartClose: "Close Smart mode",
+  lightingSmartToggle: "Smart mode",
+  lightingDirLeft: "Left",
+  lightingDirRight: "Right",
+  lightingDirTop: "Top",
+  lightingDirBottom: "Bottom",
+  lightingDirFront: "Front",
+  lightingDirBack: "Back",
+};
+
+export const lightingLocaleZh: LightingLocale = {
+  lightingGlobalTitle: "全局",
+  lightingSmartMode: "智能模式",
+  lightingBrightness: "亮度",
+  lightingColor: "颜色",
+  lightingKeyTitle: "主光源",
+  lightingRim: "轮廓光",
+  lightingViewPerspective: "透视",
+  lightingViewFront: "正面",
+  lightingResetParams: "重置参数",
+  lightingSmartClose: "关闭智能模式",
+  lightingSmartToggle: "智能模式",
+  lightingDirLeft: "左侧",
+  lightingDirRight: "右侧",
+  lightingDirTop: "顶部",
+  lightingDirBottom: "底部",
+  lightingDirFront: "前方",
+  lightingDirBack: "后方",
+};
+
+export function mergeLightingLocale(
+  partial: Partial<LightingLocale> | undefined,
+): LightingLocale {
+  return partial ? { ...lightingLocaleEn, ...partial } : lightingLocaleEn;
+}

@@ -130,6 +130,45 @@ const locale = computed<Locale>(() =>
 
 `locale` swap re-titles the toolbar and re-paints canvas labels in place.
 
+## `<LightingEditor>` (opt-in sub-entry)
+
+A 3D lighting director for AI relighting flows — separate sub-entry; three.js bundles only here.
+
+```vue
+<script setup lang="ts">
+import { ref } from "vue";
+import { LightingEditor, type LightingConfig } from "@aicut/vue/lighting";
+import "@aicut/core/styles.css";
+
+const editor = ref<{ api(): any } | null>(null);
+
+function onChange(cfg: LightingConfig) {
+  console.log(cfg);
+}
+
+function onGenerate(cfg: LightingConfig) {
+  fetch("/relight", { method: "POST", body: JSON.stringify(cfg) });
+}
+</script>
+
+<template>
+  <LightingEditor
+    ref="editor"
+    subject-image-url="/frames/subject.jpg"
+    smart-enabled
+    @change="onChange"
+    @generate="onGenerate"
+  >
+    <template #smart>
+      <textarea placeholder="Describe the mood…" />
+      <button @click="editor?.api()?.requestGenerate()">Generate</button>
+    </template>
+  </LightingEditor>
+</template>
+```
+
+Props: `subjectImageUrl`, `defaultConfig`, `defaultView`, `theme`, `locale`, `smartEnabled`, `smartOpen`. Events: `ready`, `change`, `generate`. Use the named `<slot name="smart">` for the smart-mode panel content.
+
 ## Standalone `<Timeline>`
 
 ```vue

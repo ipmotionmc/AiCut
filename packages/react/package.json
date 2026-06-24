@@ -1,7 +1,7 @@
 {
   "name": "@aicut/react",
-  "version": "0.1.1",
-  "description": "React wrapper for the AiCut video editor — thin declarative shell over @aicut/core.",
+  "version": "0.2.0",
+  "description": "React wrapper for the AiCut video editor + lighting picker — thin declarative shells over @aicut/core.",
   "license": "MIT",
   "author": "ziqiang <ziqiangytu@gmail.com>",
   "homepage": "https://github.com/ziqiangai/AiCut#readme",
@@ -34,7 +34,9 @@
     "davinci",
     "imovie",
     "veed",
-    "filmora"
+    "filmora",
+    "lighting",
+    "three.js"
   ],
   "type": "module",
   "main": "./dist/index.cjs",
@@ -45,6 +47,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./lighting": {
+      "types": "./dist/lighting.d.ts",
+      "import": "./dist/lighting.js",
+      "require": "./dist/lighting.cjs"
     }
   },
   "files": [

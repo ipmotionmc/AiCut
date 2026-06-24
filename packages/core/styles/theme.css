@@ -412,3 +412,315 @@
 .aicut-timeline-toolbar-right {
   margin-left: auto;
 }
+
+/* ===== Lighting editor (opt-in component) ===== */
+
+/* IMPORTANT: every `var(--aicut-controls-*)` reference below carries
+   an explicit fallback (the same value the .aicut-root rule would
+   compute via its self-reference pattern). Chrome treats the
+   self-reference `--foo: var(--foo, x)` on .aicut-root as a cycle
+   and skips it when no parent + no inline override defines `--foo`
+   — which means the lighting component must NOT depend on those
+   inherited custom properties succeeding. The video editor sidesteps
+   the issue because applyTheme() always writes the values inline.
+   Hosts that pass a `theme` prop or set the --aicut-controls-* vars
+   themselves still override these fallbacks; it's pure belt-and-
+   braces. */
+
+.aicut-lighting-editor {
+  --aicut-lighting-canvas-bg: color-mix(in srgb, var(--aicut-controls-text, rgba(255, 255, 255, 0.85)) 4%, transparent);
+  --aicut-lighting-section-gap: 14px;
+  --aicut-lighting-control-w: 220px;
+  display: block;
+}
+
+.aicut-lighting-body {
+  display: grid;
+  /* Fixed widths: scene 240, controls 220. Smart column gets the rest
+     when open; collapses to 0 when closed; removed entirely when smart
+     mode is disabled (see the data-smart-* rules below). */
+  grid-template-columns: 240px 220px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  padding: 16px;
+  background: var(--aicut-controls-bg, #1f1f22);
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  border-radius: var(--aicut-radius-md, 12px);
+}
+
+/* When smart mode is disabled outright, the smart column doesn't
+   render — collapse the grid to 2 columns so we don't leave a gap. */
+.aicut-lighting-editor[data-smart-enabled="false"] .aicut-lighting-body {
+  grid-template-columns: 240px 220px;
+}
+
+/* When smart mode is enabled but the drawer is closed, keep the slot
+   in the DOM (portals stay valid) but shrink the column to zero —
+   smooth animated drawer collapse from the right. */
+.aicut-lighting-editor[data-smart-open="false"] .aicut-lighting-body {
+  grid-template-columns: 240px 220px 0fr;
+}
+.aicut-lighting-editor[data-smart-open="false"] .aicut-lighting-smart-wrapper {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+/* --- Scene column --- */
+.aicut-lighting-scene-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  /* Self-center vertically so the sphere stays at the visual midpoint
+     of the row even when the smart drawer stretches the row taller
+     than the scene column's own content. */
+  align-self: center;
+}
+
+.aicut-lighting-view-toggle {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--aicut-controls-active, rgba(255, 255, 255, 0.12));
+  position: relative;
+}
+.aicut-lighting-view-opt {
+  height: 24px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  opacity: 0.6;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+.aicut-lighting-view-opt.active {
+  background: var(--aicut-controls-bg, #1f1f22);
+  opacity: 1;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.aicut-lighting-scene-viewport {
+  width: 100%;
+  max-width: 240px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--aicut-lighting-canvas-bg);
+  position: relative;
+  /* Keep the canvas filling the viewport even before ResizeObserver
+     fires the first measurement. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Controls column --- */
+.aicut-lighting-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--aicut-lighting-section-gap);
+  min-width: 0;
+}
+
+.aicut-lighting-controls-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.aicut-lighting-controls-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+}
+
+.aicut-lighting-controls-header-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.aicut-lighting-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.aicut-lighting-section-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.aicut-lighting-label {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--aicut-controls-text, rgba(255, 255, 255, 0.85)) 70%, transparent);
+}
+
+.aicut-lighting-range {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--aicut-controls-text, rgba(255, 255, 255, 0.85)) 18%, transparent);
+  outline: none;
+}
+.aicut-lighting-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  cursor: pointer;
+}
+.aicut-lighting-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  cursor: pointer;
+}
+
+.aicut-lighting-color {
+  width: 44px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.aicut-lighting-dir-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.aicut-lighting-dir-btn {
+  height: 28px;
+  padding: 0 4px;
+  border: 1px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
+  background: transparent;
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.aicut-lighting-dir-btn:hover {
+  background: var(--aicut-controls-hover, rgba(255, 255, 255, 0.08));
+}
+.aicut-lighting-dir-btn.active {
+  background: color-mix(in srgb, var(--color-brand, #ff3386) 18%, transparent);
+  border-color: var(--color-brand, #ff3386);
+  color: var(--color-brand, #ff3386);
+}
+
+.aicut-lighting-toggle {
+  width: 32px;
+  height: 18px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--aicut-controls-text, rgba(255, 255, 255, 0.85)) 18%, transparent);
+  position: relative;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.aicut-lighting-toggle.active {
+  background: var(--color-brand, #ff3386);
+}
+.aicut-lighting-toggle-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: left 120ms ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.aicut-lighting-toggle.active .aicut-lighting-toggle-thumb {
+  left: 16px;
+}
+
+.aicut-lighting-reset {
+  margin-left: auto;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
+  background: transparent;
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.aicut-lighting-reset:hover {
+  background: var(--aicut-controls-hover, rgba(255, 255, 255, 0.08));
+}
+
+.aicut-lighting-smart-slot {
+  min-width: 0;
+}
+
+/* --- Smart wrapper (drawer + × button) --- */
+
+.aicut-lighting-smart-wrapper {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  transition: opacity 180ms ease;
+}
+
+.aicut-lighting-smart-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--aicut-controls-text, rgba(255, 255, 255, 0.85)) 60%, transparent);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 1;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.aicut-lighting-smart-close:hover {
+  background: var(--aicut-controls-hover, rgba(255, 255, 255, 0.08));
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+}
+
+/* Push the host content down a touch so it doesn't sit under × */
+.aicut-lighting-smart-wrapper > .aicut-lighting-smart-slot {
+  padding-top: 4px;
+  padding-right: 28px;
+}
+
+/* --- Smart-mode pill toggle in the controls header --- */
+
+.aicut-lighting-smart-toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.aicut-lighting-smart-toggle-label {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--aicut-controls-text, rgba(255, 255, 255, 0.85)) 70%, transparent);
+}

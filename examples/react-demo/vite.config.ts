@@ -18,6 +18,11 @@ export default defineConfig({
   // `pnpm build` of `@aicut/core` / `@aicut/react` on page reload
   // instead of serving a frozen cached chunk.
   optimizeDeps: {
-    exclude: ["@aicut/core", "@aicut/react"],
+    exclude: [
+      "@aicut/core",
+      "@aicut/core/lighting",
+      "@aicut/react",
+      "@aicut/react/lighting",
+    ],
   },
 });
