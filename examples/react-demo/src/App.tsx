@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   CanvasCompositorEngine,
   TRACK_HEIGHT,
@@ -16,7 +16,6 @@ import {
   type TimelineApi,
   type VideoEditorApi,
 } from "@aicut/react";
-import { KeyframePanel } from "./KeyframePanel.js";
 import {
   WebCodecsEngine,
   isWebCodecsSupported,
@@ -274,13 +273,6 @@ export function App() {
   // pipeline. Data round-trips either way, so flipping off and back on
   // doesn't lose the keyframes.
   const [keyframesEnabled, setKeyframesEnabled] = useState<boolean>(false);
-  const [selectedKeyframe, setSelectedKeyframe] = useState<
-    { clipId: string; keyframeId: string } | null
-  >(null);
-  // Render trigger for the KeyframePanel — bumped from the editor's
-  // change + time events so the panel re-reads the live project +
-  // interpolated transform values.
-  const [kfTick, setKfTick] = useState(0);
   const playbackEngine: PlaybackEngineFactory = useMemo(() => {
     if (engineKind === "canvas") {
       return (opts) => new CanvasCompositorEngine({ ...opts, debug: true });
@@ -401,7 +393,6 @@ export function App() {
           trackHeight={trackHeight}
           timelineHeight={timelineHeight}
           keyframes={{ enabled: keyframesEnabled }}
-          onKeyframeSelectionChange={setSelectedKeyframe}
           style={{ height: "100%" }}
           headerLeft={
             showHeader ? (
@@ -543,19 +534,7 @@ export function App() {
               api.setProject(project);
             });
           }}
-          onChange={(p) => {
-            setSavedJson(JSON.stringify(p, null, 2));
-            // KeyframePanel reads getProject() on each render — bump
-            // the tick so it re-resolves clip / interpolated values
-            // whenever the model changes.
-            setKfTick((n) => n + 1);
-          }}
-          onTimeUpdate={() => {
-            // Cheaper signal for the interpolation readout — fires
-            // ~60x/sec during play, but we only re-read in the
-            // KeyframePanel render, not in the editor.
-            setKfTick((n) => n + 1);
-          }}
+          onChange={(p) => setSavedJson(JSON.stringify(p, null, 2))}
           onExport={(p) => {
             setExportJson(JSON.stringify(p, null, 2));
             void runBackendExport(p);
@@ -688,22 +667,15 @@ export function App() {
             <span>Enable keyframe animation (X / Y / Scale)</span>
           </label>
         </div>
-        {keyframesEnabled ? (
-          <KeyframePanel
-            api={apiRef.current}
-            tick={kfTick}
-            selectedClipId={selectedClipId}
-            selectedKeyframe={selectedKeyframe}
-          />
-        ) : (
-          <p className="demo-engine-help">
-            Off — diamond markers hidden, transforms identity. Existing
-            keyframe data is preserved; flipping on shows it again.
-            <br />
-            (Preview only animates on Canvas / WebCodecs engines —
-            HtmlVideoEngine renders identity.)
-          </p>
-        )}
+        <p className="demo-engine-help">
+          Library-provided UI: a "+ keyframe" button appears in the
+          toolbar; clicking pins the current X / Y / Scale at the
+          playhead. Selected clips show a dashed frame border in the
+          preview with drag-to-translate + corner-handles-to-scale.
+          The numeric panel pops up in the preview's top-left whenever
+          a keyframe is selected. (HtmlVideoEngine renders identity —
+          swap to Canvas / WebCodecs for live animated preview.)
+        </p>
 
         <h2>Header</h2>
         <div className="demo-row demo-checkbox-row">

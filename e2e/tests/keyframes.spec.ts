@@ -1,19 +1,22 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * Keyframe end-to-end coverage. Drives the demo:
- *   - flip the sidebar toggle ON
- *   - programmatically lay down a clip + select it via the editor API
- *   - add a keyframe, edit values, undo
- *   - verify backward compat: disable + re-enable preserves the data
+ * Keyframe end-to-end. The v2 UI lives entirely inside the library —
+ * the demo only has an enable toggle. We exercise:
  *
- * Most of this routes through __aicut.api because the canvas timeline
- * has no DOM clip nodes to click on. The KeyframePanel inputs DO have
- * data-testids though, so we exercise those directly where it makes
- * sense (e.g. checking the X input reflects the selected keyframe).
+ *   - Toolbar keyframe button visibility gated on the enable toggle
+ *   - Toolbar click toggles between add / remove at the playhead
+ *   - Preview overlay (border + corner handles) appears on canvas
+ *     engines once a clip is loaded
+ *   - Library-mounted KeyframePanel surfaces only when a keyframe is
+ *     selected
+ *   - Editing X / Y / Scale in the panel persists via the editor API
+ *   - Undo / disable-then-enable round-trip preserves data
  */
 test.describe("Keyframes", () => {
-  test("toggle + add + edit + undo + round-trip", async ({ page }) => {
+  test("toolbar toggle + library panel + undo + round-trip", async ({
+    page,
+  }) => {
     await page.goto("/");
 
     await expect
@@ -24,9 +27,7 @@ test.describe("Keyframes", () => {
       )
       .toBe(true);
 
-    // Lay down a real clip so the editor has something to attach
-    // keyframes to. The demo seeds two empty tracks; we add one
-    // 5s clip backed by /a.mov (already in public/).
+    // Lay down a real clip + select it.
     await page.evaluate(() => {
       const api = (window as any).__aicut.api;
       const p = api.getProject();
@@ -44,90 +45,97 @@ test.describe("Keyframes", () => {
       api.setSelection("kf-test-clip");
     });
 
-    // Flip the sidebar toggle ON.
+    // Toolbar keyframe button is hidden until the toggle is on.
+    const kfBtn = page.getByTestId("aicut-keyframe");
+    await expect(kfBtn).toBeHidden();
+
+    // Flip the toggle ON.
     const toggle = page.getByTestId("demo-keyframes-toggle");
-    await expect(toggle).toBeVisible();
     await toggle.check();
-    await expect(toggle).toBeChecked();
+    await expect(kfBtn).toBeVisible();
 
-    // KeyframePanel should now be visible.
-    const panel = page.getByTestId("demo-kf-panel");
-    await expect(panel).toBeVisible();
-
-    // Add a keyframe at the playhead (seek to t=1000 first so the
-    // resulting time is predictable).
+    // Seek to t=1000, click the toolbar add — a keyframe lands at 1000.
     await page.evaluate(() => (window as any).__aicut.api.seek(1000));
-    const addBtn = page.getByTestId("demo-kf-add");
-    await addBtn.click();
-
-    // The editor should now have exactly one keyframe at time=1000.
-    const firstAddState = await page.evaluate(() => {
-      const proj = (window as any).__aicut.api.getProject();
-      const clip = proj.tracks[0].clips.find(
+    await kfBtn.click();
+    const afterAdd = await page.evaluate(() => {
+      const p = (window as any).__aicut.api.getProject();
+      const clip = p.tracks[0].clips.find(
         (c: { id: string }) => c.id === "kf-test-clip",
       );
       return clip?.keyframes ?? null;
     });
-    expect(firstAddState).toHaveLength(1);
-    expect(firstAddState[0]).toMatchObject({ time: 1000, scale: 1 });
+    expect(afterAdd).toHaveLength(1);
+    expect(afterAdd[0].time).toBe(1000);
 
-    // Select the keyframe via the API (clicking a diamond would also
-    // work but the canvas pixel hunt is fragile).
-    const kfId = firstAddState[0].id;
+    // Library-mounted panel only appears when a keyframe is selected.
+    const panel = page.getByTestId("aicut-keyframe-panel");
+    await expect(panel).toBeHidden();
     await page.evaluate(
       ([id]) =>
         (window as any).__aicut.api.setSelectedKeyframe({
           clipId: "kf-test-clip",
           keyframeId: id,
         }),
-      [kfId],
+      [afterAdd[0].id],
     );
+    await expect(panel).toBeVisible();
 
-    // Edit Scale via the KeyframePanel input → blur to commit.
-    const scaleInput = page.getByTestId("demo-kf-scale");
-    await scaleInput.fill("1.5");
-    await scaleInput.blur();
-
+    // Edit Scale via the library's panel input.
+    const scaleIn = page.getByTestId("aicut-kf-scale");
+    await scaleIn.fill("1.5");
+    await scaleIn.blur();
     await expect
-      .poll(
-        async () =>
-          await page.evaluate(() => {
-            const proj = (window as any).__aicut.api.getProject();
-            const clip = proj.tracks[0].clips.find(
-              (c: { id: string }) => c.id === "kf-test-clip",
-            );
-            return clip?.keyframes?.[0]?.scale ?? null;
-          }),
+      .poll(async () =>
+        await page.evaluate(() => {
+          const p = (window as any).__aicut.api.getProject();
+          const c = p.tracks[0].clips.find(
+            (c: { id: string }) => c.id === "kf-test-clip",
+          );
+          return c?.keyframes?.[0]?.scale ?? null;
+        }),
       )
       .toBe(1.5);
 
-    // Undo restores Scale to 1.
+    // Toolbar click again at the same playhead → toggles OFF (removes).
+    await kfBtn.click();
+    await expect
+      .poll(async () =>
+        await page.evaluate(() => {
+          const p = (window as any).__aicut.api.getProject();
+          const c = p.tracks[0].clips.find(
+            (c: { id: string }) => c.id === "kf-test-clip",
+          );
+          return c?.keyframes?.length ?? 0;
+        }),
+      )
+      .toBe(0);
+
+    // Undo restores the (now-removed) keyframe.
     await page.evaluate(() => (window as any).__aicut.api.undo());
     await expect
-      .poll(
-        async () =>
-          await page.evaluate(() => {
-            const proj = (window as any).__aicut.api.getProject();
-            const clip = proj.tracks[0].clips.find(
-              (c: { id: string }) => c.id === "kf-test-clip",
-            );
-            return clip?.keyframes?.[0]?.scale ?? null;
-          }),
+      .poll(async () =>
+        await page.evaluate(() => {
+          const p = (window as any).__aicut.api.getProject();
+          const c = p.tracks[0].clips.find(
+            (c: { id: string }) => c.id === "kf-test-clip",
+          );
+          return c?.keyframes?.length ?? 0;
+        }),
       )
       .toBe(1);
 
-    // Disable + re-enable → data preserved.
+    // Disable + re-enable → keyframe data preserved across the toggle.
     await toggle.uncheck();
-    await expect(panel).not.toBeVisible();
+    await expect(kfBtn).toBeHidden();
     const stillThere = await page.evaluate(() => {
-      const proj = (window as any).__aicut.api.getProject();
-      const clip = proj.tracks[0].clips.find(
+      const p = (window as any).__aicut.api.getProject();
+      const c = p.tracks[0].clips.find(
         (c: { id: string }) => c.id === "kf-test-clip",
       );
-      return clip?.keyframes?.length ?? 0;
+      return c?.keyframes?.length ?? 0;
     });
     expect(stillThere).toBe(1);
     await toggle.check();
-    await expect(panel).toBeVisible();
+    await expect(kfBtn).toBeVisible();
   });
 });

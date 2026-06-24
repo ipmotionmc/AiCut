@@ -16,6 +16,10 @@ export interface ToolbarCallbacks {
   onReset: () => void;
   onSnapToggle: () => void;
   onScaleChange: (pxPerSec: number) => void;
+  /** Add a keyframe at the playhead — or remove the existing one if
+   *  a keyframe already sits exactly at the playhead's clip-local time
+   *  (CapCut-style toggle on the same button). */
+  onKeyframeToggle: () => void;
 }
 
 interface ToolbarState {
@@ -28,6 +32,17 @@ interface ToolbarState {
   canTrim: boolean;
   snap: boolean;
   pxPerSec: number;
+  /** True when keyframe mode is enabled AND the selected clip
+   *  contains the playhead — only then is the button clickable. */
+  canKeyframe: boolean;
+  /** True when a keyframe exists at the exact playhead time on the
+   *  selected clip. Drives the button icon (filled vs outlined) and
+   *  the tooltip (remove vs add). */
+  hasKeyframeAtPlayhead: boolean;
+  /** Only render the keyframe button at all when keyframe mode is on,
+   *  matching the user's "demo只一个开关" requirement — chrome stays
+   *  identical to today when the feature is disabled. */
+  keyframesEnabled: boolean;
 }
 
 /**
@@ -62,6 +77,7 @@ export class Toolbar {
   private splitBtn!: HTMLButtonElement;
   private trimLeftBtn!: HTMLButtonElement;
   private trimRightBtn!: HTMLButtonElement;
+  private keyframeBtn!: HTMLButtonElement;
   private playBtn!: HTMLButtonElement;
   private playIcon!: HTMLSpanElement;
   private timeLabel!: HTMLSpanElement;
@@ -92,7 +108,22 @@ export class Toolbar {
     this.trimRightBtn = mkIconButton("trimRight", locale.trimRight, () => cb.onTrimRight(), "aicut-trim-right");
     const speedBtn = mkIconButton("speed", locale.speedComingSoon, () => undefined, "aicut-speed");
     speedBtn.disabled = true;
-    left.append(this.undoBtn, this.redoBtn, this.splitBtn, this.trimLeftBtn, this.trimRightBtn, speedBtn);
+    this.keyframeBtn = mkIconButton(
+      "keyframeOutline",
+      locale.keyframeAdd,
+      () => cb.onKeyframeToggle(),
+      "aicut-keyframe",
+    );
+    this.keyframeBtn.style.display = "none"; // gated by render() on keyframesEnabled
+    left.append(
+      this.undoBtn,
+      this.redoBtn,
+      this.splitBtn,
+      this.trimLeftBtn,
+      this.trimRightBtn,
+      speedBtn,
+      this.keyframeBtn,
+    );
 
     const center = mkGroup("aicut-toolbar-center");
     this.timeLabel = mkSpan("aicut-time-current", "00:00", "aicut-time-current");
@@ -181,6 +212,39 @@ export class Toolbar {
         ? this.locale.snapOnTitle
         : this.locale.snapOffTitle;
     }
+    // Keyframe button — toggle visibility via display, swap icon to
+    // reflect whether a kf exists at the playhead, swap tooltip.
+    if (
+      !this.lastState ||
+      this.lastState.keyframesEnabled !== state.keyframesEnabled
+    ) {
+      this.keyframeBtn.style.display = state.keyframesEnabled ? "" : "none";
+    }
+    if (state.keyframesEnabled) {
+      if (
+        !this.lastState ||
+        this.lastState.hasKeyframeAtPlayhead !== state.hasKeyframeAtPlayhead
+      ) {
+        this.keyframeBtn.innerHTML = state.hasKeyframeAtPlayhead
+          ? ICONS.keyframeFilled
+          : ICONS.keyframeOutline;
+        const title = state.hasKeyframeAtPlayhead
+          ? this.locale.keyframeRemove
+          : this.locale.keyframeAdd;
+        this.keyframeBtn.title = title;
+        this.keyframeBtn.setAttribute("aria-label", title);
+        this.keyframeBtn.setAttribute(
+          "data-state",
+          state.hasKeyframeAtPlayhead ? "on" : "off",
+        );
+      }
+      if (
+        !this.lastState ||
+        this.lastState.canKeyframe !== state.canKeyframe
+      ) {
+        this.keyframeBtn.disabled = !state.canKeyframe;
+      }
+    }
     if (!this.lastState || this.lastState.pxPerSec !== state.pxPerSec) {
       const ratio = scaleToSlider(state.pxPerSec);
       const nextVal = String(Math.round(ratio * 100));
@@ -224,6 +288,14 @@ export class Toolbar {
     applyTitle(this.zoomOutBtn, locale.zoomOut);
     applyTitle(this.zoomInBtn, locale.zoomIn);
     applyTitle(this.resetBtn, locale.reset);
+    // Keyframe button tooltip — picks add/remove off the lastState if
+    // we have one, otherwise default to add.
+    if (this.keyframeBtn) {
+      const hasKf = this.lastState?.hasKeyframeAtPlayhead === true;
+      const t = hasKf ? locale.keyframeRemove : locale.keyframeAdd;
+      this.keyframeBtn.title = t;
+      this.keyframeBtn.setAttribute("aria-label", t);
+    }
     // Force snap title re-evaluation on next render.
     if (this.lastState) {
       this.snapBtn.title = this.lastState.snap

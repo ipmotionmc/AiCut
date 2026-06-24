@@ -203,6 +203,11 @@ export interface EditorApi {
   // keyframes
   isKeyframesEnabled(): boolean;
   setKeyframesEnabled(enabled: boolean): void;
+  /** Screen-space CSS-pixel rect of the active rendered frame, post
+   *  transform, relative to the editor preview. Null when none. */
+  getActiveFrameRect():
+    | { x: number; y: number; w: number; h: number }
+    | null;
   /**
    * Add a keyframe to a clip. Defaults: `time` = playhead in clip-local
    * coords (clamped to [0, clipDuration]); `x / y / scale` = the values
@@ -225,6 +230,14 @@ export interface EditorApi {
   setSelectedKeyframe(
     target: { clipId: string; keyframeId: string } | null,
   ): void;
+  /**
+   * Toolbar-style toggle: if a keyframe exists at the playhead's
+   * clip-local time on the currently selected clip, remove it; else
+   * add one (with currently-interpolated values, so the preview
+   * doesn't jump). Returns the resulting keyframe id, or null when
+   * the action couldn't run (no selection / playhead off clip).
+   */
+  toggleKeyframeAtPlayhead(): string | null;
 
   // history
   canUndo(): boolean;
@@ -341,6 +354,7 @@ export class Editor implements EditorApi {
       onSelectKeyframe: (target) => this.setSelectedKeyframe(target),
       onMoveKeyframe: (clipId, keyframeId, timeMs) =>
         this.moveKeyframe(clipId, keyframeId, timeMs),
+      onKeyframeToggle: () => this.toggleKeyframeAtPlayhead(),
     });
 
     const engineFactory: PlaybackEngineFactory =
@@ -934,6 +948,19 @@ export class Editor implements EditorApi {
     return this.keyframesEnabled;
   }
 
+  /**
+   * Screen-space CSS-pixel rect of the actively painted frame
+   * (post-transform), relative to the editor's preview element.
+   * Null when no clip is active, the engine doesn't expose
+   * `getFrameRect`, or the rect isn't computed yet. Used by the
+   * library's keyframe-editing overlay.
+   */
+  getActiveFrameRect():
+    | { x: number; y: number; w: number; h: number }
+    | null {
+    return this.engine.getFrameRect?.() ?? null;
+  }
+
   setKeyframesEnabled(enabled: boolean): void {
     if (enabled === this.keyframesEnabled) return;
     this.keyframesEnabled = enabled;
@@ -1055,6 +1082,24 @@ export class Editor implements EditorApi {
 
   getSelectedKeyframe(): { clipId: string; keyframeId: string } | null {
     return this.selectedKeyframe;
+  }
+
+  toggleKeyframeAtPlayhead(): string | null {
+    const clipId = this.selectedClipId;
+    if (!clipId) return null;
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    if (!trk || !cl) return null;
+    const localMs = this.engine.getTime() - cl.start;
+    const duration = clipDuration(cl);
+    if (localMs < 0 || localMs > duration) return null;
+    const t = Math.round(localMs);
+    const existing = cl.keyframes?.find((k) => k.time === t);
+    if (existing) {
+      this.removeKeyframe(clipId, existing.id);
+      return null;
+    }
+    return this.addKeyframe(clipId, { time: t });
   }
 
   setSelectedKeyframe(

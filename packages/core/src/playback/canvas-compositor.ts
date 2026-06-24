@@ -48,6 +48,14 @@ export class CanvasCompositorEngine implements PlaybackEngine {
   private rafHandle: number | null = null;
   private lastFrameTs = 0;
   private paintedFrames = 0;
+  /** Last paint's CSS-pixel rect (relative to host). Updated on each
+   *  paint(); read by getFrameRect for the keyframe editing overlay. */
+  private lastFrameRect: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null = null;
 
   onTimeUpdate?: (ms: Ms) => void;
   onEnded?: () => void;
@@ -374,15 +382,37 @@ export class CanvasCompositorEngine implements PlaybackEngine {
       // Compose keyframe transform on top of the centered letterbox.
       // Identity transform (no keyframes / disabled) → math reduces to
       // a plain centered drawImage, same as before.
+      // Keyframe X/Y are in CSS pixels (so a "100" reads the same
+      // across DPR=1 and DPR=2 monitors). The canvas paints in DPR-
+      // scaled pixels, so multiply by DPR before translating.
+      const dpr = window.devicePixelRatio || 1;
       const t = getEffectiveTransform(clip, this.timeMs - clip.start);
       this.ctx.save();
-      this.ctx.translate(cx + t.x, cy + t.y);
+      this.ctx.translate(cx + t.x * dpr, cy + t.y * dpr);
       this.ctx.scale(t.scale, t.scale);
       this.ctx.drawImage(v, -dw / 2, -dh / 2, dw, dh);
       this.ctx.restore();
       this.paintedFrames += 1;
+      // Stash the post-transform frame rect in CSS pixels for the
+      // keyframe editing overlay.
+      const cssCx = cw / (2 * dpr) + t.x;
+      const cssCy = ch / (2 * dpr) + t.y;
+      const cssW = (dw * t.scale) / dpr;
+      const cssH = (dh * t.scale) / dpr;
+      this.lastFrameRect = {
+        x: cssCx - cssW / 2,
+        y: cssCy - cssH / 2,
+        w: cssW,
+        h: cssH,
+      };
+    } else {
+      this.lastFrameRect = null;
     }
     this.updateBadge();
+  }
+
+  getFrameRect(): { x: number; y: number; w: number; h: number } | null {
+    return this.lastFrameRect;
   }
 
   private updateBadge(): void {

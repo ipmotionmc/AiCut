@@ -3,6 +3,8 @@ import type { Editor } from "../editor.js";
 import { Timeline } from "../timeline/index.js";
 import type { Clip, Ms } from "../types.js";
 import type { Locale } from "../i18n.js";
+import { KeyframeOverlay } from "./keyframe-overlay.js";
+import { KeyframePanel } from "./keyframe-panel.js";
 import { Toolbar, type ToolbarCallbacks } from "./toolbar.js";
 
 /**
@@ -52,6 +54,8 @@ export class EditorUI {
   private toolbar: Toolbar;
   private timelineHost: HTMLDivElement;
   private timeline: Timeline;
+  private keyframePanel: KeyframePanel;
+  private keyframeOverlay: KeyframeOverlay;
   private fullscreen = false;
   private onDocKeydown: ((e: KeyboardEvent) => void) | null = null;
 
@@ -142,6 +146,14 @@ export class EditorUI {
       },
     });
 
+    // Keyframe panel — floats over the preview's left edge; visible
+    // only when keyframes mode is on AND a keyframe is selected.
+    this.keyframePanel = new KeyframePanel(this.preview, editor);
+    // Keyframe overlay — frame border + scale handles on top of the
+    // preview; drives drag-to-translate and corner-handle-to-scale
+    // gestures via direct manipulation. Hidden when keyframes off.
+    this.keyframeOverlay = new KeyframeOverlay(this.preview, editor);
+
     this.attachKeyboard(cb);
   }
 
@@ -201,6 +213,13 @@ export class EditorUI {
     const pxPerSec = this.editor.getScale();
     const snap = this.editor.getSnap();
 
+    const kfEnabled = this.editor.isKeyframesEnabled();
+    const kfState = this.computeKeyframeToolbarState(
+      project,
+      selectedClipId,
+      time,
+      kfEnabled,
+    );
     this.toolbar.render({
       playing: this.editor.isPlaying(),
       time,
@@ -211,6 +230,7 @@ export class EditorUI {
       canTrim: this.canTrimAt(time, selectedClipId),
       snap,
       pxPerSec,
+      ...kfState,
     });
 
     this.timeline.setProject(project);
@@ -222,11 +242,20 @@ export class EditorUI {
       enabled: this.editor.isKeyframesEnabled(),
       selected: this.editor.getSelectedKeyframe(),
     });
+    this.keyframePanel.render();
   }
 
   /** Playback-fast path: nudge playhead + toolbar time label only. */
   onTimeTick(timeMs: Ms): void {
     this.timeline.setTime(timeMs);
+    const selectedClipId = this.editor.getSelection();
+    const kfEnabled = this.editor.isKeyframesEnabled();
+    const kfState = this.computeKeyframeToolbarState(
+      this.editor.getProject(),
+      selectedClipId,
+      timeMs,
+      kfEnabled,
+    );
     this.toolbar.render({
       playing: this.editor.isPlaying(),
       time: timeMs,
@@ -234,9 +263,10 @@ export class EditorUI {
       canUndo: this.editor.canUndo(),
       canRedo: this.editor.canRedo(),
       canSplit: this.canSplitAt(timeMs),
-      canTrim: this.canTrimAt(timeMs, this.editor.getSelection()),
+      canTrim: this.canTrimAt(timeMs, selectedClipId),
       snap: this.editor.getSnap(),
       pxPerSec: this.editor.getScale(),
+      ...kfState,
     });
   }
 
@@ -260,11 +290,64 @@ export class EditorUI {
     }
     this.toolbar.destroy();
     this.timeline.destroy();
+    this.keyframePanel.destroy();
+    this.keyframeOverlay.destroy();
     this.root.innerHTML = "";
     this.root.classList.remove("aicut-root", "aicut-fullscreen");
   }
 
   // ---- helpers --------------------------------------------------------
+
+  /** Walk the selected clip + playhead state to figure out (a) whether
+   *  the keyframe button should be enabled, and (b) whether a keyframe
+   *  already exists at the playhead's clip-local time (so the button
+   *  swaps to "remove" mode). */
+  private computeKeyframeToolbarState(
+    project: { tracks: { clips: Clip[] }[] },
+    selectedClipId: string | null,
+    time: Ms,
+    keyframesEnabled: boolean,
+  ): { canKeyframe: boolean; hasKeyframeAtPlayhead: boolean; keyframesEnabled: boolean } {
+    if (!keyframesEnabled || !selectedClipId) {
+      return {
+        canKeyframe: false,
+        hasKeyframeAtPlayhead: false,
+        keyframesEnabled,
+      };
+    }
+    let clip: Clip | null = null;
+    for (const t of project.tracks) {
+      const c = t.clips.find((cl) => cl.id === selectedClipId);
+      if (c) {
+        clip = c;
+        break;
+      }
+    }
+    if (!clip) {
+      return {
+        canKeyframe: false,
+        hasKeyframeAtPlayhead: false,
+        keyframesEnabled,
+      };
+    }
+    const localMs = time - clip.start;
+    const duration = clipDuration(clip);
+    if (localMs < 0 || localMs > duration) {
+      return {
+        canKeyframe: false,
+        hasKeyframeAtPlayhead: false,
+        keyframesEnabled,
+      };
+    }
+    const roundedLocal = Math.round(localMs);
+    const hasKf =
+      clip.keyframes?.some((k) => k.time === roundedLocal) ?? false;
+    return {
+      canKeyframe: true,
+      hasKeyframeAtPlayhead: hasKf,
+      keyframesEnabled,
+    };
+  }
 
   private canSplitAt(timeMs: Ms): boolean {
     const project = this.editor.getProject();

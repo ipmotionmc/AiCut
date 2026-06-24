@@ -72,6 +72,13 @@ export class WebCodecsEngine implements PlaybackEngine {
   private lastFrameTs = 0;
   private decodedFramesTotal = 0;
   private destroyed = false;
+  /** CSS-pixel rect of last painted frame; null when nothing visible. */
+  private lastFrameRect: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null = null;
 
   onTimeUpdate?: (ms: Ms) => void;
   onEnded?: () => void;
@@ -206,6 +213,10 @@ export class WebCodecsEngine implements PlaybackEngine {
     for (const src of this.sources.values()) this.teardownSource(src);
     this.sources.clear();
     this.mount.remove();
+  }
+
+  getFrameRect(): { x: number; y: number; w: number; h: number } | null {
+    return this.lastFrameRect;
   }
 
   // --- internals -------------------------------------------------------
@@ -563,14 +574,29 @@ export class WebCodecsEngine implements PlaybackEngine {
         const baseScale = Math.min(cw / vw, ch / vh);
         const dw = vw * baseScale;
         const dh = vh * baseScale;
-        // Compose keyframe transform on top of the centered letterbox.
-        // Identity transform reduces to a plain centered drawImage.
+        // Keyframe X/Y are in CSS pixels — multiply by DPR for the
+        // DPR-scaled canvas coordinate space.
+        const dpr = window.devicePixelRatio || 1;
         const t = getEffectiveTransform(clip, localMs);
         this.ctx.save();
-        this.ctx.translate(cw / 2 + t.x, ch / 2 + t.y);
+        this.ctx.translate(cw / 2 + t.x * dpr, ch / 2 + t.y * dpr);
         this.ctx.scale(t.scale, t.scale);
         this.ctx.drawImage(chosenFrame, -dw / 2, -dh / 2, dw, dh);
         this.ctx.restore();
+        // Stash post-transform CSS-pixel rect for the keyframe
+        // editing overlay.
+        const cssCx = cw / (2 * dpr) + t.x;
+        const cssCy = ch / (2 * dpr) + t.y;
+        const cssW = (dw * t.scale) / dpr;
+        const cssH = (dh * t.scale) / dpr;
+        this.lastFrameRect = {
+          x: cssCx - cssW / 2,
+          y: cssCy - cssH / 2,
+          w: cssW,
+          h: cssH,
+        };
+      } else {
+        this.lastFrameRect = null;
       }
       // Keep the decoder fed for upcoming frames.
       this.feedDecoder(src);

@@ -27,6 +27,10 @@ export interface Locale {
   zoomOut: string;
   zoomIn: string;
   reset: string;
+  /** Toolbar tooltip when no keyframe exists at the playhead. */
+  keyframeAdd: string;
+  /** Toolbar tooltip when one exists — clicking removes it. */
+  keyframeRemove: string;
 
   // Fullscreen exit overlay
   exitFullscreen: string;
@@ -57,6 +61,8 @@ export const localeEn: Locale = {
   zoomOut: "Zoom out",
   zoomIn: "Zoom in",
   reset: "Reset edits (keep sources)",
+  keyframeAdd: "Add keyframe at playhead",
+  keyframeRemove: "Remove keyframe at playhead",
   exitFullscreen: "Exit fullscreen",
   exitFullscreenTitle: "Exit fullscreen (Esc)",
   newTrack: "+ New track",
@@ -80,6 +86,8 @@ export const localeZh: Locale = {
   zoomOut: "缩小",
   zoomIn: "放大",
   reset: "重置编辑（保留视频源）",
+  keyframeAdd: "添加关键帧",
+  keyframeRemove: "删除当前关键帧",
   exitFullscreen: "退出全屏",
   exitFullscreenTitle: "退出全屏 (Esc)",
   newTrack: "+ 新轨道",

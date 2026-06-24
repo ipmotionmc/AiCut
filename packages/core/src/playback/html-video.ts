@@ -117,6 +117,31 @@ export class HtmlVideoEngine implements PlaybackEngine {
     this.onTimeUpdate?.(clamped);
   }
 
+  /**
+   * Compute the contain-letterboxed video rect inside the host. Returns
+   * null when no clip is active or the active video has no metadata
+   * yet. NOTE: this engine doesn't apply keyframe transforms (raw
+   * `<video>` has no matrix), so the rect is just the base centered
+   * letterbox — the overlay using it will draw around where the video
+   * actually is, but interactive transform editing won't visibly
+   * preview until the host swaps to a canvas-based engine.
+   */
+  getFrameRect(): { x: number; y: number; w: number; h: number } | null {
+    if (!this.currentClipId) return null;
+    const clip = this.clipById(this.currentClipId);
+    if (!clip) return null;
+    const v = this.videos.get(clip.sourceId);
+    if (!v || v.videoWidth === 0 || v.videoHeight === 0) return null;
+    const hostRect = this.host.getBoundingClientRect();
+    const cw = hostRect.width;
+    const ch = hostRect.height;
+    if (cw === 0 || ch === 0) return null;
+    const scale = Math.min(cw / v.videoWidth, ch / v.videoHeight);
+    const w = v.videoWidth * scale;
+    const h = v.videoHeight * scale;
+    return { x: (cw - w) / 2, y: (ch - h) / 2, w, h };
+  }
+
   destroy(): void {
     this.stopTickLoop();
     for (const v of this.videos.values()) {

@@ -53,6 +53,14 @@ export const ICONS = {
   trash: wrap(
     `<g transform="translate(1 1)" fill="currentColor"><path d="M5 1.25h4v.9H13v1.05H1V2.15h4v-.9zM2.4 4.1h9.2l-.65 8.9c-.04.55-.5.96-1.05.96H4.1c-.55 0-1.01-.41-1.05-.96L2.4 4.1zm2.3 1.7l.35 7.1h1l-.35-7.1h-1zm2.65 0v7.1h1V5.8h-1zm2.3 0l-.35 7.1h1l.35-7.1h-1z"/></g>`,
   ),
+  /** Outlined diamond (rotated square) — "add keyframe" affordance. */
+  keyframeOutline: wrap(
+    `<g transform="translate(8 8) rotate(45) translate(-4 -4)" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="0.5" y="0.5" width="7" height="7" rx="0.5"/></g>`,
+  ),
+  /** Filled diamond — shown when a keyframe already exists at playhead. */
+  keyframeFilled: wrap(
+    `<g transform="translate(8 8) rotate(45) translate(-4 -4)" fill="currentColor"><rect x="0" y="0" width="8" height="8" rx="0.8"/></g>`,
+  ),
   /** Counter-clockwise circular arrow — "reset to initial layout". */
   reset:
     `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`,

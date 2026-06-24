@@ -48,6 +48,22 @@ export interface PlaybackEngine {
   /** Free all resources (DOM nodes, decoders, AudioContexts, rAF). */
   destroy(): void;
 
+  /**
+   * Optional. Return the screen-space CSS-pixel rectangle of the
+   * actually-rendered frame within the engine's mount element. Used by
+   * the keyframe editing overlay to draw the frame border + position
+   * scale handles + translate pointer deltas to keyframe X / Y.
+   *
+   * Coords are relative to `opts.host` (top-left of the mount). The
+   * returned rect already reflects the active keyframe transform — so
+   * the overlay draws around the moved/scaled frame.
+   *
+   * Engines that can't compute this (or where it's meaningless — e.g.
+   * an audio-only engine) return null. The editor falls back to a
+   * no-op overlay; keyframe values can still be edited via the panel.
+   */
+  getFrameRect?(): { x: number; y: number; w: number; h: number } | null;
+
   // ---- Event hooks — set by the Editor after construction. Engines
   // call these when state changes. All optional; engines that can't
   // emit a particular event (e.g. no audio metadata) just never call
