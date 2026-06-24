@@ -1,6 +1,6 @@
 # @aicut/core
 
-> Framework-agnostic engine for the AiCut video editor — canvas timeline, plain-JSON projects, zero runtime deps.
+> Framework-agnostic engine for the AiCut video editor — canvas timeline, plain-JSON projects, pluggable playback. Main entry has zero runtime deps; opt-in sub-entries bundle their own (three.js for `/lighting`, mp4box.js for `/webcodecs`).
 
 [![npm](https://img.shields.io/npm/v/@aicut/core.svg)](https://www.npmjs.com/package/@aicut/core)
 [![License](https://img.shields.io/npm/l/@aicut/core.svg)](./LICENSE)
@@ -154,6 +154,117 @@ editor.toolbarRight.appendChild(customIconBtn);
 | `editor.toolbarLeft` / `editor.toolbarRight` | Bookends on the toolbar row |
 
 The standalone `Timeline` also exposes `toolbarLeft` / `toolbarRight` when constructed with `toolbar: true`.
+
+## Playback engine
+
+The Editor talks to playback through a single interface (`PlaybackEngine`).
+The default engine is `HtmlVideoEngine` — one hidden `<video>` per source,
+swapped at clip boundaries. Zero deps, works in every browser, but seek
+snaps to the nearest keyframe (the browser owns the decode pipeline).
+
+For frame-accurate scrubbing, multi-track compositing, transitions, or a
+custom render pipeline (WebGL compositor, IPC bridge to a native player,
+WebRTC stream consumer), pass your own factory:
+
+```ts
+import {
+  Editor,
+  type PlaybackEngine,
+  type PlaybackEngineFactory,
+} from "@aicut/core";
+
+const myFactory: PlaybackEngineFactory = ({ host, project }) => {
+  // host: a div the editor owns. Mount whatever surface you need.
+  // project: the initial Project — pre-warm decoders, etc.
+  return new MyEngine(host, project); // implements PlaybackEngine
+};
+
+Editor.create({ container, project, playbackEngine: myFactory });
+```
+
+The contract — every engine implements this exactly:
+
+```ts
+interface PlaybackEngine {
+  setProject(next: Project): void;
+  play(): void;
+  pause(): void;
+  isPlaying(): boolean;
+  getTime(): Ms;
+  seek(timeMs: Ms): void;
+  destroy(): void;
+
+  // Optional event hooks — Editor assigns these after construction.
+  onTimeUpdate?: (ms: Ms) => void;
+  onEnded?: () => void;
+  onError?: (err: Error) => void;
+  onReady?: () => void;
+  onSourceMetadata?: (sourceId: string, durationMs: Ms) => void;
+}
+```
+
+Engines that can't emit a particular event (e.g. no audio metadata)
+simply never call that hook. The Editor re-emits engine events as its
+own `time` / `pause` / `error` / `ready` / `change` events, so your host
+code is unaffected by which engine is in use.
+
+### Bundled engines
+
+| Engine | Where | Decoder | Renderer | Cost |
+| --- | --- | --- | --- | --- |
+| `HtmlVideoEngine` | main | browser | raw `<video>` | 0 deps |
+| `CanvasCompositorEngine` | main | browser | `ctx.drawImage` | 0 deps |
+| `WebCodecsEngine` | `@aicut/core/webcodecs` | `VideoDecoder` (frame-accurate) | `ctx.drawImage(VideoFrame)` | bundles mp4box.js (~200 KB) |
+
+The WebCodecs path is on its own sub-entry so consumers who don't ask for it pay nothing for the demuxer. Feature-detect before constructing:
+
+```ts
+import {
+  WebCodecsEngine,
+  isWebCodecsSupported,
+} from "@aicut/core/webcodecs";
+
+const factory: PlaybackEngineFactory = isWebCodecsSupported()
+  ? (opts) => new WebCodecsEngine({ ...opts, debug: true })
+  : htmlVideoEngineFactory;
+
+Editor.create({ container, project, playbackEngine: factory });
+```
+
+`WebCodecsEngine` v1 covers single-track MP4/MOV playback (H.264 / HEVC / VP9 / AV1 — whatever the browser's `VideoDecoder` supports). Multi-track compositing, audio, transitions land in follow-up releases on the same surface.
+
+## Timeline density
+
+Defaults are tuned for desktop. For compact viewports (laptop side panels, embedded editors), shrink the bottom area and / or row height:
+
+```ts
+Editor.create({
+  container,
+  project,
+  timelineHeight: 160,     // outer height of the bottom timeline area
+                           // (default 240). Scrolls internally when
+                           // tracks overflow.
+  trackHeight: 40,         // each track row (default 56). Affects clip
+                           // body + thumbnail strip.
+  rulerHeight: 22,         // time-label strip (default 24).
+});
+```
+
+| Option | Default | Useful range | Notes |
+| --- | --- | --- | --- |
+| `timelineHeight` | 240 | 120 – 480 | Outer height of `.aicut-timeline`. Reactive in the React + Vue wrappers — swap any time. Internal scroll appears when tracks don't fit. |
+| `trackHeight` | 56 | 28 – 96 | Per-row pixel height. Applied process-wide via `setTimelineMetrics` (see below). Re-apply by remounting the editor. |
+| `rulerHeight` | 24 | 18 – 36 | Time-label strip height. Same lifecycle as `trackHeight`. |
+
+For runtime control without an editor option, call the underlying setter directly:
+
+```ts
+import { setTimelineMetrics } from "@aicut/core";
+
+setTimelineMetrics({ trackHeight: 36, rulerHeight: 20 });
+```
+
+`TRACK_HEIGHT` and `RULER_HEIGHT` are ESM live bindings — re-reading them after the setter returns the updated values.
 
 ## Lighting picker (opt-in sub-entry)
 

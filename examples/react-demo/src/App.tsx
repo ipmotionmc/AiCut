@@ -1,17 +1,25 @@
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import {
+  CanvasCompositorEngine,
+  TRACK_HEIGHT,
   Timeline,
   VideoEditor,
   createEmptyProject,
   createId,
+  htmlVideoEngineFactory,
   localeEn,
   localeZh,
   type Locale,
+  type PlaybackEngineFactory,
   type Project,
   type Theme,
   type TimelineApi,
   type VideoEditorApi,
 } from "@aicut/react";
+import {
+  WebCodecsEngine,
+  isWebCodecsSupported,
+} from "@aicut/react/webcodecs";
 
 /**
  * Two reference themes the demo cycles through. The library itself
@@ -45,15 +53,22 @@ const THEMES: Record<"dark" | "light", Theme> = {
   },
 };
 
+// Same-origin URLs served straight from `examples/react-demo/public/`
+// by Vite at root path. Using same-origin paths matters for the
+// WebCodecs engine: it uses fetch() under the hood, and fetch enforces
+// CORS while <video> doesn't. Same-origin sidesteps the whole topic.
+//
+// The .mov files are gitignored — drop your own clips at
+// examples/react-demo/public/{a,b}.mov to make the demo work locally.
 const SRC_A = {
   id: createId("src"),
-  url: "http://127.0.0.1:8091/a.mov",
+  url: "/a.mov",
   kind: "video" as const,
   name: "a.mov",
 };
 const SRC_B = {
   id: createId("src"),
-  url: "http://127.0.0.1:8091/b.mov",
+  url: "/b.mov",
   kind: "video" as const,
   name: "b.mov",
 };
@@ -91,7 +106,7 @@ function FramePicker() {
       sources: [
         {
           id: sourceId,
-          url: "http://127.0.0.1:8091/a.mov",
+          url: "/a.mov",
           kind: "video",
           name: "a.mov",
         },
@@ -232,6 +247,36 @@ export function App() {
     () => (localeName === "zh" ? localeZh : localeEn),
     [localeName],
   );
+  // Demo of the new pluggable playback engine — flip between the
+  // built-in HTML5 engine, a host-supplied Canvas compositor, and the
+  // WebCodecs PoC (frame-accurate, decodes MP4 manually via mp4box.js).
+  // The engine binds at construction, so we force a VideoEditor remount
+  // via `key={engineKind}` when this changes. Canvas + WebCodecs both
+  // opt INTO `debug: true` so the HUD identifies the active engine —
+  // that's the whole point of the demo. Production hosts omit `debug`
+  // (defaults to false) and get a clean canvas.
+  const webCodecsAvailable = isWebCodecsSupported();
+  const [engineKind, setEngineKind] = useState<
+    "html" | "canvas" | "webcodecs"
+  >("html");
+  // Demo of EditorOptions.trackHeight — shrinking each track row
+  // tightens the timeline footprint. setTimelineMetrics is applied
+  // at construction so changes here force a remount via `key`.
+  const [trackHeight, setTrackHeight] = useState<number>(56);
+  // Demo of EditorOptions.timelineHeight — controls the OUTER height
+  // of the bottom timeline area (the canvas inside fills 100% and
+  // scrolls). Reactive — no remount needed, the React wrapper
+  // pushes it through as a CSS custom property update.
+  const [timelineHeight, setTimelineHeight] = useState<number>(240);
+  const playbackEngine: PlaybackEngineFactory = useMemo(() => {
+    if (engineKind === "canvas") {
+      return (opts) => new CanvasCompositorEngine({ ...opts, debug: true });
+    }
+    if (engineKind === "webcodecs") {
+      return (opts) => new WebCodecsEngine({ ...opts, debug: true });
+    }
+    return htmlVideoEngineFactory;
+  }, [engineKind]);
   const [exportStatus, setExportStatus] = useState<ExportStatus>({ running: false });
   const exportAbortRef = useRef<AbortController | null>(null);
   // Latest backend pick — read inside the editor `export` listener
@@ -329,10 +374,19 @@ export function App() {
     <div className="demo-shell">
       <div className="demo-editor">
         <VideoEditor
+          // The engine + trackHeight both bind at construction —
+          // flipping either forces React to remount the editor so the
+          // new value takes effect. Playback state resets, acceptable
+          // for a demo. `timelineHeight` is reactive (CSS custom prop
+          // under the hood) so it isn't in the key.
+          key={`${engineKind}|${trackHeight}`}
           apiRef={apiRef}
           defaultProject={seed()}
           theme={theme}
           locale={locale}
+          playbackEngine={playbackEngine}
+          trackHeight={trackHeight}
+          timelineHeight={timelineHeight}
           style={{ height: "100%" }}
           headerLeft={
             showHeader ? (
@@ -435,7 +489,14 @@ export function App() {
           onReady={(api) => {
             // Expose the API for e2e immediately (canvas clips have
             // no DOM nodes to query).
-            (window as unknown as { __aicut?: unknown }).__aicut = { api };
+            // `TRACK_HEIGHT` is an ESM live binding — re-reading it
+            // here after editor mount reflects whatever setTimelineMetrics
+            // has applied. E2E uses it to verify the trackHeight knob
+            // actually plumbed through to the layout module.
+            (window as unknown as { __aicut?: unknown }).__aicut = {
+              api,
+              metrics: { trackHeight: TRACK_HEIGHT },
+            };
             api.on("selectionChange", ({ clipId }) =>
               setSelectedClipId(clipId),
             );
@@ -495,6 +556,97 @@ export function App() {
           >
             {localeName === "en" ? "Switch to 中文" : "Switch to English"}
           </button>
+        </div>
+
+        <h2>Timeline density</h2>
+        <div className="demo-row demo-track-height-row">
+          <label>
+            Total timeline area: <strong>{timelineHeight}px</strong>
+          </label>
+          <input
+            type="range"
+            min={120}
+            max={400}
+            step={10}
+            value={timelineHeight}
+            data-testid="demo-timeline-height"
+            onChange={(e) => setTimelineHeight(Number(e.target.value))}
+          />
+          <p className="demo-engine-help">
+            Outer height of the bottom timeline section. Reactive —
+            the preview reclaims any space you take from this. The
+            canvas inside scrolls vertically when there are more
+            tracks than fit.
+          </p>
+        </div>
+        <div className="demo-row demo-track-height-row">
+          <label>
+            Track row height: <strong>{trackHeight}px</strong>
+          </label>
+          <input
+            type="range"
+            min={28}
+            max={80}
+            step={2}
+            value={trackHeight}
+            data-testid="demo-track-height"
+            onChange={(e) => setTrackHeight(Number(e.target.value))}
+          />
+          <p className="demo-engine-help">
+            Height of each individual track row inside the timeline.
+            Changing this remounts the editor (process-wide setting).
+          </p>
+        </div>
+
+        <h2>Playback engine</h2>
+        <div className="demo-row demo-engine-row">
+          <label>
+            <input
+              type="radio"
+              name="engine"
+              value="html"
+              data-testid="demo-engine-html"
+              checked={engineKind === "html"}
+              onChange={() => setEngineKind("html")}
+            />
+            <span>HTML5 video (default)</span>
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="engine"
+              value="canvas"
+              data-testid="demo-engine-canvas"
+              checked={engineKind === "canvas"}
+              onChange={() => setEngineKind("canvas")}
+            />
+            <span>Canvas compositor (host-supplied)</span>
+          </label>
+          <label
+            title={
+              webCodecsAvailable
+                ? "Decodes MP4 via WebCodecs + mp4box.js. Frame-accurate seek."
+                : "This browser doesn't expose VideoDecoder. Try Chrome 94+ or Safari 17.4+."
+            }
+          >
+            <input
+              type="radio"
+              name="engine"
+              value="webcodecs"
+              data-testid="demo-engine-webcodecs"
+              checked={engineKind === "webcodecs"}
+              disabled={!webCodecsAvailable}
+              onChange={() => setEngineKind("webcodecs")}
+            />
+            <span>
+              WebCodecs (mp4box + VideoDecoder)
+              {!webCodecsAvailable ? " — unsupported" : ""}
+            </span>
+          </label>
+          <p className="demo-engine-help">
+            Same interface, different rendering surface. All three
+            paint a HUD badge identifying who's drawing.
+          </p>
         </div>
 
         <h2>Header</h2>

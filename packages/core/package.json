@@ -1,7 +1,7 @@
 {
   "name": "@aicut/core",
-  "version": "0.4.3",
-  "description": "Framework-agnostic core for the AiCut video editor — canvas timeline, data model, HTML5 playback engine, plus an opt-in 3D lighting picker.",
+  "version": "0.5.0",
+  "description": "Framework-agnostic core for the AiCut video editor — canvas timeline, data model, pluggable PlaybackEngine (HTML5 / Canvas / WebCodecs), plus opt-in 3D lighting picker.",
   "license": "MIT",
   "author": "ziqiang <ziqiangytu@gmail.com>",
   "homepage": "https://github.com/ziqiangai/AiCut#readme",
@@ -40,7 +40,9 @@
     "ai-relighting"
   ],
   "type": "module",
-  "sideEffects": ["./styles/*.css"],
+  "sideEffects": [
+    "./styles/*.css"
+  ],
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -55,6 +57,11 @@
       "import": "./dist/lighting/index.js",
       "require": "./dist/lighting/index.cjs"
     },
+    "./webcodecs": {
+      "types": "./dist/playback/webcodecs/index.d.ts",
+      "import": "./dist/playback/webcodecs/index.js",
+      "require": "./dist/playback/webcodecs/index.cjs"
+    },
     "./styles.css": "./styles/theme.css"
   },
   "files": [
@@ -65,15 +72,21 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
+    "mp4box": "^2.4.1",
     "three": "^0.159.0"
   },
   "devDependencies": {
     "@types/three": "^0.159.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "happy-dom": "^20.10.6",
     "tsup": "^8.3.5",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
   },
   "publishConfig": {
     "access": "public"

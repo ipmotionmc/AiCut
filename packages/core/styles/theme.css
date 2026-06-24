@@ -430,8 +430,13 @@
   position: relative;
   flex: 0 0 auto;
   background: var(--aicut-controls-bg);
-  height: 240px;
-  min-height: 200px;
+  /* Override via EditorOptions.timelineHeight (sets the custom property
+     on the root container). Default 240 matches historical behavior;
+     small-viewport hosts often want 140–180. min-height is intentionally
+     a hair below the smallest sensible default so the option can dip
+     into the compact range without the min winning. */
+  height: var(--aicut-timeline-height, 240px);
+  min-height: 120px;
   overflow: hidden;
 }
 

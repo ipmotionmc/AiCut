@@ -75,6 +75,17 @@ interface VideoEditorProps {
   toolbarLeft?: ReactNode;               // host controls — left bookend
   toolbarRight?: ReactNode;              //                 right bookend
 
+  playbackEngine?: PlaybackEngineFactory; // pluggable playback; default
+                                           //   HtmlVideoEngine. Bound at
+                                           //   mount — change + remount
+                                           //   via `key` to re-apply.
+  timelineHeight?: number;               // outer height of the bottom
+                                           //   timeline area (default 240).
+                                           //   Reactive; no remount needed.
+  trackHeight?: number;                  // per-row height (default 56).
+                                           //   Initial-only; process-wide.
+  rulerHeight?: number;                  // time-label strip (default 24).
+
   apiRef?: Ref<VideoEditorApi | null>;
 
   onReady?: (api: VideoEditorApi) => void;
@@ -162,6 +173,73 @@ import { VideoEditor, localeZh } from "@aicut/react";
 ```
 
 `locale` is reactive too — runtime swap re-titles the toolbar and re-paints canvas labels in place.
+
+## Compact viewports
+
+Default chrome is sized for desktop. For laptop side panels or embedded editors, shrink the bottom area to reclaim preview height:
+
+```tsx
+const [timelineHeight, setTimelineHeight] = useState(160);
+
+<VideoEditor
+  defaultProject={project}
+  timelineHeight={timelineHeight}   // reactive — drag a slider, the
+                                    // editor recompacts in place
+  trackHeight={40}                  // initial-only; needs remount to
+                                    // change (key={trackHeight})
+/>
+```
+
+Range guidance: `timelineHeight` ∈ [120, 480], `trackHeight` ∈ [28, 96], `rulerHeight` ∈ [18, 36]. The internal canvas scrolls vertically when tracks overflow.
+
+## Custom playback engine
+
+The editor talks to playback through a single interface. The default is
+`HtmlVideoEngine` (one hidden `<video>` per source, swap on clip
+boundaries). To plug in a different one — WebCodecs, WebGL compositor,
+desktop-wrapper IPC bridge — pass a factory:
+
+```tsx
+import {
+  VideoEditor,
+  type PlaybackEngineFactory,
+} from "@aicut/react";
+
+const myEngine: PlaybackEngineFactory = ({ host, project }) =>
+  new MyCustomEngine(host, project); // implements PlaybackEngine
+
+<VideoEditor
+  defaultProject={project}
+  playbackEngine={myEngine}        // initial-only — bound at mount
+  /* … */
+/>
+```
+
+`PlaybackEngine`, `PlaybackEngineFactory`, `PlaybackEngineOptions`, and
+the built-in `HtmlVideoEngine` are re-exported from `@aicut/react` so
+you don't need a separate `@aicut/core` import to write one.
+
+See [@aicut/core's playback section](https://www.npmjs.com/package/@aicut/core#playback-engine)
+for the full interface contract.
+
+### WebCodecs engine (opt-in sub-entry)
+
+For frame-accurate playback via the browser's `VideoDecoder` API, import from the sub-entry so mp4box.js (~200 KB) only loads when you ask for it:
+
+```tsx
+import {
+  WebCodecsEngine,
+  isWebCodecsSupported,
+} from "@aicut/react/webcodecs";
+
+const factory = isWebCodecsSupported()
+  ? (opts) => new WebCodecsEngine({ ...opts, debug: true })
+  : undefined; // VideoEditor falls back to HtmlVideoEngine when undefined
+
+<VideoEditor playbackEngine={factory} /* … */ />;
+```
+
+`WebCodecsEngine` v1 covers single-track MP4/MOV playback (H.264 / HEVC / VP9 / AV1 — whatever the browser's `VideoDecoder` supports). Multi-track compositing, audio, transitions land in follow-up releases.
 
 ## `<LightingEditor>` (opt-in sub-entry)
 

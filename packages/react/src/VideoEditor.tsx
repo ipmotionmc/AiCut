@@ -13,6 +13,7 @@ import {
   type EditorApi,
   type Locale,
   type Ms,
+  type PlaybackEngineFactory,
   type Project,
   type Theme,
 } from "@aicut/core";
@@ -68,6 +69,31 @@ export interface VideoEditorProps {
   headerLeft?: ReactNode;
   /** Right side of the editor header — conventionally Share / Export / profile. */
   headerRight?: ReactNode;
+
+  /**
+   * Initial-only — picks the playback engine used by the underlying
+   * core Editor. Defaults to the built-in `HtmlVideoEngine`. Pass a
+   * factory to plug in a custom engine (WebCodecs, WebGL compositor,
+   * IPC bridge to a native player, …). Swapping this prop after mount
+   * has no effect — the editor binds its engine at construction.
+   */
+  playbackEngine?: PlaybackEngineFactory;
+  /**
+   * Initial-only — pixel height of each track row (default 56). Lower
+   * values (~32–40) shrink the timeline for small viewports where the
+   * default crowds out the preview. Applied process-wide; to re-apply
+   * change this prop AND remount the component (e.g. via `key`).
+   */
+  trackHeight?: number;
+  /** Initial-only — pixel height of the timeline ruler (default 24). */
+  rulerHeight?: number;
+  /**
+   * Pixel height of the whole bottom timeline area (default 240).
+   * Reactive — set anytime to change. The canvas inside fills 100%
+   * and shows an internal scrollbar when track count overflows.
+   * Useful range: [120, 480] depending on viewport.
+   */
+  timelineHeight?: number;
 }
 
 /**
@@ -107,6 +133,16 @@ export function VideoEditor(props: VideoEditorProps) {
       project: cbRef.current.defaultProject,
       theme: cbRef.current.theme,
       locale: cbRef.current.locale,
+      playbackEngine: cbRef.current.playbackEngine,
+      ...(cbRef.current.trackHeight != null
+        ? { trackHeight: cbRef.current.trackHeight }
+        : {}),
+      ...(cbRef.current.rulerHeight != null
+        ? { rulerHeight: cbRef.current.rulerHeight }
+        : {}),
+      ...(cbRef.current.timelineHeight != null
+        ? { timelineHeight: cbRef.current.timelineHeight }
+        : {}),
     });
     editorRef.current = editor;
     setSlots({
@@ -149,6 +185,22 @@ export function VideoEditor(props: VideoEditorProps) {
   useEffect(() => {
     if (props.locale) editorRef.current?.setLocale(props.locale);
   }, [props.locale]);
+
+  // Reactive — the underlying CSS custom property can be updated on
+  // the container any time; the timeline picks up the new height
+  // immediately via CSS. No remount required.
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    if (props.timelineHeight != null && props.timelineHeight > 0) {
+      host.style.setProperty(
+        "--aicut-timeline-height",
+        `${Math.round(props.timelineHeight)}px`,
+      );
+    } else {
+      host.style.removeProperty("--aicut-timeline-height");
+    }
+  }, [props.timelineHeight]);
 
   // Deps must include `slots`. Without it, the factory ran once during
   // the first commit — BEFORE the useEffect above had a chance to

@@ -10,5 +10,22 @@ export type {
   EditorApi,
   TimelineOptions,
   Locale,
+  PlaybackEngine,
+  PlaybackEngineFactory,
+  PlaybackEngineOptions,
+  CanvasCompositorEngineOptions,
 } from "@aicut/core";
-export { createEmptyProject, createId, localeEn, localeZh } from "@aicut/core";
+export {
+  createEmptyProject,
+  createId,
+  localeEn,
+  localeZh,
+  HtmlVideoEngine,
+  htmlVideoEngineFactory,
+  CanvasCompositorEngine,
+  canvasCompositorEngineFactory,
+  TRACK_HEIGHT,
+  RULER_HEIGHT,
+  HEADER_WIDTH,
+  setTimelineMetrics,
+} from "@aicut/core";

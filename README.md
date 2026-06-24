@@ -353,7 +353,10 @@ import { Timeline } from "@aicut/react";
 packages/
   core/           @aicut/core    framework-agnostic engine
                                   ├─ Editor + Project + EventBus
-                                  ├─ HTML5 PlaybackEngine
+                                  ├─ Pluggable PlaybackEngine
+                                  │   (default: HtmlVideoEngine; host
+                                  │    can inject WebCodecs / WebGL /
+                                  │    IPC-bridged native players)
                                   ├─ Canvas Timeline (ruler, tracks, clips,
                                   │   thumbnails, playhead, snap, scrollbars)
                                   └─ Theme + i18n (en / zh)
@@ -380,12 +383,18 @@ pnpm install                       # workspace install
 pnpm build                         # build core / react / vue
 pnpm demo:react                    # http://127.0.0.1:5173
 
+# Demo media: drop two H.264 MP4/MOV files at
+#   examples/react-demo/public/{a,b}.mov
+# Served same-origin so both <video> and WebCodecs/fetch work without
+# CORS gymnastics. Gitignored — replace with your own clips.
+
 # Backends
 cd backends/ts && pnpm dev         # http://127.0.0.1:8787
 cd backends/go && go run .         # http://127.0.0.1:8788
 
 # Tests
 pnpm typecheck                     # whole workspace, strict TS
+pnpm test                          # Vitest unit tests (packages/core)
 pnpm test:e2e                      # Playwright against the live demo
 pnpm --filter @aicut/e2e exec playwright test screenshots.spec.ts
                                    # regenerate docs/screenshots/*.png
@@ -412,9 +421,12 @@ The script is idempotent — already-published versions are skipped, so a re-run
 - [x] SSE-progress export backends (TS + Go)
 - [x] Bundled `en` / `zh` locale packs + runtime switch
 - [x] 3D lighting picker (`@aicut/core/lighting` sub-entry)
+- [x] Pluggable `PlaybackEngine` interface (HTML5 default, host can inject)
+- [x] WebCodecs preview engine for frame-accurate seek (`@aicut/core/webcodecs`, PoC: single-track MP4)
+- [x] Density knobs — `timelineHeight` (reactive), `trackHeight`, `rulerHeight` for compact viewports
 - [ ] Speed adjustment (timeline already reserves the slot)
 - [ ] Audio track rendering + waveform thumbnails
-- [ ] WebGL preview engine for frame-accurate seek + transitions
+- [ ] WebCodecs engine: multi-track compositing + transitions
 - [ ] Lighting → relighting backend reference
 - [ ] Hosted demo site
 

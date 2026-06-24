@@ -93,8 +93,16 @@ export class ThumbnailRibbon {
   /**
    * Paint thumbnails for the clip's visible window onto `ctx`. The
    * canvas is the per-clip strip — width = clip's px width, height =
-   * THUMB_HEIGHT. Source-time range derives from the clip's `in/out`
-   * and the px range we're drawing into.
+   * `pxHeight` (defaults to the cached `THUMB_HEIGHT`). Source-time
+   * range derives from the clip's `in/out` and the px range we're
+   * drawing into.
+   *
+   * `pxHeight` lets the caller stretch thumbs to fill a taller clip
+   * body when `trackHeight` is configured above the default. Aspect
+   * ratio is already broken per-thumb (we slice variable widths from a
+   * fixed-aspect cached bitmap), so stretching height too is fine — it
+   * preserves the "filmstrip" look without leaving an empty bottom
+   * band of the brand gradient showing through.
    */
   paintStrip(
     ctx: CanvasRenderingContext2D,
@@ -102,8 +110,9 @@ export class ThumbnailRibbon {
     sourceInMs: Ms,
     sourceOutMs: Ms,
     pxWidth: number,
+    pxHeight: number = THUMB_HEIGHT,
   ): void {
-    ctx.clearRect(0, 0, pxWidth, THUMB_HEIGHT);
+    ctx.clearRect(0, 0, pxWidth, pxHeight);
     const st = this.sources.get(sourceId);
     if (!st) return;
     if (sourceOutMs <= sourceInMs || pxWidth <= 0) return;
@@ -118,11 +127,11 @@ export class ThumbnailRibbon {
       const w =
         Math.round(((i + 1) * pxWidth) / count) - x;
       if (bmp) {
-        ctx.drawImage(bmp, x, 0, w, THUMB_HEIGHT);
+        ctx.drawImage(bmp, x, 0, w, pxHeight);
       } else {
         // Placeholder shimmer block — same color as track surface.
         ctx.fillStyle = "rgba(255,255,255,0.04)";
-        ctx.fillRect(x, 0, w, THUMB_HEIGHT);
+        ctx.fillRect(x, 0, w, pxHeight);
         this.enqueue(st, bucket);
       }
     }
