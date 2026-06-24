@@ -1,3 +1,4 @@
+import { getEffectiveTransform } from "../keyframes/index.js";
 import type { Clip, Ms, Project } from "../types.js";
 import type {
   PlaybackEngine,
@@ -30,6 +31,10 @@ export class HtmlVideoEngine implements PlaybackEngine {
   private timeMs: Ms = 0;
   private rafHandle: number | null = null;
   private lastFrameTs = 0;
+  /** Permanent low-rate rAF that pushes keyframe transform onto the
+   *  active <video> element via CSS `transform`. One style write per
+   *  frame on at most one element — negligible cost. */
+  private transformRaf: number | null = null;
 
   /** Public event hooks — set by Editor. */
   onTimeUpdate?: (ms: Ms) => void;
@@ -45,6 +50,7 @@ export class HtmlVideoEngine implements PlaybackEngine {
     this.mount.className = "aicut-preview";
     this.host.appendChild(this.mount);
     this.syncSources();
+    this.startTransformLoop();
   }
 
   setProject(next: Project): void {
@@ -118,15 +124,32 @@ export class HtmlVideoEngine implements PlaybackEngine {
   }
 
   /**
-   * Compute the contain-letterboxed video rect inside the host. Returns
-   * null when no clip is active or the active video has no metadata
-   * yet. NOTE: this engine doesn't apply keyframe transforms (raw
-   * `<video>` has no matrix), so the rect is just the base centered
-   * letterbox — the overlay using it will draw around where the video
-   * actually is, but interactive transform editing won't visibly
-   * preview until the host swaps to a canvas-based engine.
+   * Screen-space rect of the actually-rendered frame, in CSS pixels,
+   * relative to the host element. Includes the active keyframe
+   * transform (translate + scale) that the rAF loop applies to the
+   * `<video>` element via CSS — so the overlay's frame border tracks
+   * the video as the user drags it. Returns null when no clip is
+   * active or the active video has no metadata yet.
    */
   getFrameRect(): { x: number; y: number; w: number; h: number } | null {
+    const base = this.baseFrameRect();
+    if (!base) return null;
+    const clip = this.clipById(this.currentClipId!);
+    if (!clip) return base;
+    const t = getEffectiveTransform(clip, this.timeMs - clip.start);
+    // Apply the same transform we put on the video element so the
+    // overlay border / handles line up with the pixels the user sees.
+    const cx = base.x + base.w / 2 + t.x;
+    const cy = base.y + base.h / 2 + t.y;
+    const w = base.w * t.scale;
+    const h = base.h * t.scale;
+    return { x: cx - w / 2, y: cy - h / 2, w, h };
+  }
+
+  /** Untransformed contain-letterbox rect. */
+  private baseFrameRect():
+    | { x: number; y: number; w: number; h: number }
+    | null {
     if (!this.currentClipId) return null;
     const clip = this.clipById(this.currentClipId);
     if (!clip) return null;
@@ -142,8 +165,47 @@ export class HtmlVideoEngine implements PlaybackEngine {
     return { x: (cw - w) / 2, y: (ch - h) / 2, w, h };
   }
 
+  /**
+   * Push the active clip's keyframe transform onto the visible <video>
+   * via CSS. Inactive videos get the identity transform so they stay
+   * pristine. Cheap — one style write per visible video per rAF.
+   */
+  private startTransformLoop(): void {
+    const tick = (): void => {
+      this.applyTransforms();
+      this.transformRaf = requestAnimationFrame(tick);
+    };
+    this.transformRaf = requestAnimationFrame(tick);
+  }
+
+  private applyTransforms(): void {
+    const clip = this.currentClipId
+      ? this.clipById(this.currentClipId)
+      : null;
+    if (clip) {
+      const v = this.videos.get(clip.sourceId);
+      if (v) {
+        const t = getEffectiveTransform(clip, this.timeMs - clip.start);
+        // Translate first, then scale (around the element's center
+        // because of `transform-origin: 50% 50%` which is the CSS
+        // default).
+        v.style.transform = `translate(${t.x.toFixed(2)}px, ${t.y.toFixed(2)}px) scale(${t.scale.toFixed(4)})`;
+      }
+    }
+    // Inactive videos: keep them at identity so an old transform from
+    // a previous clip doesn't ghost through when we swap back to them.
+    for (const [id, v] of this.videos) {
+      if (clip && id === clip.sourceId) continue;
+      if (v.style.transform) v.style.transform = "";
+    }
+  }
+
   destroy(): void {
     this.stopTickLoop();
+    if (this.transformRaf != null) {
+      cancelAnimationFrame(this.transformRaf);
+      this.transformRaf = null;
+    }
     for (const v of this.videos.values()) {
       v.pause();
       v.removeAttribute("src");

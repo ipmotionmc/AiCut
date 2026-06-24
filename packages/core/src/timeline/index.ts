@@ -209,6 +209,9 @@ export class Timeline {
   } | null = null;
   private hoveredClipId: string | null = null;
   private hoveredTrackIndex: number | null = null;
+  private hoveredKeyframe:
+    | { clipId: string; keyframeId: string }
+    | null = null;
   private hoverCursor: string = "default";
   private dropTargetTrackIndex: number | null = null;
   private snapX: number | null = null;
@@ -641,6 +644,7 @@ export class Timeline {
       locale: this.locale,
       keyframesEnabled: this.keyframesEnabled,
       selectedKeyframe: this.selectedKeyframe,
+      hoveredKeyframe: this.hoveredKeyframe,
       keyframeDragGhost:
         this.drag?.kind === "keyframe-drag"
           ? {
@@ -707,6 +711,7 @@ export class Timeline {
     this.canvas.addEventListener("pointerleave", () => {
       if (!this.drag && !this.scrollbarDrag) {
         this.hoveredClipId = null;
+        this.hoveredKeyframe = null;
         this.hoverCursor = "default";
         this.hoverScrollbarY = false;
         this.hoverScrollbarX = false;
@@ -817,6 +822,11 @@ export class Timeline {
         clipId: target.clipId,
         keyframeId: target.keyframeId,
       });
+      // Also jump the playhead to the keyframe — matches CapCut. Lets
+      // the user instantly see + edit the pinned transform.
+      const absMs = found.clip.start + kf.time;
+      this.timeMs = absMs;
+      this.opts.onSeek?.(absMs);
       this.drag = {
         kind: "keyframe-drag",
         clipId: target.clipId,
@@ -939,10 +949,20 @@ export class Timeline {
       let cursor = "default";
       let onScrollbarV = false;
       let onScrollbarH = false;
+      let nextHoverKeyframe: { clipId: string; keyframeId: string } | null =
+        null;
       if (target.kind === "clip") {
         nextHover = target.clipId;
         nextHoverTrack = target.trackIndex;
         cursor = this.readOnly ? "pointer" : "grab";
+      } else if (target.kind === "keyframe") {
+        nextHover = target.clipId;
+        nextHoverTrack = target.trackIndex;
+        nextHoverKeyframe = {
+          clipId: target.clipId,
+          keyframeId: target.keyframeId,
+        };
+        cursor = "pointer";
       } else if (
         target.kind === "clip-handle-left" ||
         target.kind === "clip-handle-right"
@@ -977,17 +997,24 @@ export class Timeline {
       const hoverChanged =
         onScrollbarV !== this.hoverScrollbarY ||
         onScrollbarH !== this.hoverScrollbarX;
+      const kfHoverChanged =
+        (nextHoverKeyframe?.clipId ?? null) !==
+          (this.hoveredKeyframe?.clipId ?? null) ||
+        (nextHoverKeyframe?.keyframeId ?? null) !==
+          (this.hoveredKeyframe?.keyframeId ?? null);
       if (
         nextHover !== this.hoveredClipId ||
         nextHoverTrack !== this.hoveredTrackIndex ||
         cursor !== this.hoverCursor ||
-        hoverChanged
+        hoverChanged ||
+        kfHoverChanged
       ) {
         this.hoveredClipId = nextHover;
         this.hoveredTrackIndex = nextHoverTrack;
         this.hoverCursor = cursor;
         this.hoverScrollbarY = onScrollbarV;
         this.hoverScrollbarX = onScrollbarH;
+        this.hoveredKeyframe = nextHoverKeyframe;
         this.scheduleRender();
       }
       return;

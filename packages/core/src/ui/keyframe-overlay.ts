@@ -67,6 +67,15 @@ export class KeyframeOverlay {
     this.frameBody.className = "aicut-keyframe-overlay__frame";
     this.frameBody.setAttribute("data-testid", "aicut-keyframe-frame");
     this.frameBody.addEventListener("pointerdown", (e) => this.onTransStart(e));
+    // Pinch-to-zoom: macOS trackpads fire `wheel` events with
+    // ctrlKey: true. Browser usually scales the whole page on this —
+    // we preventDefault and reinterpret it as a scale change on the
+    // active keyframe (auto-adding one if needed).
+    this.frameBody.addEventListener(
+      "wheel",
+      (e) => this.onPinchScale(e),
+      { passive: false },
+    );
     this.root.appendChild(this.frameBody);
 
     this.handles = {
@@ -108,6 +117,30 @@ export class KeyframeOverlay {
     this.frameBody.addEventListener("pointermove", this.onPointerMove);
     this.frameBody.addEventListener("pointerup", this.onPointerUp);
     this.frameBody.addEventListener("pointercancel", this.onPointerUp);
+  }
+
+  // ---- pinch-to-scale --------------------------------------------------
+
+  private onPinchScale(e: WheelEvent): void {
+    // Trackpad pinch → wheel + ctrlKey (synthetic). Plain wheel still
+    // scrolls / zooms the page normally.
+    if (!e.ctrlKey) return;
+    const ctx = this.ensureDragContext();
+    if (!ctx) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // -e.deltaY because most pinch gestures send negative deltaY for
+    // outward (zoom-in). Clamp the per-tick multiplier so a fast
+    // pinch doesn't jump several stops.
+    const step = Math.max(-50, Math.min(50, -e.deltaY));
+    const factor = Math.exp(step * 0.01);
+    const next = Math.max(
+      0.05,
+      Math.min(16, ctx.kfValues.scale * factor),
+    );
+    this.editor.setKeyframeValues(ctx.clipId, ctx.keyframeId, {
+      scale: Math.round(next * 100) / 100,
+    });
   }
 
   // ---- corner-handle drag (scale) --------------------------------------
@@ -216,7 +249,7 @@ export class KeyframeOverlay {
     const w = `${rect.w}px`;
     const h = `${rect.h}px`;
     Object.assign(this.frameBody.style, { left, top, width: w, height: h });
-    const halfHandle = 5; // visible 10×10 px
+    const halfHandle = 6; // visible 12×12 px
     const fbLeft = rect.x;
     const fbTop = rect.y;
     const fbRight = rect.x + rect.w;

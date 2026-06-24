@@ -62,6 +62,8 @@ export interface DrawState {
   keyframesEnabled: boolean;
   /** Currently selected keyframe (rendered with brand-color fill). */
   selectedKeyframe: { clipId: string; keyframeId: string } | null;
+  /** Currently hovered keyframe (rendered with brand outline). */
+  hoveredKeyframe: { clipId: string; keyframeId: string } | null;
   /** While a keyframe-drag is in flight, the dragged diamond paints
    *  at this ghost time instead of its committed time so the visual
    *  follows the cursor. */
@@ -603,18 +605,27 @@ function drawClipAt(
       const isSelected =
         state.selectedKeyframe?.clipId === clip.id &&
         state.selectedKeyframe?.keyframeId === kf.id;
+      const isHovered =
+        state.hoveredKeyframe?.clipId === clip.id &&
+        state.hoveredKeyframe?.keyframeId === kf.id;
+      // Hover bumps the diamond up by ~20% so it visibly reacts.
+      const drawSize = isHovered ? halfSize + 1.5 : halfSize;
       ctx.beginPath();
-      ctx.moveTo(kfX, diamondY - halfSize);
-      ctx.lineTo(kfX + halfSize, diamondY);
-      ctx.lineTo(kfX, diamondY + halfSize);
-      ctx.lineTo(kfX - halfSize, diamondY);
+      ctx.moveTo(kfX, diamondY - drawSize);
+      ctx.lineTo(kfX + drawSize, diamondY);
+      ctx.lineTo(kfX, diamondY + drawSize);
+      ctx.lineTo(kfX - drawSize, diamondY);
       ctx.closePath();
       ctx.fillStyle = isSelected
         ? style.selectedRing
-        : withAlpha(style.text, 0.85);
+        : isHovered
+          ? "#ffffff"
+          : withAlpha(style.text, 0.85);
       ctx.fill();
-      ctx.strokeStyle = "rgba(0, 0, 0, 0.65)";
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = isHovered
+        ? style.selectedRing
+        : "rgba(0, 0, 0, 0.65)";
+      ctx.lineWidth = isHovered ? 1.5 : 1;
       ctx.stroke();
     }
   }
