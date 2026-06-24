@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   LightingEditor,
   lightingLocaleZh,
@@ -24,17 +24,6 @@ const THEMES: Record<"dark" | "light", Theme> = {
     controlsActive: "rgba(0, 0, 0, 0.08)",
   },
 };
-
-/**
- * Demo page for the @aicut/react LightingEditor sub-entry. Shows how
- * a host wires:
- *   - the subject image (from public/lighting-samples/subject.jpg);
- *   - a custom `smartPanel` (prompt + presets + generate button);
- *   - the `onChange` + `onGenerate` events into a live JSON sidebar.
- *
- * The library renders nothing in the smart slot until this component
- * portals its UI in — that's the contract.
- */
 
 interface Preset {
   id: string;
@@ -63,14 +52,14 @@ export function LightingDemo() {
   const [subject, setSubject] = useState<string>(SUBJECT_URL);
   const [language, setLanguage] = useState<"en" | "zh">("en");
   const [themeName, setThemeName] = useState<"dark" | "light">("dark");
-  const [smartEnabled, setSmartEnabled] = useState(true);
+  // Smart panel state is OWNED by the host now — the library is just
+  // a picker. We render the panel beside <LightingEditor> in our own
+  // layout and hide/show it locally.
   const [smartOpen, setSmartOpen] = useState(true);
   const [lastGenerated, setLastGenerated] = useState<LightingConfig | null>(
     null,
   );
 
-  // Merge BOTH locale shapes — video editor strings + lighting strings.
-  // Passing only `localeZh` would leave the lighting tooltips in English.
   const locale = useMemo(
     () =>
       language === "zh"
@@ -80,20 +69,9 @@ export function LightingDemo() {
   );
   const theme = useMemo(() => THEMES[themeName], [themeName]);
 
-  // Whenever the user picks a preset, push it into the editor and let
-  // its onChange fire the local state update — keeps a single source.
   const applyPreset = (p: Preset): void => {
     apiRef.current?.setConfig(p.config);
   };
-
-  // File upload: read as data URL so we don't depend on a backend.
-  useEffect(() => {
-    return () => {
-      // Revoke any object URLs we'd allocated. Currently using data
-      // URIs (FileReader.readAsDataURL) so nothing to revoke, but
-      // leaving the hook in place documents the intent.
-    };
-  }, []);
 
   const onUploadSubject = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const f = e.target.files?.[0];
@@ -107,71 +85,87 @@ export function LightingDemo() {
     r.readAsDataURL(f);
   };
 
-  const smartPanel = (
-    <div className="ldemo-smart">
-      <h3 className="ldemo-smart-title">Smart mode</h3>
-      <textarea
-        className="ldemo-smart-textarea"
-        placeholder="Describe the lighting / mood you want…"
-        rows={3}
-        value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
-      />
-      <label className="ldemo-smart-upload">
-        <input
-          type="file"
-          accept="image/*"
-          onChange={onUploadSubject}
-          style={{ display: "none" }}
-        />
-        <span>↑ Upload subject</span>
-      </label>
-      <div className="ldemo-smart-preset-title">Presets</div>
-      <div className="ldemo-smart-preset-grid">
-        {PRESETS.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className="ldemo-smart-preset"
-            onClick={() => applyPreset(p)}
-            title={p.name}
-            data-testid={`ldemo-preset-${p.id}`}
-          >
-            <span
-              className="ldemo-smart-preset-swatch"
-              style={{ background: String(p.config.color ?? "#888") }}
-            />
-            <span className="ldemo-smart-preset-name">{p.name}</span>
-          </button>
-        ))}
-      </div>
-      <button
-        type="button"
-        className="ldemo-generate"
-        onClick={() => apiRef.current?.requestGenerate()}
-        data-testid="ldemo-generate"
-      >
-        Generate
-      </button>
-    </div>
-  );
+  // "Generate" is just a host function — snapshot the config and do
+  // whatever (here we mirror it into the sidebar JSON dump).
+  const handleGenerate = (): void => {
+    const cfg = apiRef.current?.getConfig();
+    if (cfg) setLastGenerated(cfg);
+  };
 
   return (
     <div className="lighting-shell">
       <div className="lighting-editor-area">
-        <LightingEditor
-          apiRef={apiRef}
-          subjectImageUrl={subject}
-          defaultView={view}
-          locale={locale}
-          theme={theme}
-          smartEnabled={smartEnabled}
-          smartOpen={smartOpen}
-          smartPanel={smartPanel}
-          onChange={(cfg) => setConfig(cfg)}
-          onGenerate={(cfg) => setLastGenerated(cfg)}
-          onSmartOpenChange={(open) => setSmartOpen(open)}
-        />
+        {/* Host wraps editor + smart panel in their own flex/grid.
+            Library has zero opinion on the smart panel's existence. */}
+        <div className="ldemo-stage">
+          <LightingEditor
+            apiRef={apiRef}
+            subjectImageUrl={subject}
+            defaultView={view}
+            locale={locale}
+            theme={theme}
+            onChange={(cfg) => setConfig(cfg)}
+          />
+          {smartOpen ? (
+            <aside className="ldemo-smart-panel" data-testid="ldemo-smart-panel">
+              <header className="ldemo-smart-header">
+                <h3 className="ldemo-smart-title">Smart mode</h3>
+                <button
+                  type="button"
+                  className="ldemo-smart-close"
+                  aria-label="Close smart mode"
+                  data-testid="ldemo-smart-close"
+                  onClick={() => setSmartOpen(false)}
+                >
+                  ×
+                </button>
+              </header>
+              <textarea
+                className="ldemo-smart-textarea"
+                placeholder="Describe the lighting / mood you want…"
+                rows={3}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+              />
+              <label className="ldemo-smart-upload">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={onUploadSubject}
+                  style={{ display: "none" }}
+                />
+                <span>↑ Upload subject</span>
+              </label>
+              <div className="ldemo-smart-preset-title">Presets</div>
+              <div className="ldemo-smart-preset-grid">
+                {PRESETS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="ldemo-smart-preset"
+                    onClick={() => applyPreset(p)}
+                    title={p.name}
+                    data-testid={`ldemo-preset-${p.id}`}
+                  >
+                    <span
+                      className="ldemo-smart-preset-swatch"
+                      style={{ background: String(p.config.color ?? "#888") }}
+                    />
+                    <span className="ldemo-smart-preset-name">{p.name}</span>
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="ldemo-generate"
+                onClick={handleGenerate}
+                data-testid="ldemo-generate"
+              >
+                Generate
+              </button>
+            </aside>
+          ) : null}
+        </div>
       </div>
       <aside className="lighting-sidebar">
         <h2>Theme</h2>
@@ -198,27 +192,15 @@ export function LightingDemo() {
           </button>
         </div>
 
-        <h2>Smart mode</h2>
-        <div className="demo-row demo-checkbox-row">
-          <label>
-            <input
-              type="checkbox"
-              data-testid="ldemo-smart-enabled"
-              checked={smartEnabled}
-              onChange={(e) => setSmartEnabled(e.target.checked)}
-            />
-            <span>Enable smart mode</span>
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              data-testid="ldemo-smart-open"
-              checked={smartOpen}
-              disabled={!smartEnabled}
-              onChange={(e) => setSmartOpen(e.target.checked)}
-            />
-            <span>Drawer open</span>
-          </label>
+        <h2>Smart panel (host-controlled)</h2>
+        <div className="demo-row">
+          <button
+            type="button"
+            data-testid="ldemo-smart-toggle"
+            onClick={() => setSmartOpen((s) => !s)}
+          >
+            {smartOpen ? "Hide smart panel" : "Show smart panel"}
+          </button>
         </div>
 
         <h2>View</h2>
@@ -245,7 +227,7 @@ export function LightingDemo() {
         <pre className="lighting-state" data-testid="ldemo-generated-json">
 {lastGenerated
   ? JSON.stringify(lastGenerated, null, 2)
-  : "(click Generate inside the smart panel)"}
+  : "(click Generate)"}
         </pre>
 
         <h2>Prompt (host state)</h2>

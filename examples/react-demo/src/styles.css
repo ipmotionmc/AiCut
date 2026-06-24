@@ -276,13 +276,61 @@ body,
   overflow: auto;
 }
 
-/* ===== Smart panel (host UI, rendered into the editor's slot) ===== */
+/* ===== Smart panel (host-owned — rendered beside LightingEditor) ===== */
 
-.ldemo-smart {
+/* Stage wraps the editor + (optionally) the smart panel in a flex row.
+   The library renders just the editor; the host decides the panel
+   lives here. */
+.ldemo-stage {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  width: fit-content;
+  padding: 16px;
+  background: var(--aicut-controls-bg, #1f1f22);
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
+  border-radius: 12px;
+}
+
+.ldemo-stage > .aicut-lighting-editor .aicut-lighting-body {
+  background: transparent;
+  padding: 0;
+}
+
+.ldemo-smart-panel {
+  width: 280px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-width: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.08));
+}
+
+.ldemo-smart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ldemo-smart-close {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--aicut-controls-text, rgba(255, 255, 255, 0.85)) 60%, transparent);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.ldemo-smart-close:hover {
+  background: var(--aicut-controls-hover, rgba(255, 255, 255, 0.08));
+  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
 }
 
 .ldemo-smart-title {

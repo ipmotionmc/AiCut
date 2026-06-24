@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from "vue";
+import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue";
 import {
   LightingEditor as CoreLightingEditor,
   type LightingConfig,
@@ -9,10 +9,10 @@ import {
 import type { Theme } from "@aicut/core";
 
 /**
- * Vue 3 wrapper around the core `LightingEditor`. Same shape as the
- * React component: `defaultConfig` is read once on mount, `theme` /
- * `locale` / `subjectImageUrl` are reactive, the host AI UI goes into
- * a `<slot name="smart">` that Vue teleports into the smart slot DOM.
+ * Vue 3 shell for the 3D lighting picker. Renders scene + controls;
+ * nothing else. Host code lays out their own surrounding UI (smart
+ * mode panel, generate button, etc.) alongside this component in
+ * their own template.
  */
 const props = defineProps<{
   subjectImageUrl?: string;
@@ -25,12 +25,10 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "ready", api: CoreLightingEditor): void;
   (e: "change", cfg: LightingConfig): void;
-  (e: "generate", cfg: LightingConfig): void;
 }>();
 
 const host = useTemplateRef<HTMLDivElement>("host");
 let editor: CoreLightingEditor | null = null;
-const smartSlot = ref<HTMLElement | null>(null);
 
 onMounted(() => {
   if (!host.value) return;
@@ -42,9 +40,7 @@ onMounted(() => {
     theme: props.theme,
     locale: props.locale,
     onChange: (cfg) => emit("change", cfg),
-    onGenerate: (cfg) => emit("generate", cfg),
   });
-  smartSlot.value = editor.smartSlot;
   emit("ready", editor);
 });
 
@@ -57,7 +53,7 @@ watch(
 watch(
   () => props.locale,
   (locale) => {
-    if (locale && editor) editor.setLocale(locale);
+    if (editor) editor.setLocale(locale ?? {});
   },
 );
 watch(
@@ -70,7 +66,6 @@ watch(
 onBeforeUnmount(() => {
   editor?.destroy();
   editor = null;
-  smartSlot.value = null;
 });
 
 defineExpose({
@@ -79,9 +74,5 @@ defineExpose({
 </script>
 
 <template>
-  <div ref="host" data-aicut-lighting-host="">
-    <Teleport v-if="smartSlot" :to="smartSlot">
-      <slot name="smart" />
-    </Teleport>
-  </div>
+  <div ref="host" data-aicut-lighting-host="" />
 </template>

@@ -14,10 +14,6 @@ export interface LightingLocale {
   lightingViewPerspective: string;
   lightingViewFront: string;
   lightingResetParams: string;
-  /** Aria label / tooltip for the × button that closes the Smart panel. */
-  lightingSmartClose: string;
-  /** Tooltip / label for the controls-header Smart Mode toggle. */
-  lightingSmartToggle: string;
   // Six canonical key-light direction buttons
   lightingDirLeft: string;
   lightingDirRight: string;
@@ -37,8 +33,6 @@ export const lightingLocaleEn: LightingLocale = {
   lightingViewPerspective: "Perspective",
   lightingViewFront: "Front",
   lightingResetParams: "Reset",
-  lightingSmartClose: "Close Smart mode",
-  lightingSmartToggle: "Smart mode",
   lightingDirLeft: "Left",
   lightingDirRight: "Right",
   lightingDirTop: "Top",
@@ -57,8 +51,6 @@ export const lightingLocaleZh: LightingLocale = {
   lightingViewPerspective: "透视",
   lightingViewFront: "正面",
   lightingResetParams: "重置参数",
-  lightingSmartClose: "关闭智能模式",
-  lightingSmartToggle: "智能模式",
   lightingDirLeft: "左侧",
   lightingDirRight: "右侧",
   lightingDirTop: "顶部",

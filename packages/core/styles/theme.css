@@ -436,34 +436,16 @@
 
 .aicut-lighting-body {
   display: grid;
-  /* Fixed widths: scene 240, controls 220. Smart column gets the rest
-     when open; collapses to 0 when closed; removed entirely when smart
-     mode is disabled (see the data-smart-* rules below). */
-  grid-template-columns: 240px 220px minmax(0, 1fr);
+  /* Just two columns: scene 240 + controls 220. Hosts that want to
+     render an adjacent panel (AI smart mode, prompt, presets, …) put
+     their own DOM beside <LightingEditor> in their own layout. */
+  grid-template-columns: 240px 220px;
   gap: 16px;
   align-items: start;
   padding: 16px;
   background: var(--aicut-controls-bg, #1f1f22);
   color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
   border-radius: var(--aicut-radius-md, 12px);
-}
-
-/* When smart mode is disabled outright, the smart column doesn't
-   render — collapse the grid to 2 columns so we don't leave a gap. */
-.aicut-lighting-editor[data-smart-enabled="false"] .aicut-lighting-body {
-  grid-template-columns: 240px 220px;
-}
-
-/* When smart mode is enabled but the drawer is closed, keep the slot
-   in the DOM (portals stay valid) but shrink the column to zero —
-   smooth animated drawer collapse from the right. */
-.aicut-lighting-editor[data-smart-open="false"] .aicut-lighting-body {
-  grid-template-columns: 240px 220px 0fr;
-}
-.aicut-lighting-editor[data-smart-open="false"] .aicut-lighting-smart-wrapper {
-  opacity: 0;
-  pointer-events: none;
-  visibility: hidden;
 }
 
 /* --- Scene column --- */
@@ -669,58 +651,3 @@
   background: var(--aicut-controls-hover, rgba(255, 255, 255, 0.08));
 }
 
-.aicut-lighting-smart-slot {
-  min-width: 0;
-}
-
-/* --- Smart wrapper (drawer + × button) --- */
-
-.aicut-lighting-smart-wrapper {
-  position: relative;
-  min-width: 0;
-  overflow: hidden;
-  transition: opacity 180ms ease;
-}
-
-.aicut-lighting-smart-close {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: color-mix(in srgb, var(--aicut-controls-text, rgba(255, 255, 255, 0.85)) 60%, transparent);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  z-index: 1;
-  transition: background-color 120ms ease, color 120ms ease;
-}
-.aicut-lighting-smart-close:hover {
-  background: var(--aicut-controls-hover, rgba(255, 255, 255, 0.08));
-  color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
-}
-
-/* Push the host content down a touch so it doesn't sit under × */
-.aicut-lighting-smart-wrapper > .aicut-lighting-smart-slot {
-  padding-top: 4px;
-  padding-right: 28px;
-}
-
-/* --- Smart-mode pill toggle in the controls header --- */
-
-.aicut-lighting-smart-toggle-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.aicut-lighting-smart-toggle-label {
-  font-size: 11px;
-  color: color-mix(in srgb, var(--aicut-controls-text, rgba(255, 255, 255, 0.85)) 70%, transparent);
-}

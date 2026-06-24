@@ -44,19 +44,6 @@ export interface LightingEditorOptions {
   config?: Partial<LightingConfig>;
   /** Initial camera view. Default `"perspective"`. */
   view?: LightingView;
-  /**
-   * Whether the Smart Mode feature is wired in at all. When false the
-   * slot column never renders and the controls header hides the
-   * Smart Mode toggle — the layout becomes a clean 2-column
-   * (scene + controls). Default `true`.
-   */
-  smartEnabled?: boolean;
-  /**
-   * When `smartEnabled` is true, whether the Smart Mode slot panel
-   * starts open. Hosts toggle later via `api.setSmartOpen(bool)` or
-   * by clicking the library-rendered × button. Default `true`.
-   */
-  smartOpen?: boolean;
   /** Theme tokens — same shape as the video Editor's theme. */
   theme?: Theme;
   /** Locale overrides on top of English defaults (`localeEn` + `lightingLocaleEn`). */
@@ -64,13 +51,6 @@ export interface LightingEditorOptions {
 
   /** Fires on any config mutation (drag, slider, preset click, toggle). */
   onChange?: (cfg: LightingConfig) => void;
-  /**
-   * Surface event for the host's own "Generate" button — the library
-   * never wires this. Use `api.requestGenerate()` from your UI.
-   */
-  onGenerate?: (cfg: LightingConfig) => void;
-  /** Fires when the user toggles the Smart Mode panel via × / toggle. */
-  onSmartOpenChange?: (open: boolean) => void;
 }
 
 /** Safe, conservative defaults for first mount. */

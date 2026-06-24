@@ -13,16 +13,15 @@ import {
 } from "./types.js";
 
 /**
- * Top-level lighting picker. Mirrors `Editor`'s lifecycle — `static
- * create(opts)`, wipes the container, owns DOM + WebGL, exposes
- * `destroy()` and reactive `setTheme` / `setLocale`. Separate from
- * the video Editor; the two can coexist in the same host page.
+ * Top-level lighting picker. Two columns: a 3D scene (sphere + subject
+ * plane + draggable light dot + cone beam) and a controls panel
+ * (brightness / color / 6-direction key-light grid / rim toggle).
  *
- * Layout (left → right):
- *   [scene 240px]  [controls 220px]  [smartSlot (drawer)]
- * The smart slot is host-supplied. Library renders a × close button
- * + a "Smart mode" toggle in the controls header when the slot is
- * available; `smartEnabled: false` removes the slot entirely.
+ * Deliberately scoped to JUST the picker — the host owns everything
+ * around it (smart-mode UI, generate buttons, layout, close handling,
+ * theming above the editor). Render <LightingEditor> alongside your
+ * own Smart panel in your own flex/grid; the library doesn't try to
+ * model "open / closed drawer" semantics for you.
  */
 export class LightingEditor {
   private root: HTMLElement;
@@ -30,23 +29,11 @@ export class LightingEditor {
   private config: LightingConfig;
   private view: LightingView;
   private locale: Locale & LightingLocale;
-  private smartEnabled: boolean;
-  private smartOpen: boolean;
 
   private scene: LightingScene;
   private controls: LightingControls;
   private sceneViewport: HTMLDivElement;
   private viewToggleEl: HTMLDivElement;
-  private body: HTMLDivElement;
-  private smartWrapper: HTMLDivElement | null = null;
-  private smartCloseBtn: HTMLButtonElement | null = null;
-  private smartToggleEl: HTMLDivElement | null = null;
-  private smartToggleThumb: HTMLDivElement | null = null;
-  /** Host slot the React/Vue wrapper portals/teleports into. Stable
-   *  reference across smartOpen toggles — only the wrapper around it
-   *  collapses/expands. Always present even when `smartEnabled: false`
-   *  so portals don't blow up; just detached from the visible tree. */
-  readonly smartSlot: HTMLDivElement;
 
   private resizeObs: ResizeObserver | null = null;
   private destroyed = false;
@@ -60,8 +47,6 @@ export class LightingEditor {
     this.root = opts.container;
     this.config = { ...DEFAULT_LIGHTING_CONFIG, ...opts.config };
     this.view = opts.view ?? "perspective";
-    this.smartEnabled = opts.smartEnabled !== false;
-    this.smartOpen = opts.smartOpen !== false;
     this.locale = {
       ...mergeLocale(opts.locale),
       ...mergeLightingLocale(opts.locale),
@@ -72,12 +57,11 @@ export class LightingEditor {
     if (!this.root.style.position) this.root.style.position = "relative";
     applyTheme(this.root, opts.theme);
 
-    // ---- Layout shell ----
-    this.body = document.createElement("div");
-    this.body.className = "aicut-lighting-body";
-    this.root.appendChild(this.body);
+    // ---- Layout shell — scene column + controls column ----
+    const body = document.createElement("div");
+    body.className = "aicut-lighting-body";
+    this.root.appendChild(body);
 
-    // Scene column
     const sceneCol = document.createElement("div");
     sceneCol.className = "aicut-lighting-scene-col";
     this.viewToggleEl = this.buildViewToggle();
@@ -86,9 +70,8 @@ export class LightingEditor {
     this.sceneViewport.className = "aicut-lighting-scene-viewport";
     this.sceneViewport.setAttribute("data-testid", "aicut-lighting-scene");
     sceneCol.appendChild(this.sceneViewport);
-    this.body.appendChild(sceneCol);
+    body.appendChild(sceneCol);
 
-    // Controls column
     this.controls = new LightingControls(this.locale, {
       onBrightnessChange: (level) => this.applyMutation({ brightness: level }),
       onColorChange: (hex) => this.applyMutation({ color: hex }),
@@ -100,23 +83,7 @@ export class LightingEditor {
       onRimToggle: (on) => this.applyMutation({ rim: on }),
       onReset: () => this.setConfig(DEFAULT_LIGHTING_CONFIG, "reset"),
     });
-    this.body.appendChild(this.controls.root);
-
-    // Smart slot — held as a stable ref even when not in the visible
-    // tree, so React portals always have a valid mount target.
-    this.smartSlot = document.createElement("div");
-    this.smartSlot.className = "aicut-lighting-smart-slot";
-    this.smartSlot.setAttribute("data-testid", "aicut-lighting-smart");
-
-    if (this.smartEnabled) {
-      this.smartWrapper = this.buildSmartWrapper();
-      this.body.appendChild(this.smartWrapper);
-      // Header smart-mode pill toggle (lets the user re-open after ×).
-      this.smartToggleEl = this.buildSmartToggle();
-      this.controls.headerSlot.appendChild(this.smartToggleEl);
-    }
-
-    this.syncSmartState();
+    body.appendChild(this.controls.root);
 
     // ---- Scene mount ----
     this.scene = new LightingScene(this.sceneViewport, this.view);
@@ -185,46 +152,6 @@ export class LightingEditor {
     return this.view;
   }
 
-  /** Enable/disable the entire Smart Mode feature at runtime. */
-  setSmartEnabled(enabled: boolean): void {
-    if (enabled === this.smartEnabled) return;
-    this.smartEnabled = enabled;
-    if (enabled) {
-      if (!this.smartWrapper) {
-        this.smartWrapper = this.buildSmartWrapper();
-        this.body.appendChild(this.smartWrapper);
-      }
-      if (!this.smartToggleEl) {
-        this.smartToggleEl = this.buildSmartToggle();
-        this.controls.headerSlot.appendChild(this.smartToggleEl);
-      }
-    } else {
-      this.smartWrapper?.remove();
-      this.smartWrapper = null;
-      this.smartCloseBtn = null;
-      this.smartToggleEl?.remove();
-      this.smartToggleEl = null;
-      this.smartToggleThumb = null;
-    }
-    this.syncSmartState();
-  }
-
-  isSmartEnabled(): boolean {
-    return this.smartEnabled;
-  }
-
-  /** Open/close the smart slot drawer when enabled. No-op when disabled. */
-  setSmartOpen(open: boolean): void {
-    if (!this.smartEnabled || open === this.smartOpen) return;
-    this.smartOpen = open;
-    this.syncSmartState();
-    this.opts.onSmartOpenChange?.(open);
-  }
-
-  isSmartOpen(): boolean {
-    return this.smartOpen;
-  }
-
   setTheme(theme: Theme): void {
     applyTheme(this.root, theme);
   }
@@ -236,11 +163,6 @@ export class LightingEditor {
     };
     this.controls.setLocale(this.locale);
     this.syncViewToggle();
-    this.syncSmartLocale();
-  }
-
-  requestGenerate(): void {
-    this.opts.onGenerate?.(this.getConfig());
   }
 
   destroy(): void {
@@ -250,8 +172,6 @@ export class LightingEditor {
     this.scene.destroy();
     this.root.innerHTML = "";
     this.root.classList.remove("aicut-root", "aicut-lighting-editor");
-    this.root.removeAttribute("data-smart-enabled");
-    this.root.removeAttribute("data-smart-open");
   }
 
   // ---- Internal ------------------------------------------------------
@@ -306,96 +226,6 @@ export class LightingEditor {
       btn.classList.toggle("active", v === this.view);
       if (v === "perspective") btn.textContent = this.locale.lightingViewPerspective;
       if (v === "front") btn.textContent = this.locale.lightingViewFront;
-    }
-  }
-
-  /**
-   * Build the smart slot column wrapper: × close button + the actual
-   * host slot. Wrapper handles the drawer animation; slot reference
-   * stays stable so portals don't have to relocate.
-   */
-  private buildSmartWrapper(): HTMLDivElement {
-    const wrap = document.createElement("div");
-    wrap.className = "aicut-lighting-smart-wrapper";
-
-    this.smartCloseBtn = document.createElement("button");
-    this.smartCloseBtn.type = "button";
-    this.smartCloseBtn.className = "aicut-lighting-smart-close";
-    this.smartCloseBtn.title = this.locale.lightingSmartClose;
-    this.smartCloseBtn.setAttribute("aria-label", this.locale.lightingSmartClose);
-    this.smartCloseBtn.setAttribute("data-testid", "aicut-lighting-smart-close");
-    this.smartCloseBtn.innerHTML = "&times;";
-    this.smartCloseBtn.addEventListener("click", () => this.setSmartOpen(false));
-    wrap.appendChild(this.smartCloseBtn);
-
-    wrap.appendChild(this.smartSlot);
-    return wrap;
-  }
-
-  /** Pill-style toggle that lives in the controls header. Re-opens
-   *  the smart drawer when the host has closed it via ×. */
-  private buildSmartToggle(): HTMLDivElement {
-    const row = document.createElement("div");
-    row.className = "aicut-lighting-smart-toggle-row";
-
-    const label = document.createElement("span");
-    label.className = "aicut-lighting-smart-toggle-label";
-    label.textContent = this.locale.lightingSmartToggle;
-    row.appendChild(label);
-
-    const toggle = document.createElement("div");
-    toggle.className = "aicut-lighting-toggle aicut-lighting-smart-toggle";
-    toggle.setAttribute("role", "switch");
-    toggle.setAttribute("tabindex", "0");
-    toggle.setAttribute("data-testid", "aicut-lighting-smart-toggle");
-    toggle.title = this.locale.lightingSmartToggle;
-
-    this.smartToggleThumb = document.createElement("div");
-    this.smartToggleThumb.className = "aicut-lighting-toggle-thumb";
-    toggle.appendChild(this.smartToggleThumb);
-
-    toggle.addEventListener("click", () => this.setSmartOpen(!this.smartOpen));
-    row.appendChild(toggle);
-    return row;
-  }
-
-  /** Re-translate smart-related labels after a locale swap. */
-  private syncSmartLocale(): void {
-    if (this.smartCloseBtn) {
-      this.smartCloseBtn.title = this.locale.lightingSmartClose;
-      this.smartCloseBtn.setAttribute("aria-label", this.locale.lightingSmartClose);
-    }
-    if (this.smartToggleEl) {
-      const label = this.smartToggleEl.querySelector<HTMLSpanElement>(
-        ".aicut-lighting-smart-toggle-label",
-      );
-      if (label) label.textContent = this.locale.lightingSmartToggle;
-      const toggle = this.smartToggleEl.querySelector<HTMLDivElement>(
-        ".aicut-lighting-smart-toggle",
-      );
-      if (toggle) toggle.title = this.locale.lightingSmartToggle;
-    }
-  }
-
-  /** Mirror smart state to data-* attrs + toggle thumb position.
-   *  Drives the CSS that collapses the column when closed. */
-  private syncSmartState(): void {
-    this.root.setAttribute(
-      "data-smart-enabled",
-      this.smartEnabled ? "true" : "false",
-    );
-    this.root.setAttribute(
-      "data-smart-open",
-      this.smartOpen ? "true" : "false",
-    );
-    if (this.smartToggleEl) {
-      const toggle = this.smartToggleEl.querySelector<HTMLDivElement>(
-        ".aicut-lighting-smart-toggle",
-      );
-      if (toggle) {
-        toggle.classList.toggle("active", this.smartOpen);
-        toggle.setAttribute("aria-checked", this.smartOpen ? "true" : "false");
-      }
     }
   }
 }
