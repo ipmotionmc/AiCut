@@ -336,6 +336,13 @@ export interface EditorApi {
   getActiveFrameRect():
     | { x: number; y: number; w: number; h: number }
     | null;
+  /** Same as `getActiveFrameRect` but for an arbitrary clipId. Used
+   *  by the overlay's hit-testing to figure out which PiP clip a
+   *  click in the preview lands on. Null when the clip isn't
+   *  currently being painted. */
+  getClipFrameRect(
+    clipId: string,
+  ): { x: number; y: number; w: number; h: number } | null;
   /** Output frame rect (fixed bounds, no transform). The overlay
    *  draws the dashed border here. */
   getActiveOutputFrameRect():
@@ -1210,6 +1217,12 @@ export class Editor implements EditorApi {
       ? (this.selectedClipId ?? undefined)
       : undefined;
     return this.engine.getFrameRect?.(selected) ?? null;
+  }
+
+  getClipFrameRect(
+    clipId: string,
+  ): { x: number; y: number; w: number; h: number } | null {
+    return this.engine.getFrameRect?.(clipId) ?? null;
   }
 
   /**

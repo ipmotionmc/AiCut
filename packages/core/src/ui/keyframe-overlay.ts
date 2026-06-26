@@ -137,11 +137,56 @@ export class KeyframeOverlay {
     };
 
     host.appendChild(this.root);
+    // Click-to-select on the preview host. Walks every active
+    // clip's content rect from the topmost track downward and
+    // selects the first one that contains the click point — same
+    // affordance CapCut uses for picking a PiP overlay by clicking
+    // on its visible pixels. Only active when keyframes mode is on
+    // (otherwise selection happens on the timeline as before).
+    this.host.addEventListener("pointerdown", this.onHostPointerDown);
     this.startTick();
   }
 
+  private onHostPointerDown = (e: PointerEvent): void => {
+    if (e.button !== 0) return;
+    if (!this.editor.isKeyframesEnabled()) return;
+    // Skip when the event already landed on the overlay's own
+    // interactive children (frame body, handles) — those have their
+    // own handlers and we don't want to double-fire.
+    const target = e.target as HTMLElement | null;
+    if (target && this.root.contains(target)) return;
+    const project = this.editor.getProject();
+    const timeMs = this.editor.getTime();
+    const hostRect = this.host.getBoundingClientRect();
+    const cx = e.clientX - hostRect.left;
+    const cy = e.clientY - hostRect.top;
+    // Walk tracks top-down (highest index = topmost z) so PiP
+    // overlays win the hit-test over the main background.
+    for (let i = project.tracks.length - 1; i >= 0; i--) {
+      const track = project.tracks[i]!;
+      if (track.kind !== "video") continue;
+      const clip = track.clips.find(
+        (c) =>
+          timeMs >= c.start && timeMs < c.start + (c.out - c.in),
+      );
+      if (!clip) continue;
+      const rect = this.editor.getClipFrameRect(clip.id);
+      if (!rect) continue;
+      if (
+        cx >= rect.x &&
+        cx <= rect.x + rect.w &&
+        cy >= rect.y &&
+        cy <= rect.y + rect.h
+      ) {
+        this.editor.setSelection(clip.id);
+        return;
+      }
+    }
+  };
+
   destroy(): void {
     this.destroyed = true;
+    this.host.removeEventListener("pointerdown", this.onHostPointerDown);
     if (this.rafHandle != null) cancelAnimationFrame(this.rafHandle);
     if (this.wheelInteractionTimer != null) {
       clearTimeout(this.wheelInteractionTimer);
@@ -376,7 +421,22 @@ export class KeyframeOverlay {
       const activeBaseH = this.drag.baseH * this.drag.axisY;
       const L = Math.hypot(activeBaseW, activeBaseH) || 1;
       const proj = (projX * activeBaseW + projY * activeBaseH) / L;
-      const next = Math.max(0.05, Math.min(16, proj / L));
+      let next = Math.max(0.05, Math.min(16, proj / L));
+      // Snap the scale to common stops (full canvas, half, quarter,
+      // double) when the snap toggle is on AND the user gets close
+      // enough. Distance threshold is in CSS px on the active axis,
+      // converted from the SNAP_PX timeline threshold so the feel
+      // matches: edges that look "near full canvas" lock in.
+      if (this.editor.getSnap()) {
+        const snapTargets = [1, 0.5, 0.25, 2];
+        for (const target of snapTargets) {
+          const targetProj = target * L;
+          if (Math.abs(proj - targetProj) <= KeyframeOverlay.SNAP_PX) {
+            next = target;
+            break;
+          }
+        }
+      }
       const newW = this.drag.baseW * next;
       const newH = this.drag.baseH * next;
       // For edge handles the perpendicular axis is the anchor's own
