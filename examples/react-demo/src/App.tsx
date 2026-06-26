@@ -212,6 +212,9 @@ type ExportAspectKey =
   | "4:5"
   | "21:9";
 function ExportPopover(props: {
+  /** Aspect is read-only here — the editor's built-in chip drives
+   *  it. The popover just displays + uses it to look up the
+   *  resolution ladder. */
   aspect: ExportAspectKey;
   resIdx: number;
   fps: number;
@@ -220,7 +223,6 @@ function ExportPopover(props: {
     Array<{ label: string; width: number; height: number }>
   >;
   fpsOptions: number[];
-  onChangeAspect: (a: ExportAspectKey) => void;
   onChangeResIdx: (i: number) => void;
   onChangeFps: (f: number) => void;
   onCancel: () => void;
@@ -272,15 +274,31 @@ function ExportPopover(props: {
       }}
     >
       <div style={{ fontWeight: 600, fontSize: 13 }}>Export settings</div>
+      {/*
+        Aspect is intentionally read-only here — the editor's built-in
+        chip is the source of truth (`Project.aspect`). Pick a ratio
+        in the toolbar; the export popover follows. Shown as a static
+        chip so users see WHAT they'll export at without the
+        second-place to change it.
+      */}
       <Row label="Aspect">
-        <PopoverSelect
-          testId="demo-export-aspect"
-          value={props.aspect}
-          options={(Object.keys(props.resolutions) as ExportAspectKey[]).map(
-            (a) => ({ value: a, label: a }),
-          )}
-          onChange={(v) => props.onChangeAspect(v)}
-        />
+        <span
+          data-testid="demo-export-aspect"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            height: 28,
+            padding: "0 10px",
+            borderRadius: 6,
+            background: "var(--aicut-controls-hover, rgba(255,255,255,0.06))",
+            border:
+              "1px solid var(--aicut-controls-border, rgba(255,255,255,0.12))",
+            fontSize: 12,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {props.aspect}
+        </span>
       </Row>
       <Row label="Resolution">
         <PopoverSelect
@@ -1114,12 +1132,6 @@ export function App() {
                       aspect={exportAspect}
                       resIdx={exportResIdx}
                       fps={exportFps}
-                      onChangeAspect={(a) => {
-                        setExportAspect(a);
-                        setExportResIdx((i) =>
-                          Math.min(i, RESOLUTIONS[a].length - 1),
-                        );
-                      }}
                       onChangeResIdx={setExportResIdx}
                       onChangeFps={setExportFps}
                       onCancel={() => setExportPopoverOpen(false)}
