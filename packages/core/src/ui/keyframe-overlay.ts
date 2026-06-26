@@ -52,10 +52,19 @@ export class KeyframeOverlay {
     | {
         kind: "scale";
         clipId: string;
-        centerX: number;
-        centerY: number;
-        startDistance: number;
-        startScale: number;
+        /** Viewport coords of the OPPOSITE corner — stays fixed. */
+        anchorX: number;
+        anchorY: number;
+        /** Direction from anchor to dragged corner. -1 or +1 per axis. */
+        dirX: 1 | -1;
+        dirY: 1 | -1;
+        /** Content dims when scale = 1, in viewport CSS px. */
+        baseW: number;
+        baseH: number;
+        /** Output canvas center in viewport coords — to convert
+         *  newCenter into pan offsets. */
+        canvasCenterX: number;
+        canvasCenterY: number;
       }
     | null = null;
   private capturedPointerId: number | null = null;
@@ -187,30 +196,47 @@ export class KeyframeOverlay {
     if (!ctx) return;
     e.preventDefault();
     e.stopPropagation();
-    // Anchor the scale-distance reference to the SELECTED clip's
-    // own center, NOT the output canvas center. For a PiP overlay
-    // sitting away from canvas center, canvas-distance scaling
-    // makes the corner feel mushy near the canvas center and
-    // hyper-responsive near canvas edges; clip-distance scaling
-    // gives the same uniform-from-center feel everywhere.
-    const clipRect = this.editor.getActiveFrameRect()
-      ?? this.editor.getActiveOutputFrameRect();
-    if (!clipRect) return;
+    // CapCut-style corner drag: the OPPOSITE corner stays pinned;
+    // the dragged corner follows the cursor. Aspect is locked
+    // (single-scale model), so the dragged corner snaps along the
+    // larger axis when the cursor goes off-diagonal.
+    const clipRect = this.editor.getActiveFrameRect();
+    const outRect = this.editor.getActiveOutputFrameRect();
+    if (!clipRect || !outRect) return;
     const hostRect = this.host.getBoundingClientRect();
-    const cx = hostRect.left + clipRect.x + clipRect.w / 2;
-    const cy = hostRect.top + clipRect.y + clipRect.h / 2;
-    const startDist = Math.hypot(e.clientX - cx, e.clientY - cy);
-    if (startDist < 1) return;
+
+    const isRightAnchor = corner === "tl" || corner === "bl";
+    const isBottomAnchor = corner === "tl" || corner === "tr";
+    const anchorX =
+      hostRect.left + clipRect.x + (isRightAnchor ? clipRect.w : 0);
+    const anchorY =
+      hostRect.top + clipRect.y + (isBottomAnchor ? clipRect.h : 0);
+    const dirX: 1 | -1 = isRightAnchor ? -1 : 1;
+    const dirY: 1 | -1 = isBottomAnchor ? -1 : 1;
+
+    // Base content size at scale = 1. Derived from the current
+    // post-transform content rect: contentW = baseW × currentScale.
+    const baseW = clipRect.w / ctx.transform.scale;
+    const baseH = clipRect.h / ctx.transform.scale;
+    if (baseW < 1 || baseH < 1) return;
+
+    const canvasCenterX = hostRect.left + outRect.x + outRect.w / 2;
+    const canvasCenterY = hostRect.top + outRect.y + outRect.h / 2;
+
     const target = this.handles[corner];
     target.setPointerCapture(e.pointerId);
     this.capturedPointerId = e.pointerId;
     this.drag = {
       kind: "scale",
       clipId: ctx.clip.id,
-      centerX: cx,
-      centerY: cy,
-      startDistance: startDist,
-      startScale: ctx.transform.scale,
+      anchorX,
+      anchorY,
+      dirX,
+      dirY,
+      baseW,
+      baseH,
+      canvasCenterX,
+      canvasCenterY,
     };
     this.editor.beginInteraction();
     target.addEventListener("pointermove", this.onPointerMove);
@@ -239,19 +265,43 @@ export class KeyframeOverlay {
         Math.round(snapped.panY),
       );
     } else {
-      const dist = Math.hypot(
-        e.clientX - this.drag.centerX,
-        e.clientY - this.drag.centerY,
-      );
-      const ratio = dist / this.drag.startDistance;
-      const next = Math.max(
-        0.05,
-        Math.min(16, this.drag.startScale * ratio),
-      );
+      // Corner resize with the OPPOSITE corner anchored. Aspect is
+      // locked (we only have one `scale` value); the dragged corner
+      // tracks the larger of the two cursor offsets so the clip
+      // always grows along the dominant axis the user is pulling.
+      // Cursor offset along each axis, clamped to the original
+      // direction so dragging past the anchor just shrinks instead
+      // of mirror-flipping the clip.
+      const offsetX = (e.clientX - this.drag.anchorX) * this.drag.dirX;
+      const offsetY = (e.clientY - this.drag.anchorY) * this.drag.dirY;
+      const wConstrained = Math.max(0, offsetX);
+      const hConstrained = Math.max(0, offsetY);
+      const sx = wConstrained / this.drag.baseW;
+      const sy = hConstrained / this.drag.baseH;
+      const next = Math.max(0.05, Math.min(16, Math.max(sx, sy)));
+      const newW = this.drag.baseW * next;
+      const newH = this.drag.baseH * next;
+      // New clip center sits halfway between anchor and the new
+      // (now-shifted) dragged corner — that keeps the anchor pinned
+      // while the opposite side scales to follow the cursor.
+      const newCenterX = this.drag.anchorX + this.drag.dirX * (newW / 2);
+      const newCenterY = this.drag.anchorY + this.drag.dirY * (newH / 2);
+      const newPanX = newCenterX - this.drag.canvasCenterX;
+      const newPanY = newCenterY - this.drag.canvasCenterY;
       this.editor.setValueAtPlayhead(
         this.drag.clipId,
         "scale",
         Math.round(next * 100) / 100,
+      );
+      this.editor.setValueAtPlayhead(
+        this.drag.clipId,
+        "panX",
+        Math.round(newPanX),
+      );
+      this.editor.setValueAtPlayhead(
+        this.drag.clipId,
+        "panY",
+        Math.round(newPanY),
       );
     }
   };
