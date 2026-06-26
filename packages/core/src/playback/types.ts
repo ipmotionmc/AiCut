@@ -57,8 +57,14 @@ export interface PlaybackEngine {
    * This rect does NOT change with the active transform — it's
    * the stage. The overlay's dashed border is drawn here. Coords
    * relative to `opts.host`. Returns null when no clip is active.
+   *
+   * `clipId` (optional, PiP-aware engines): identify a specific
+   * active clip. Lower-track PiP clips share the same canvas as
+   * the primary, so this still returns the canvas rect — but the
+   * argument keeps the API symmetric with `getFrameRect` and makes
+   * intent explicit at call sites.
    */
-  getOutputFrameRect?(): { x: number; y: number; w: number; h: number } | null;
+  getOutputFrameRect?(clipId?: string): { x: number; y: number; w: number; h: number } | null;
 
   /**
    * Optional. Return the screen-space CSS-pixel rectangle of the
@@ -70,8 +76,15 @@ export interface PlaybackEngine {
    *
    * Returns null when no clip is active. Engines that don't expose
    * this leave keyframe handles attached to the output frame instead.
+   *
+   * `clipId` (optional): with PiP / multi-track, the overlay needs
+   * the rect of the SELECTED clip rather than the primary track's
+   * — that's how the dashed frame + corner handles latch onto a
+   * picture-in-picture overlay when the user selects it. Engines
+   * that don't support PiP can ignore the argument and always
+   * return the single active clip's rect.
    */
-  getFrameRect?(): { x: number; y: number; w: number; h: number } | null;
+  getFrameRect?(clipId?: string): { x: number; y: number; w: number; h: number } | null;
 
   /**
    * Optional. Toggle multi-track compositing. When `true`, the engine

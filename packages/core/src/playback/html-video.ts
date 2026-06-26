@@ -142,23 +142,42 @@ export class HtmlVideoEngine implements PlaybackEngine {
    * to. Independent of the keyframe transform. Used by the overlay to
    * draw the dashed border at a stable position.
    */
-  getOutputFrameRect():
-    | { x: number; y: number; w: number; h: number }
-    | null {
+  getOutputFrameRect(
+    _clipId?: string,
+  ): { x: number; y: number; w: number; h: number } | null {
+    // Output canvas is shared across all clips on the same paint —
+    // `_clipId` is for API symmetry with `getFrameRect`.
     return this.baseFrameRect();
   }
 
   /**
    * The CONTENT frame — where the transformed video pixels actually
    * land. Equal to the output frame when transform is identity; may
-   * extend outside (zoom in) or fit inside (zoom out) when not. Uses
-   * the "primary" (top track) active clip's transform — keyframe
-   * editing on lower tracks is out of scope for v1 PiP.
+   * extend outside (zoom in) or fit inside (zoom out) when not.
+   *
+   * `clipId` (PiP): the overlay passes the selected clip so the
+   * dashed border + corner handles latch onto a picture-in-picture
+   * overlay instead of always tracking the primary. When omitted,
+   * defaults to the primary (= bottom track) clip.
    */
-  getFrameRect(): { x: number; y: number; w: number; h: number } | null {
+  getFrameRect(
+    clipId?: string,
+  ): { x: number; y: number; w: number; h: number } | null {
     const base = this.baseFrameRect();
     if (!base) return null;
-    const clip = this.primaryActiveClip();
+    let clip: Clip | null = null;
+    if (clipId) {
+      // Only honor the request when the clip is currently active
+      // (selecting a non-active clip falls back to the primary so
+      // the overlay doesn't ghost over an empty wrapper).
+      for (const cId of this.activeByTrack.values()) {
+        if (cId === clipId) {
+          clip = this.clipById(cId);
+          break;
+        }
+      }
+    }
+    if (!clip) clip = this.primaryActiveClip();
     if (!clip) return base;
     const t = getEffectiveTransform(clip, this.timeMs - clip.start);
     const cx = base.x + base.w / 2 + t.panX;
@@ -240,22 +259,21 @@ export class HtmlVideoEngine implements PlaybackEngine {
       i++;
     }
 
-    const totalTracks = this.project.tracks.length;
     for (const [sourceId, src] of this.sources) {
       const entry = activeBySource.get(sourceId);
       if (entry) {
         const { trackIndex, clip } = entry;
         // Wrapper covers the full output canvas; overflow: hidden
         // clips any transform-overflow at the output bounds.
+        // Z-order convention: higher track index = higher z. That's
+        // the Premiere / After Effects model and what users expect
+        // when they upload PiP overlays onto track 1 / 2 / etc.
         Object.assign(src.wrapper.style, {
           left: `${outRect.x}px`,
           top: `${outRect.y}px`,
           width: `${outRect.w}px`,
           height: `${outRect.h}px`,
-          // Lower-index tracks paint over higher-index tracks
-          // (matches the timeline's top-to-bottom visual order =
-          // top-to-bottom z-order convention).
-          zIndex: String(totalTracks - trackIndex),
+          zIndex: String(trackIndex + 1),
         });
         const t = getEffectiveTransform(clip, this.timeMs - clip.start);
         // Identity = video fills wrapper exactly. Pan + scale move
@@ -433,21 +451,22 @@ export class HtmlVideoEngine implements PlaybackEngine {
           break;
         }
       }
-      // When PiP is off, only consider the first video track.
-      if (!this.pictureInPictureEnabled) break;
+      // PiP off: stop AFTER we've found one active clip — but keep
+      // walking if the first track was empty so the user still sees
+      // a lower-track clip even with PiP disabled.
+      if (!this.pictureInPictureEnabled && result.size > 0) break;
     }
     return result;
   }
 
-  /** Active clip on the primary (top) video track, if any. */
+  /** First track-in-order with an active clip — the "primary" =
+   *  canvas reference + audio source. Track `0` wins when it has
+   *  content; otherwise the next video track with a clip. */
   private primaryActiveClip(): Clip | null {
     for (const track of this.project.tracks) {
       if (track.kind !== "video") continue;
       const cid = this.activeByTrack.get(track.id);
       if (cid) return this.clipById(cid);
-      // Stop at the first video track regardless of whether it has an
-      // active clip — that track is the primary.
-      return null;
     }
     return null;
   }

@@ -57,20 +57,25 @@ export class CanvasCompositorEngine implements PlaybackEngine {
   private lastFrameTs = 0;
   private paintedFrames = 0;
   private pictureInPictureEnabled = false;
-  /** Output frame rect (no transform) — fixed bounds. */
+  /** Output canvas rect (no transform) — same for every clip on
+   *  the same paint pass. */
   private lastOutputRect: {
     x: number;
     y: number;
     w: number;
     h: number;
   } | null = null;
-  /** Post-transform content rect. */
-  private lastFrameRect: {
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  } | null = null;
+  /** Post-transform content rect, keyed by clipId. With PiP on a
+   *  paint pass records one entry per painted clip; the overlay can
+   *  ask for any specific one (the SELECTED clip when PiP is on,
+   *  the primary clip otherwise). */
+  private frameRectsByClip = new Map<
+    string,
+    { x: number; y: number; w: number; h: number }
+  >();
+  /** Primary (top-track) clip id from the last paint — used as the
+   *  fallback for `getFrameRect()` when no clipId is passed. */
+  private primaryClipIdLastPaint: string | null = null;
 
   onTimeUpdate?: (ms: Ms) => void;
   onEnded?: () => void;
@@ -294,17 +299,30 @@ export class CanvasCompositorEngine implements PlaybackEngine {
           break;
         }
       }
-      if (!this.pictureInPictureEnabled) break;
+      // PiP off: stop AFTER we've found one active clip — but keep
+      // walking if the first track was empty so the user still sees
+      // a lower-track clip even with PiP disabled. Without this, a
+      // gap on track 0 would black the preview while track 1 had
+      // content.
+      if (!this.pictureInPictureEnabled && result.size > 0) break;
     }
     return result;
   }
 
+  /**
+   * The "primary" clip = the bottom-most active clip = the main
+   * canvas reference + audio source. It's track `0` when track `0`
+   * has content; if that track is empty at the playhead, fall
+   * through to the next video track with a clip. (Without that
+   * fall-through, dragging the only track-0 clip out of the
+   * playhead range blanked the preview even though a lower-track
+   * clip was still active.)
+   */
   private primaryActiveClip(): Clip | null {
     for (const track of this.project.tracks) {
       if (track.kind !== "video") continue;
       const cid = this.activeByTrack.get(track.id);
       if (cid) return this.clipById(cid);
-      return null;
     }
     return null;
   }
@@ -476,8 +494,9 @@ export class CanvasCompositorEngine implements PlaybackEngine {
       primaryVideo.videoWidth === 0 ||
       primaryVideo.videoHeight === 0
     ) {
-      this.lastFrameRect = null;
+      this.frameRectsByClip.clear();
       this.lastOutputRect = null;
+      this.primaryClipIdLastPaint = null;
       this.updateBadge();
       return;
     }
@@ -496,11 +515,15 @@ export class CanvasCompositorEngine implements PlaybackEngine {
     const ccx = cw / 2;
     const ccy = ch / 2;
 
-    // Composite in reverse track order so the lowest track paints
-    // first and track 0 paints last (on top). `activeByTrack` is
-    // keyed by trackId, so iterate the project's track list to
-    // preserve order.
-    for (let i = this.project.tracks.length - 1; i >= 0; i--) {
+    // Z-order convention: tracks[0] paints FIRST (bottom) and the
+    // last track paints LAST (top). This matches Premiere / After
+    // Effects — uploads land on the first empty track, so the second
+    // upload (track 1) naturally becomes the PiP overlay sitting on
+    // top of the track-0 background. While painting, also cache each
+    // clip's post-transform content rect so the overlay can latch
+    // onto whichever clip the user selects.
+    this.frameRectsByClip.clear();
+    for (let i = 0; i < this.project.tracks.length; i++) {
       const track = this.project.tracks[i]!;
       if (track.kind !== "video") continue;
       const clipId = this.activeByTrack.get(track.id);
@@ -525,47 +548,48 @@ export class CanvasCompositorEngine implements PlaybackEngine {
       this.ctx.scale(t.scale, t.scale);
       this.ctx.drawImage(v, -vidW / 2, -vidH / 2, vidW, vidH);
       this.ctx.restore();
+
+      // Cache this clip's content rect (CSS px) for the overlay.
+      const cssCx = cw / (2 * dpr) + t.panX;
+      const cssCy = ch / (2 * dpr) + t.panY;
+      const cssW = (vidW * t.scale) / dpr;
+      const cssH = (vidH * t.scale) / dpr;
+      this.frameRectsByClip.set(clip.id, {
+        x: cssCx - cssW / 2,
+        y: cssCy - cssH / 2,
+        w: cssW,
+        h: cssH,
+      });
     }
     this.paintedFrames += 1;
+    this.primaryClipIdLastPaint = primaryClip.id;
 
-    // Overlay rects reflect the primary clip only — keyframe handles
-    // on lower-track PiP clips are out of scope for v1.
-    const primaryT = getEffectiveTransform(
-      primaryClip,
-      this.timeMs - primaryClip.start,
-    );
-    const pvw = primaryVideo.videoWidth;
-    const pvh = primaryVideo.videoHeight;
-    const pvContain = Math.min(dw / pvw, dh / pvh);
-    const pvidW = pvw * pvContain;
-    const pvidH = pvh * pvContain;
     this.lastOutputRect = {
       x: outX / dpr,
       y: outY / dpr,
       w: dw / dpr,
       h: dh / dpr,
     };
-    const cssCx = cw / (2 * dpr) + primaryT.panX;
-    const cssCy = ch / (2 * dpr) + primaryT.panY;
-    const cssW = (pvidW * primaryT.scale) / dpr;
-    const cssH = (pvidH * primaryT.scale) / dpr;
-    this.lastFrameRect = {
-      x: cssCx - cssW / 2,
-      y: cssCy - cssH / 2,
-      w: cssW,
-      h: cssH,
-    };
     this.updateBadge();
   }
 
-  getOutputFrameRect():
-    | { x: number; y: number; w: number; h: number }
-    | null {
+  getOutputFrameRect(
+    _clipId?: string,
+  ): { x: number; y: number; w: number; h: number } | null {
+    // The output canvas is the same for every clip on the same paint
+    // pass, so `_clipId` is just for API symmetry.
     return this.lastOutputRect;
   }
 
-  getFrameRect(): { x: number; y: number; w: number; h: number } | null {
-    return this.lastFrameRect;
+  getFrameRect(
+    clipId?: string,
+  ): { x: number; y: number; w: number; h: number } | null {
+    // PiP-aware: when a specific clip is asked about, return that
+    // clip's cached rect. Without a clipId, fall back to the primary
+    // (= bottom track) — the historical single-clip behaviour.
+    const id = clipId ?? this.primaryClipIdLastPaint;
+    if (id == null) return null;
+    return this.frameRectsByClip.get(id) ?? null;
   }
 
   private updateBadge(): void {

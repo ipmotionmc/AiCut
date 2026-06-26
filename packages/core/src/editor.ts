@@ -1167,11 +1167,19 @@ export class Editor implements EditorApi {
    * Null when no clip is active, the engine doesn't expose
    * `getFrameRect`, or the rect isn't computed yet. Used by the
    * library's keyframe-editing overlay.
+   *
+   * When PiP is on and a non-primary clip is selected, returns
+   * THAT clip's rect — that's how the overlay's dashed border +
+   * corner handles latch onto a picture-in-picture overlay. With
+   * PiP off (or nothing selected) falls back to the primary clip.
    */
   getActiveFrameRect():
     | { x: number; y: number; w: number; h: number }
     | null {
-    return this.engine.getFrameRect?.() ?? null;
+    const selected = this.pictureInPictureEnabled
+      ? (this.selectedClipId ?? undefined)
+      : undefined;
+    return this.engine.getFrameRect?.(selected) ?? null;
   }
 
   /**
@@ -1184,7 +1192,10 @@ export class Editor implements EditorApi {
   getActiveOutputFrameRect():
     | { x: number; y: number; w: number; h: number }
     | null {
-    return this.engine.getOutputFrameRect?.() ?? null;
+    const selected = this.pictureInPictureEnabled
+      ? (this.selectedClipId ?? undefined)
+      : undefined;
+    return this.engine.getOutputFrameRect?.(selected) ?? null;
   }
 
   setKeyframesEnabled(enabled: boolean): void {
