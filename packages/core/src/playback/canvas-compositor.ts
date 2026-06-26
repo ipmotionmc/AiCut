@@ -318,6 +318,27 @@ export class CanvasCompositorEngine implements PlaybackEngine {
    * playhead range blanked the preview even though a lower-track
    * clip was still active.)
    */
+  /**
+   * Dims of the canvas-anchor clip — the first clip (by start time)
+   * on the first video track. Stable across playback so the canvas
+   * doesn't resize at clip boundaries. Returns null when nothing's
+   * decoded yet.
+   */
+  private canvasReferenceDims(): [number, number] | null {
+    for (const track of this.project.tracks) {
+      if (track.kind !== "video") continue;
+      let earliest: { c: { sourceId: string; start: number } } | null = null;
+      for (const c of track.clips) {
+        if (!earliest || c.start < earliest.c.start) earliest = { c };
+      }
+      if (!earliest) continue;
+      const v = this.videos.get(earliest.c.sourceId);
+      if (!v || v.videoWidth === 0 || v.videoHeight === 0) continue;
+      return [v.videoWidth, v.videoHeight];
+    }
+    return null;
+  }
+
   private primaryActiveClip(): Clip | null {
     for (const track of this.project.tracks) {
       if (track.kind !== "video") continue;
@@ -501,11 +522,26 @@ export class CanvasCompositorEngine implements PlaybackEngine {
       return;
     }
 
-    // Canvas size from Project.aspect (or primary video's intrinsic
-    // aspect when null).
+    // Canvas size from Project.aspect when explicitly set; otherwise
+    // anchored to the first clip on the first video track (NOT the
+    // currently-active primary clip). That way the canvas stays
+    // stable across clip boundaries — same posture as CapCut's
+    // "Original" aspect, which locks to the first clip. Falls back
+    // to the active clip's dims when no anchor has decoded yet.
     const projAspect = parseAspect(this.project.aspect);
-    const [aw, ah] =
-      projAspect ?? [primaryVideo.videoWidth, primaryVideo.videoHeight];
+    let aw: number;
+    let ah: number;
+    if (projAspect) {
+      [aw, ah] = projAspect;
+    } else {
+      const ref = this.canvasReferenceDims();
+      if (ref) {
+        [aw, ah] = ref;
+      } else {
+        aw = primaryVideo.videoWidth;
+        ah = primaryVideo.videoHeight;
+      }
+    }
     const canvasScale = Math.min(cw / aw, ch / ah);
     const dw = aw * canvasScale;
     const dh = ah * canvasScale;

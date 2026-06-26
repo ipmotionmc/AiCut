@@ -191,31 +191,71 @@ export class HtmlVideoEngine implements PlaybackEngine {
    * Untransformed output-canvas rect.
    *
    * Source of truth: `Project.aspect` when the user picked a ratio
-   * via the built-in picker. When `Project.aspect` is null the canvas
-   * falls back to the primary (top) active clip's source video
-   * intrinsic aspect.
+   * via the built-in picker. When it's null we fall back to a
+   * STABLE reference — the first clip in the first video track,
+   * regardless of playhead — so the canvas stays anchored as
+   * playback crosses clip boundaries. Picks up the active primary
+   * clip's dims as a last resort when the reference video hasn't
+   * loaded metadata yet.
+   *
+   * Mirrors CapCut: "Original" means "lock to the first clip's
+   * aspect", not "follow whatever's playing right now". Without
+   * this, the canvas would visibly jump every time the playhead
+   * crossed from track-0's clip 1 to clip 2.
    */
   private baseFrameRect():
     | { x: number; y: number; w: number; h: number }
     | null {
-    const clip = this.primaryActiveClip();
-    if (!clip) return null;
-    const s = this.sources.get(clip.sourceId);
-    if (!s) return null;
-    const v = s.video;
-    if (v.videoWidth === 0 || v.videoHeight === 0) return null;
     const hostRect = this.host.getBoundingClientRect();
     const cw = hostRect.width;
     const ch = hostRect.height;
     if (cw === 0 || ch === 0) return null;
-    // Resolve the target aspect: project.aspect overrides; otherwise
-    // the source video's intrinsic aspect.
+
+    let aw: number | null = null;
+    let ah: number | null = null;
     const aspect = parseAspect(this.project.aspect);
-    const [aw, ah] = aspect ?? [v.videoWidth, v.videoHeight];
+    if (aspect) {
+      [aw, ah] = aspect;
+    } else {
+      const ref = this.canvasReferenceDims();
+      if (ref) [aw, ah] = ref;
+    }
+    if (aw == null || ah == null) {
+      // Last resort — use whatever clip is currently primary so we
+      // still produce a rect during the brief window before any
+      // metadata has resolved.
+      const clip = this.primaryActiveClip();
+      if (!clip) return null;
+      const v = this.sources.get(clip.sourceId)?.video;
+      if (!v || v.videoWidth === 0 || v.videoHeight === 0) return null;
+      aw = v.videoWidth;
+      ah = v.videoHeight;
+    }
     const scale = Math.min(cw / aw, ch / ah);
     const w = aw * scale;
     const h = ah * scale;
     return { x: (cw - w) / 2, y: (ch - h) / 2, w, h };
+  }
+
+  /**
+   * Dims of the canvas-anchor clip — the first clip (by start time)
+   * on the first video track. Stable across playback so the canvas
+   * doesn't resize at clip boundaries. Returns null when nothing's
+   * decoded yet.
+   */
+  private canvasReferenceDims(): [number, number] | null {
+    for (const track of this.project.tracks) {
+      if (track.kind !== "video") continue;
+      let earliest: { c: { sourceId: string; start: number } } | null = null;
+      for (const c of track.clips) {
+        if (!earliest || c.start < earliest.c.start) earliest = { c };
+      }
+      if (!earliest) continue;
+      const v = this.sources.get(earliest.c.sourceId)?.video;
+      if (!v || v.videoWidth === 0 || v.videoHeight === 0) continue;
+      return [v.videoWidth, v.videoHeight];
+    }
+    return null;
   }
 
   /**
