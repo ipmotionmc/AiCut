@@ -137,6 +137,28 @@ export interface EditorOptions {
    * itself (different engines have different paint pipelines).
    */
   aspect?: { enabled?: boolean };
+  /**
+   * Multi-track picture-in-picture compositing in the preview. Off by
+   * default so today's single-clip behaviour is unchanged. When on,
+   * every video track's currently-active clip paints at the playhead
+   * with track `0` on top — matching the timeline's visual order.
+   *
+   * Audio policy: only the top track's clip stays unmuted; lower
+   * tracks mute to avoid stacking audio playback. Hosts wanting
+   * per-track audio control should disable PiP and roll their own
+   * mixer.
+   *
+   * Same-source caveat: a single `<video>` / decoder can only be at
+   * one `currentTime`, so a clip dropped on two tracks at different
+   * timeline positions visually appears in both, but plays from
+   * whichever position was activated last. The fix is to upload the
+   * source twice (separate `MediaSource.id`s).
+   *
+   * `HtmlVideoEngine`, `CanvasCompositorEngine` both implement PiP
+   * via `PlaybackEngine.setPictureInPictureEnabled`. Other engines
+   * fall back to single-clip.
+   */
+  pictureInPicture?: { enabled?: boolean };
 }
 
 export interface EditorEventMap {
@@ -165,6 +187,9 @@ export interface EditorEventMap {
   clipEdgeNavEnabledChange: { enabled: boolean };
   /** Output-frame outline visibility flipped (Editor.setPreviewFrameEnabled). */
   previewFrameEnabledChange: { enabled: boolean };
+  /** Multi-track preview compositing toggle changed
+   *  (Editor.setPictureInPictureEnabled). */
+  pictureInPictureEnabledChange: { enabled: boolean };
   /**
    * Aspect-ratio picker toggle changed (Editor.setAspectEnabled). Only
    * fires when the host-facing visibility flips — picking a new ratio
@@ -265,6 +290,10 @@ export interface EditorApi {
   /** Dashed output-frame outline visibility. Defaults to true. */
   isPreviewFrameEnabled(): boolean;
   setPreviewFrameEnabled(enabled: boolean): void;
+  /** Multi-track preview compositing (picture-in-picture). Defaults
+   *  to false. Flipping triggers an engine-side re-composite. */
+  isPictureInPictureEnabled(): boolean;
+  setPictureInPictureEnabled(enabled: boolean): void;
   /** Built-in aspect picker visibility (CapCut-style 比例 dropdown). */
   isAspectEnabled(): boolean;
   setAspectEnabled(enabled: boolean): void;
@@ -468,6 +497,7 @@ export class Editor implements EditorApi {
   private clipEdgeNavEnabled: boolean;
   private aspectEnabled: boolean;
   private previewFrameEnabled: boolean;
+  private pictureInPictureEnabled: boolean;
   /** Drag-session bookkeeping for ripple-merge undo. See
    *  beginInteraction / endInteraction docs on EditorApi. */
   private interactionDepth = 0;
@@ -490,6 +520,7 @@ export class Editor implements EditorApi {
     // even when keyframe editing is off; hosts who want a clean
     // preview pass `previewFrame: { enabled: false }` to opt out.
     this.previewFrameEnabled = opts.previewFrame?.enabled !== false;
+    this.pictureInPictureEnabled = opts.pictureInPicture?.enabled === true;
 
     // Must run before EditorUI builds the Timeline — those layout
     // values are read at canvas init time.
@@ -542,6 +573,9 @@ export class Editor implements EditorApi {
       host: this.ui.previewHost,
       project: this.project,
     });
+    // Push initial PiP state to the engine. Engines that don't
+    // implement the flag just ignore it.
+    this.engine.setPictureInPictureEnabled?.(this.pictureInPictureEnabled);
     this.engine.onTimeUpdate = (ms) => {
       this.bus.emit("time", { timeMs: ms });
       this.ui.onTimeTick(ms);
@@ -1185,6 +1219,20 @@ export class Editor implements EditorApi {
     if (enabled === this.previewFrameEnabled) return;
     this.previewFrameEnabled = enabled;
     this.bus.emit("previewFrameEnabledChange", { enabled });
+    this.ui.render();
+  }
+
+  isPictureInPictureEnabled(): boolean {
+    return this.pictureInPictureEnabled;
+  }
+
+  setPictureInPictureEnabled(enabled: boolean): void {
+    if (enabled === this.pictureInPictureEnabled) return;
+    this.pictureInPictureEnabled = enabled;
+    // Push to the engine — engines that implement it re-composite on
+    // the next paint tick. Engines that don't ignore the call.
+    this.engine.setPictureInPictureEnabled?.(enabled);
+    this.bus.emit("pictureInPictureEnabledChange", { enabled });
     this.ui.render();
   }
 

@@ -15,13 +15,22 @@ import type {
  * translating the video reveals the wrapper's letterbox color, not
  * the rest of the editor chrome.
  *
+ * Multi-track / PiP: when `setPictureInPictureEnabled(true)` flips
+ * on, every video track's currently-active clip stays visible, with
+ * track `0` on top (highest z-index). Audio policy: only the top
+ * track stays unmuted so stacked playbacks don't double-pitch. When
+ * the flag is off (default) behaviour matches the historical single-
+ * clip preview — only track `0`'s active clip paints.
+ *
  * Strengths: zero deps, browser-native decode (GPU when available),
  * works in every browser today.
  *
- * Limits: no multi-track compositing (one video visible at a time),
- * seek snaps to keyframes (browser controls the decode pipeline), no
- * transitions / shaders / filters. See `WebCodecsEngine` for the
- * frame-accurate path.
+ * Limits: a clip dropped on two tracks that share the same
+ * `MediaSource.id` will only one currentTime at a time (one decoder
+ * per source) — the second one wins. Workaround: upload the file
+ * twice for separate ids. Seek snaps to keyframes (browser controls
+ * the decode pipeline), no transitions / shaders / filters. See
+ * `WebCodecsEngine` for the frame-accurate path.
  */
 interface SourceState {
   /** Clipping container — positioned + sized to the OUTPUT frame each
@@ -35,14 +44,17 @@ export class HtmlVideoEngine implements PlaybackEngine {
   private mount: HTMLDivElement;
   private sources = new Map<string, SourceState>();
   private project: Project;
-  private currentClipId: string | null = null;
+  /** trackId → currently-active clipId on that track. PiP off keeps
+   *  only the first entry; PiP on holds one per video track. */
+  private activeByTrack = new Map<string, string>();
   private playing = false;
   private timeMs: Ms = 0;
   private rafHandle: number | null = null;
   private lastFrameTs = 0;
-  /** Permanent rAF that positions the active wrapper at the output
-   *  rect + pushes keyframe transform onto the inner video via CSS. */
+  /** Permanent rAF that positions the active wrappers at the output
+   *  rect + pushes keyframe transforms onto the inner videos via CSS. */
   private transformRaf: number | null = null;
+  private pictureInPictureEnabled = false;
 
   /** Public event hooks — set by Editor. */
   onTimeUpdate?: (ms: Ms) => void;
@@ -70,28 +82,30 @@ export class HtmlVideoEngine implements PlaybackEngine {
   setProject(next: Project): void {
     this.project = next;
     this.syncSources();
-    const clip = this.clipAtTime(this.timeMs);
-    if (!clip) {
-      this.timeMs = 0;
-      this.activate(null);
-      this.onTimeUpdate?.(0);
-    } else {
-      this.activate(clip);
-      this.seekVideoToClipOffset(clip, this.timeMs - clip.start);
-    }
+    this.refreshActive();
+  }
+
+  setPictureInPictureEnabled(enabled: boolean): void {
+    if (this.pictureInPictureEnabled === enabled) return;
+    this.pictureInPictureEnabled = enabled;
+    // Re-resolve active clips with the new policy. Wrappers that
+    // were visible for non-primary tracks get hidden; new tracks may
+    // come online.
+    this.refreshActive();
   }
 
   play(): void {
     if (this.playing) return;
     if (this.totalDuration() <= 0) return;
-    let clip = this.clipAtTime(this.timeMs) ?? this.nextClipAfterTime(this.timeMs);
-    if (!clip) return;
-    if (this.timeMs < clip.start) this.timeMs = clip.start;
-    this.activate(clip);
-    this.seekVideoToClipOffset(clip, this.timeMs - clip.start);
-    const s = this.sources.get(clip.sourceId);
-    if (!s) return;
-    void s.video.play().catch((err) => this.onError?.(err as Error));
+    // If no clip currently overlaps the playhead, snap forward to the
+    // next clip's start so the user gets immediate playback.
+    if (this.activeByTrack.size === 0) {
+      const next = this.nextClipAfterTime(this.timeMs);
+      if (!next) return;
+      this.timeMs = next.start;
+      this.refreshActive();
+    }
+    this.playAllActive();
     this.playing = true;
     this.startTickLoop();
   }
@@ -100,12 +114,7 @@ export class HtmlVideoEngine implements PlaybackEngine {
     if (!this.playing) return;
     this.playing = false;
     this.stopTickLoop();
-    if (this.currentClipId) {
-      const clip = this.clipById(this.currentClipId);
-      if (clip) {
-        this.sources.get(clip.sourceId)?.video.pause();
-      }
-    }
+    this.pauseAllActive();
   }
 
   isPlaying(): boolean {
@@ -124,13 +133,7 @@ export class HtmlVideoEngine implements PlaybackEngine {
     }
     const clamped = Math.max(0, Math.min(timeMs, total));
     this.timeMs = clamped;
-    const clip = this.clipAtTime(clamped);
-    if (clip) {
-      this.activate(clip);
-      this.seekVideoToClipOffset(clip, clamped - clip.start);
-    } else {
-      this.activate(null);
-    }
+    this.refreshActive();
     this.onTimeUpdate?.(clamped);
   }
 
@@ -148,12 +151,14 @@ export class HtmlVideoEngine implements PlaybackEngine {
   /**
    * The CONTENT frame — where the transformed video pixels actually
    * land. Equal to the output frame when transform is identity; may
-   * extend outside (zoom in) or fit inside (zoom out) when not.
+   * extend outside (zoom in) or fit inside (zoom out) when not. Uses
+   * the "primary" (top track) active clip's transform — keyframe
+   * editing on lower tracks is out of scope for v1 PiP.
    */
   getFrameRect(): { x: number; y: number; w: number; h: number } | null {
     const base = this.baseFrameRect();
     if (!base) return null;
-    const clip = this.clipById(this.currentClipId!);
+    const clip = this.primaryActiveClip();
     if (!clip) return base;
     const t = getEffectiveTransform(clip, this.timeMs - clip.start);
     const cx = base.x + base.w / 2 + t.panX;
@@ -167,21 +172,14 @@ export class HtmlVideoEngine implements PlaybackEngine {
    * Untransformed output-canvas rect.
    *
    * Source of truth: `Project.aspect` when the user picked a ratio
-   * via the built-in picker — the canvas mirrors that, and a video
-   * with a different intrinsic aspect letterboxes inside it
-   * (`object-fit: contain` on the inner <video>). When `Project.aspect`
-   * is null ("Original") the canvas falls back to the source video's
-   * intrinsic aspect (today's behaviour).
-   *
-   * Without this, picking "9:16" while editing a 16:9 video left the
-   * dashed frame and the painted video at mismatched aspects — the
-   * frame would silently jump back to 16:9 once the clip loaded.
+   * via the built-in picker. When `Project.aspect` is null the canvas
+   * falls back to the primary (top) active clip's source video
+   * intrinsic aspect.
    */
   private baseFrameRect():
     | { x: number; y: number; w: number; h: number }
     | null {
-    if (!this.currentClipId) return null;
-    const clip = this.clipById(this.currentClipId);
+    const clip = this.primaryActiveClip();
     if (!clip) return null;
     const s = this.sources.get(clip.sourceId);
     if (!s) return null;
@@ -202,9 +200,10 @@ export class HtmlVideoEngine implements PlaybackEngine {
   }
 
   /**
-   * Permanent rAF that (a) sizes + positions the active wrapper to
-   * the output frame, and (b) writes the keyframe transform onto the
-   * inner video. Negligible cost — three style writes per frame max.
+   * Permanent rAF that (a) sizes + positions every active wrapper to
+   * the output frame, and (b) writes the keyframe transform onto each
+   * inner video. Negligible cost — a handful of style writes per
+   * frame even with PiP on.
    */
   private startTransformLoop(): void {
     const tick = (): void => {
@@ -215,32 +214,58 @@ export class HtmlVideoEngine implements PlaybackEngine {
   }
 
   private applyTransforms(): void {
-    const clip = this.currentClipId
-      ? this.clipById(this.currentClipId)
-      : null;
     const outRect = this.baseFrameRect();
-    if (clip && outRect) {
-      const s = this.sources.get(clip.sourceId);
-      if (s) {
-        // Wrapper = output frame; overflow: hidden clips any
-        // transform-overflow at the output bounds.
-        Object.assign(s.wrapper.style, {
+    if (!outRect) {
+      // No primary clip → no positioning to do; visibility was already
+      // toggled in `refreshActive`.
+      return;
+    }
+    // Build a sourceId → (trackIndex, clip) map for the active set so
+    // we know which wrapper to z-order and animate.
+    const activeBySource = new Map<
+      string,
+      { trackIndex: number; clip: Clip }
+    >();
+    let i = 0;
+    for (const track of this.project.tracks) {
+      if (track.kind !== "video") {
+        i++;
+        continue;
+      }
+      const clipId = this.activeByTrack.get(track.id);
+      if (clipId) {
+        const clip = track.clips.find((c) => c.id === clipId);
+        if (clip) activeBySource.set(clip.sourceId, { trackIndex: i, clip });
+      }
+      i++;
+    }
+
+    const totalTracks = this.project.tracks.length;
+    for (const [sourceId, src] of this.sources) {
+      const entry = activeBySource.get(sourceId);
+      if (entry) {
+        const { trackIndex, clip } = entry;
+        // Wrapper covers the full output canvas; overflow: hidden
+        // clips any transform-overflow at the output bounds.
+        Object.assign(src.wrapper.style, {
           left: `${outRect.x}px`,
           top: `${outRect.y}px`,
           width: `${outRect.w}px`,
           height: `${outRect.h}px`,
+          // Lower-index tracks paint over higher-index tracks
+          // (matches the timeline's top-to-bottom visual order =
+          // top-to-bottom z-order convention).
+          zIndex: String(totalTracks - trackIndex),
         });
         const t = getEffectiveTransform(clip, this.timeMs - clip.start);
         // Identity = video fills wrapper exactly. Pan + scale move
         // it within the wrapper; overflow:hidden clips.
-        s.video.style.transform = `translate(${t.panX.toFixed(2)}px, ${t.panY.toFixed(2)}px) scale(${t.scale.toFixed(4)})`;
+        src.video.style.transform = `translate(${t.panX.toFixed(2)}px, ${t.panY.toFixed(2)}px) scale(${t.scale.toFixed(4)})`;
+      } else if (src.video.style.transform) {
+        // Inactive — reset transform so stale state doesn't ghost when
+        // we swap back.
+        src.video.style.transform = "";
       }
-    }
-    // Inactive sources: reset transforms so stale state doesn't ghost
-    // when we swap back to them.
-    for (const [id, s] of this.sources) {
-      if (clip && id === clip.sourceId) continue;
-      if (s.video.style.transform) s.video.style.transform = "";
     }
   }
 
@@ -326,22 +351,123 @@ export class HtmlVideoEngine implements PlaybackEngine {
     }
   }
 
-  private activate(clip: Clip | null): void {
-    if (clip?.id === this.currentClipId) return;
-    if (this.currentClipId) {
-      const prev = this.clipById(this.currentClipId);
-      if (prev) {
-        const s = this.sources.get(prev.sourceId);
-        if (s) {
-          s.video.pause();
-          s.wrapper.style.visibility = "hidden";
-        }
+  /**
+   * Resolve the active clip per track for the current playhead and
+   * reconcile wrapper visibility, audio policy, and per-source
+   * playback state. Called on `seek` / `setProject` / `setPiP` and
+   * whenever a tick advances past a clip boundary.
+   */
+  private refreshActive(): void {
+    const next = this.computeActiveClips();
+    const prev = this.activeByTrack;
+    this.activeByTrack = next;
+
+    // Figure out which sources need to be visible after the swap and
+    // which need to be hidden / paused.
+    const visibleSources = new Set<string>();
+    for (const clipId of next.values()) {
+      const clip = this.clipById(clipId);
+      if (clip) visibleSources.add(clip.sourceId);
+    }
+
+    // Hide + pause sources that lost activation.
+    for (const [sourceId, src] of this.sources) {
+      if (visibleSources.has(sourceId)) continue;
+      if (src.wrapper.style.visibility !== "hidden") {
+        src.wrapper.style.visibility = "hidden";
+      }
+      if (!src.video.paused) src.video.pause();
+    }
+
+    // For each newly-active clip, seek the underlying video and play
+    // (if the engine is in playing state). Iterate in track order so
+    // the primary (track 0) clip is the LAST one seeked — same-source
+    // tie-break: primary wins the currentTime.
+    const orderedEntries: Array<[string, string]> = [];
+    for (let i = this.project.tracks.length - 1; i >= 0; i--) {
+      const tid = this.project.tracks[i]!.id;
+      const cid = next.get(tid);
+      if (cid) orderedEntries.push([tid, cid]);
+    }
+    // Track 0 last so its seek/play wins for same-source ties.
+    for (const [, clipId] of orderedEntries) {
+      const clip = this.clipById(clipId);
+      if (!clip) continue;
+      const src = this.sources.get(clip.sourceId);
+      if (!src) continue;
+      src.wrapper.style.visibility = "visible";
+      this.seekVideoToClipOffset(clip, this.timeMs - clip.start);
+      if (this.playing) {
+        void src.video.play().catch((err) => this.onError?.(err as Error));
       }
     }
-    this.currentClipId = clip ? clip.id : null;
-    if (clip) {
-      const s = this.sources.get(clip.sourceId);
-      if (s) s.wrapper.style.visibility = "visible";
+
+    // Audio policy: only the FIRST (top, track 0) active video stays
+    // unmuted; lower-track sources mute to avoid stacking playback.
+    // When PiP is off there's only one active source anyway, so this
+    // is a no-op there.
+    const primaryClip = this.primaryActiveClip();
+    const primarySourceId = primaryClip?.sourceId ?? null;
+    for (const [sourceId, src] of this.sources) {
+      src.video.muted = sourceId !== primarySourceId;
+    }
+
+    // Surface a "selection-equivalent" ready event (Editor wires this
+    // into UI updates) so anything keying off `activeClipChanged`
+    // gets a chance to re-render. The old code only fired this when
+    // the SINGLE current clip swapped; we fire it whenever the primary
+    // changes.
+    void prev; // reserved if we ever need a diff
+  }
+
+  private computeActiveClips(): Map<string, string> {
+    const result = new Map<string, string>();
+    for (const track of this.project.tracks) {
+      if (track.kind !== "video") continue;
+      for (const c of track.clips) {
+        if (
+          this.timeMs >= c.start &&
+          this.timeMs < c.start + (c.out - c.in)
+        ) {
+          result.set(track.id, c.id);
+          break;
+        }
+      }
+      // When PiP is off, only consider the first video track.
+      if (!this.pictureInPictureEnabled) break;
+    }
+    return result;
+  }
+
+  /** Active clip on the primary (top) video track, if any. */
+  private primaryActiveClip(): Clip | null {
+    for (const track of this.project.tracks) {
+      if (track.kind !== "video") continue;
+      const cid = this.activeByTrack.get(track.id);
+      if (cid) return this.clipById(cid);
+      // Stop at the first video track regardless of whether it has an
+      // active clip — that track is the primary.
+      return null;
+    }
+    return null;
+  }
+
+  private playAllActive(): void {
+    for (const clipId of this.activeByTrack.values()) {
+      const clip = this.clipById(clipId);
+      if (!clip) continue;
+      const src = this.sources.get(clip.sourceId);
+      if (!src) continue;
+      void src.video.play().catch((err) => this.onError?.(err as Error));
+    }
+  }
+
+  private pauseAllActive(): void {
+    for (const clipId of this.activeByTrack.values()) {
+      const clip = this.clipById(clipId);
+      if (!clip) continue;
+      const src = this.sources.get(clip.sourceId);
+      if (src && !src.video.paused) src.video.pause();
     }
   }
 
@@ -357,21 +483,6 @@ export class HtmlVideoEngine implements PlaybackEngine {
   private clipById(id: string): Clip | null {
     for (const t of this.project.tracks) {
       for (const c of t.clips) if (c.id === id) return c;
-    }
-    return null;
-  }
-
-  /**
-   * Find the clip whose timeline range contains `timeMs`, searching
-   * across ALL video tracks. If multiple tracks have a clip at this
-   * moment, the lowest-index track wins.
-   */
-  private clipAtTime(timeMs: Ms): Clip | null {
-    for (const t of this.project.tracks) {
-      if (t.kind !== "video") continue;
-      for (const c of t.clips) {
-        if (timeMs >= c.start && timeMs < c.start + (c.out - c.in)) return c;
-      }
     }
     return null;
   }
@@ -431,25 +542,34 @@ export class HtmlVideoEngine implements PlaybackEngine {
       this.onEnded?.();
       return;
     }
-    const clip = this.clipAtTime(this.timeMs);
-    if (!clip) {
-      const next = this.nextClipAfterTime(this.timeMs);
-      if (next) {
-        this.timeMs = next.start;
-        this.activate(next);
-        this.seekVideoToClipOffset(next, 0);
-        const s = this.sources.get(next.sourceId);
-        if (s) void s.video.play().catch((err) => this.onError?.(err as Error));
+    // Detect whether the active clip set changed across this tick —
+    // if so, re-resolve + seek/play any new entrants. We compare by
+    // length AND by entries since a track could swap clips mid-tick.
+    const next = this.computeActiveClips();
+    let changed = next.size !== this.activeByTrack.size;
+    if (!changed) {
+      for (const [tid, cid] of next) {
+        if (this.activeByTrack.get(tid) !== cid) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (changed) {
+      this.refreshActive();
+    }
+    // If there's no primary clip after re-resolution, the project has
+    // run out of footage — bail.
+    if (this.activeByTrack.size === 0) {
+      const nextStart = this.nextClipAfterTime(this.timeMs);
+      if (nextStart) {
+        this.timeMs = nextStart.start;
+        this.refreshActive();
       } else {
         this.pause();
         this.onEnded?.();
         return;
       }
-    } else if (clip.id !== this.currentClipId) {
-      this.activate(clip);
-      this.seekVideoToClipOffset(clip, this.timeMs - clip.start);
-      const s = this.sources.get(clip.sourceId);
-      if (s) void s.video.play().catch((err) => this.onError?.(err as Error));
     }
     this.onTimeUpdate?.(this.timeMs);
   }

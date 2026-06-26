@@ -119,6 +119,19 @@ export interface VideoEditorProps {
    */
   clipEdgeNav?: { enabled?: boolean };
   /**
+   * Multi-track picture-in-picture compositing in the preview. Off
+   * by default (today's single-clip behaviour). Reactive — flip
+   * `enabled: true` to make every video track's currently-active
+   * clip paint at the playhead, with track `0` on top.
+   *
+   * Audio policy: only the top track's clip stays unmuted; lower
+   * tracks mute. Same-source caveat: a single decoder per source
+   * means a clip on two tracks plays from one currentTime only —
+   * upload the file twice for separate ids if you need both ends
+   * playing independently.
+   */
+  pictureInPicture?: { enabled?: boolean };
+  /**
    * Dashed outline of the output canvas on top of the preview.
    * Defaults to `{ enabled: true }` — the frame is purely visual
    * (visualises the current aspect ratio / output dimensions) and is
@@ -195,6 +208,9 @@ export function VideoEditor(props: VideoEditorProps) {
         : {}),
       ...(cbRef.current.previewFrame != null
         ? { previewFrame: cbRef.current.previewFrame }
+        : {}),
+      ...(cbRef.current.pictureInPicture != null
+        ? { pictureInPicture: cbRef.current.pictureInPicture }
         : {}),
       ...(cbRef.current.aspect != null
         ? { aspect: cbRef.current.aspect }
@@ -279,6 +295,15 @@ export function VideoEditor(props: VideoEditorProps) {
       editor.setPreviewFrameEnabled(desired);
     }
   }, [props.previewFrame?.enabled]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const desired = props.pictureInPicture?.enabled === true;
+    if (editor.isPictureInPictureEnabled() !== desired) {
+      editor.setPictureInPictureEnabled(desired);
+    }
+  }, [props.pictureInPicture?.enabled]);
 
   useEffect(() => {
     const editor = editorRef.current;

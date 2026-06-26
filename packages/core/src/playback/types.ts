@@ -73,6 +73,21 @@ export interface PlaybackEngine {
    */
   getFrameRect?(): { x: number; y: number; w: number; h: number } | null;
 
+  /**
+   * Optional. Toggle multi-track compositing. When `true`, the engine
+   * paints every video track's currently-active clip at the playhead
+   * with track `0` on top (matching the timeline's visual top-to-
+   * bottom = top-to-bottom z-order). When `false` (default), only
+   * track `0`'s active clip paints — today's single-clip behaviour.
+   *
+   * Engines that don't implement this are documented as PiP-incapable
+   * in the README; the Editor falls back to single-track regardless
+   * of the flag. Same opt-in pattern as keyframes — data is preserved
+   * (extra-track clips remain in the project), only the painted
+   * preview changes.
+   */
+  setPictureInPictureEnabled?(enabled: boolean): void;
+
   // ---- Event hooks — set by the Editor after construction. Engines
   // call these when state changes. All optional; engines that can't
   // emit a particular event (e.g. no audio metadata) just never call

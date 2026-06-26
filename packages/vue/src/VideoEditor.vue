@@ -65,6 +65,13 @@ const props = defineProps<{
    */
   previewFrame?: { enabled?: boolean };
   /**
+   * Multi-track picture-in-picture compositing in the preview. Off
+   * by default. Reactive — set `{ enabled: true }` to composite
+   * every video track's active clip with track `0` on top. Audio
+   * policy: only top track unmuted; lower tracks mute.
+   */
+  pictureInPicture?: { enabled?: boolean };
+  /**
    * Built-in aspect-ratio picker (CapCut-style 比例 dropdown). Reactive
    * — set `{ enabled: true }` to surface the chip at the left of the
    * toolbar. Listen for `aspectChange` to drive your preview letterbox
@@ -115,6 +122,9 @@ onMounted(() => {
     ...(props.clipEdgeNav != null ? { clipEdgeNav: props.clipEdgeNav } : {}),
     ...(props.previewFrame != null
       ? { previewFrame: props.previewFrame }
+      : {}),
+    ...(props.pictureInPicture != null
+      ? { pictureInPicture: props.pictureInPicture }
       : {}),
     ...(props.aspect != null ? { aspect: props.aspect } : {}),
   });
@@ -186,6 +196,18 @@ watch(
     const desired = enabled !== false;
     if (editor.isPreviewFrameEnabled() !== desired) {
       editor.setPreviewFrameEnabled(desired);
+    }
+  },
+);
+
+// Reactive — flip multi-track PiP compositing.
+watch(
+  () => props.pictureInPicture?.enabled,
+  (enabled) => {
+    if (!editor) return;
+    const desired = enabled === true;
+    if (editor.isPictureInPictureEnabled() !== desired) {
+      editor.setPictureInPictureEnabled(desired);
     }
   },
 );
