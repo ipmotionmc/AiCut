@@ -711,6 +711,13 @@ export function App() {
   const apiRef = useRef<VideoEditorApi | null>(null);
   const toast = useToast();
   const [savedJson, setSavedJson] = useState("");
+  // Track-occupancy summary, refreshed every project mutation. Drives
+  // the upload zone's "Next → Track N" badge so users know whether
+  // their next drop becomes the main video or the PiP overlay.
+  const [trackOccupancy, setTrackOccupancy] = useState<{
+    videoTrackCount: number;
+    nextEmptyIndex: number;
+  }>({ videoTrackCount: 2, nextEmptyIndex: 0 });
   const [exportJson, setExportJson] = useState("");
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
@@ -959,7 +966,17 @@ export function App() {
     }
     const project = api.getProject();
     const sourceId = createId("src");
-    const trackIdx = project.tracks.findIndex((t) => t.kind === "video");
+    // Route to the first EMPTY video track so the second upload
+    // naturally becomes the PiP overlay (track 1) without the user
+    // having to drag clips around. Falls back to the first video
+    // track when every track already has clips — host can drag the
+    // new clip wherever they want from there.
+    let trackIdx = project.tracks.findIndex(
+      (t) => t.kind === "video" && t.clips.length === 0,
+    );
+    if (trackIdx < 0) {
+      trackIdx = project.tracks.findIndex((t) => t.kind === "video");
+    }
     if (trackIdx < 0) {
       toast.push("No video track available.", { variant: "warn" });
       return;
@@ -970,6 +987,11 @@ export function App() {
       0,
     );
     const durationMs = r.durationMs ?? 5000;
+    // When this upload is becoming the PiP overlay (lands on track
+    // index > 0), pre-shrink it to a corner so the user sees the PiP
+    // effect immediately instead of a full-canvas video covered by
+    // the bottom track. They can still tweak via keyframes later.
+    const isPipOverlay = trackIdx > 0;
     const next: Project = {
       ...project,
       sources: [
@@ -994,6 +1016,9 @@ export function App() {
                   in: 0,
                   out: durationMs,
                   start: tail,
+                  ...(isPipOverlay
+                    ? { scale: 0.35, panX: 260, panY: 130 }
+                    : {}),
                 },
               ],
             }
@@ -1001,6 +1026,12 @@ export function App() {
       ),
     };
     api.setProject(next);
+    if (isPipOverlay) {
+      toast.push(
+        `Added to track ${trackIdx + 1} as a PiP overlay — enable Picture-in-picture in the sidebar to see it.`,
+        { variant: "info", duration: 4500 },
+      );
+    }
   };
 
   // Note: `onReady` is the right hook to expose the API to e2e via
@@ -1203,7 +1234,15 @@ export function App() {
               api.setProject(project);
             });
           }}
-          onChange={(p) => setSavedJson(JSON.stringify(p, null, 2))}
+          onChange={(p) => {
+            setSavedJson(JSON.stringify(p, null, 2));
+            const videoTracks = p.tracks.filter((t) => t.kind === "video");
+            const empty = videoTracks.findIndex((t) => t.clips.length === 0);
+            setTrackOccupancy({
+              videoTrackCount: videoTracks.length,
+              nextEmptyIndex: empty < 0 ? 0 : empty,
+            });
+          }}
           onExport={(p) => {
             setExportJson(JSON.stringify(p, null, 2));
             const res = RESOLUTIONS[exportAspect][exportResIdx]
@@ -1222,6 +1261,8 @@ export function App() {
           <UploadPanel
             uploadEndpoint={UPLOAD_ENDPOINT}
             onUploaded={handleUploaded}
+            nextTrackIndex={trackOccupancy.nextEmptyIndex}
+            videoTrackCount={trackOccupancy.videoTrackCount}
           />
         </div>
 
