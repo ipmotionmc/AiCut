@@ -350,25 +350,39 @@ export class KeyframeOverlay {
       interactive,
     );
     this.frameBody.style.display = frameVisible ? "block" : "none";
+    // Frame body pins to the SELECTED clip's content rect — not the
+    // canvas. For a normal full-frame clip those rects coincide
+    // (content covers the canvas), so the visual is unchanged. For a
+    // PiP overlay (content smaller than canvas) the dashed border
+    // now wraps the actual clip the user selected, instead of
+    // floating around the entire canvas while the four corner
+    // handles cluster in the middle with nothing connecting them.
+    const frameRect = contentRect ?? outRect;
     Object.assign(this.frameBody.style, {
-      left: `${outRect.x}px`,
-      top: `${outRect.y}px`,
-      width: `${outRect.w}px`,
-      height: `${outRect.h}px`,
+      left: `${frameRect.x}px`,
+      top: `${frameRect.y}px`,
+      width: `${frameRect.w}px`,
+      height: `${frameRect.h}px`,
     });
-    // Border state: brand color when the content fully covers the
-    // output (normal pan / zoom). Solid red when ANY part of the
-    // output frame isn't covered by content (i.e. the user has
-    // panned far enough to expose letterbox / would lose coverage).
-    // Persistent rather than drag-only — so a user who navigates back
-    // to a bad keyframe still sees the warning without having to
-    // touch the overlay.
-    const fullyCovered = contentRect
-      ? contentRect.x <= outRect.x + 0.5 &&
-        contentRect.x + contentRect.w >= outRect.x + outRect.w - 0.5 &&
-        contentRect.y <= outRect.y + 0.5 &&
-        contentRect.y + contentRect.h >= outRect.y + outRect.h - 0.5
-      : true;
+    // Border warn state: only relevant when the SELECTED clip is
+    // intended to fill the canvas (scale ≈ 1). For a deliberately-
+    // shrunk PiP overlay, "content doesn't cover canvas" is the
+    // entire point — firing the red warn ring would be noise. Heuristic:
+    // suppress warn whenever the content rect is meaningfully smaller
+    // than the canvas (>5% gap on either axis). When it's near full
+    // size we still flag panning that exposes letterbox.
+    const intentionallySmall =
+      contentRect != null &&
+      (contentRect.w < outRect.w * 0.95 ||
+        contentRect.h < outRect.h * 0.95);
+    const fullyCovered =
+      intentionallySmall ||
+      (contentRect
+        ? contentRect.x <= outRect.x + 0.5 &&
+          contentRect.x + contentRect.w >= outRect.x + outRect.w - 0.5 &&
+          contentRect.y <= outRect.y + 0.5 &&
+          contentRect.y + contentRect.h >= outRect.y + outRect.h - 0.5
+        : true);
     this.frameBody.classList.toggle(
       "aicut-keyframe-overlay__frame--warn",
       !fullyCovered,
