@@ -70,7 +70,7 @@ const props = defineProps<{
    * every video track's active clip with track `0` on top. Audio
    * policy: only top track unmuted; lower tracks mute.
    */
-  pictureInPicture?: { enabled?: boolean };
+  pictureInPicture?: { enabled?: boolean; toolbarToggle?: boolean };
   /**
    * Built-in aspect-ratio picker (CapCut-style 比例 dropdown). Reactive
    * — set `{ enabled: true }` to surface the chip at the left of the

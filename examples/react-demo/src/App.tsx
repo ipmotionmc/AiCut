@@ -808,10 +808,11 @@ export function App() {
   // Off by default — the buttons take toolbar space and the I/O keys
   // would shadow page typing, so hosts opt in like they do for kfs.
   const [clipEdgeNavEnabled, setClipEdgeNavEnabled] = useState<boolean>(false);
-  // Multi-track picture-in-picture compositing. Off by default —
-  // single-clip preview is the historical behaviour. When on, every
-  // video track's active clip stays painted with track 0 on top;
-  // user-supplied keyframe transforms scale/position the PiP overlay.
+  // Multi-track PiP — controlled by the editor's built-in toolbar
+  // toggle (configured via `pictureInPicture.toolbarToggle: true`
+  // below). We mirror the state into React via the editor's
+  // `pictureInPictureEnabledChange` event so the toolbar's chip
+  // and the demo's chrome stay in sync.
   const [pipEnabled, setPipEnabled] = useState<boolean>(false);
   const playbackEngine: PlaybackEngineFactory = useMemo(() => {
     if (engineKind === "canvas") {
@@ -1017,7 +1018,17 @@ export function App() {
                   out: durationMs,
                   start: tail,
                   ...(isPipOverlay
-                    ? { scale: 0.35, panX: 260, panY: 130 }
+                    ? {
+                        // Land the PiP overlay centered + scaled down
+                        // so it stays INSIDE the output canvas
+                        // regardless of preview dims. Absolute CSS-px
+                        // offsets (what `panX/Y` use) can't reliably
+                        // hit a corner without knowing the live
+                        // canvas size, so center is the safe pre-
+                        // seed; the user drags it where they want
+                        // via the overlay handles.
+                        scale: 0.4,
+                      }
                     : {}),
                 },
               ],
@@ -1057,7 +1068,12 @@ export function App() {
           playbackEngine={playbackEngine}
           trackHeight={trackHeight}
           timelineHeight={timelineHeight}
-          pictureInPicture={{ enabled: pipEnabled }}
+          pictureInPicture={{
+            enabled: pipEnabled,
+            // Surface the built-in toolbar toggle so users have a
+            // visible affordance — no separate sidebar checkbox.
+            toolbarToggle: true,
+          }}
           keyframes={{ enabled: keyframesEnabled }}
           clipEdgeNav={{ enabled: clipEdgeNavEnabled }}
           aspect={{ enabled: true }}
@@ -1196,6 +1212,9 @@ export function App() {
               setSelectedClipId(clipId),
             );
             api.on("historyChange", (h) => setHistoryState(h));
+            api.on("pictureInPictureEnabledChange", ({ enabled }) =>
+              setPipEnabled(enabled),
+            );
 
             // Build clips as each source's metadata resolves. The core
             // `ready` event fires per-source with the duration already
@@ -1380,22 +1399,12 @@ export function App() {
         </div>
 
         <h2>Picture-in-picture</h2>
-        <div className="demo-row demo-checkbox-row">
-          <label>
-            <input
-              type="checkbox"
-              data-testid="demo-pip-toggle"
-              checked={pipEnabled}
-              onChange={(e) => setPipEnabled(e.target.checked)}
-            />
-            <span>Enable multi-track preview compositing</span>
-          </label>
-        </div>
         <p className="demo-engine-help">
-          Drop a video onto Video 1 and a second onto Video 2, then
-          use keyframes (next section) to shrink + offset the top
-          clip into a PiP overlay. Track 0 paints on top; lower
-          tracks mute their audio.
+          Toggle from the toolbar (
+          <strong>{pipEnabled ? "currently ON" : "currently OFF"}</strong>).
+          Drop a video onto Video 1 (main) and a second onto Video 2
+          (PiP overlay, auto-shrunk to scale 0.4 + centered). Higher
+          tracks paint on top; lower tracks mute their audio.
         </p>
 
         <h2>Keyframes</h2>

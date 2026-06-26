@@ -30,6 +30,8 @@ export interface ToolbarCallbacks {
   /** User picked an output aspect from the built-in picker. `null`
    *  means "Original" (clear Project.aspect). */
   onAspectChange: (aspect: AspectRatio | null) => void;
+  /** Toggle multi-track picture-in-picture compositing. */
+  onPictureInPictureToggle: () => void;
 }
 
 interface ToolbarState {
@@ -66,6 +68,13 @@ interface ToolbarState {
   aspectEnabled: boolean;
   /** Current output aspect — null = "Original" (no Project.aspect). */
   aspect: AspectRatio | null;
+  /** Host opt-in for the PiP toggle button. When off (default), the
+   *  button is hidden — same pattern as the keyframes / clipEdgeNav
+   *  cluster. */
+  pipToolbarEnabled: boolean;
+  /** Current PiP state — drives the icon (filled vs outlined) +
+   *  the tooltip. */
+  pictureInPictureEnabled: boolean;
 }
 
 /**
@@ -104,6 +113,7 @@ export class Toolbar {
   private seekClipStartBtn!: HTMLButtonElement;
   private seekClipEndBtn!: HTMLButtonElement;
   private keyframeBtn!: HTMLButtonElement;
+  private pipBtn!: HTMLButtonElement;
   private playBtn!: HTMLButtonElement;
   private playIcon!: HTMLSpanElement;
   private timeLabel!: HTMLSpanElement;
@@ -162,8 +172,16 @@ export class Toolbar {
       "aicut-seek-clip-end",
     );
     this.seekClipEndBtn.style.display = "none"; // gated by render() on clipEdgeNavEnabled
+    this.pipBtn = mkIconButton(
+      "pipOutline",
+      locale.pipToggle,
+      () => cb.onPictureInPictureToggle(),
+      "aicut-pip",
+    );
+    this.pipBtn.style.display = "none"; // gated by render() on pipToolbarEnabled
     // Order: trim handles, then [|◀ ◇ ▶|] — start, kf, end — so the
-    // three nav buttons cluster around the keyframe affordance.
+    // three nav buttons cluster around the keyframe affordance. PiP
+    // toggle goes at the end of the cluster.
     left.append(
       this.undoBtn,
       this.redoBtn,
@@ -173,6 +191,7 @@ export class Toolbar {
       this.seekClipStartBtn,
       this.keyframeBtn,
       this.seekClipEndBtn,
+      this.pipBtn,
     );
 
     const center = mkGroup("aicut-toolbar-center");
@@ -288,6 +307,37 @@ export class Toolbar {
     if (!this.lastState || this.lastState.aspect !== state.aspect) {
       this.aspectPicker.setValue(state.aspect);
     }
+    // PiP toggle — visibility gated on host opt-in; icon + tooltip
+    // + toggle-on style track the current state.
+    if (
+      !this.lastState ||
+      this.lastState.pipToolbarEnabled !== state.pipToolbarEnabled
+    ) {
+      this.pipBtn.style.display = state.pipToolbarEnabled ? "" : "none";
+    }
+    if (state.pipToolbarEnabled) {
+      if (
+        !this.lastState ||
+        this.lastState.pictureInPictureEnabled !== state.pictureInPictureEnabled
+      ) {
+        this.pipBtn.innerHTML = state.pictureInPictureEnabled
+          ? ICONS.pipFilled
+          : ICONS.pipOutline;
+        const title = state.pictureInPictureEnabled
+          ? this.locale.pipDisable
+          : this.locale.pipEnable;
+        this.pipBtn.title = title;
+        this.pipBtn.setAttribute("aria-label", title);
+        this.pipBtn.classList.toggle(
+          "aicut-toggle-on",
+          state.pictureInPictureEnabled,
+        );
+        this.pipBtn.setAttribute(
+          "aria-pressed",
+          state.pictureInPictureEnabled ? "true" : "false",
+        );
+      }
+    }
     // Keyframe button — toggle visibility via display, swap icon to
     // reflect whether a kf exists at the playhead, swap tooltip.
     if (
@@ -368,6 +418,13 @@ export class Toolbar {
     applyTitle(this.zoomOutBtn, locale.zoomOut);
     applyTitle(this.zoomInBtn, locale.zoomIn);
     applyTitle(this.resetBtn, locale.reset);
+    // PiP button tooltip — picks enable/disable off lastState.
+    if (this.pipBtn) {
+      const on = this.lastState?.pictureInPictureEnabled === true;
+      const title = on ? locale.pipDisable : locale.pipEnable;
+      this.pipBtn.title = title;
+      this.pipBtn.setAttribute("aria-label", title);
+    }
     // Keyframe button tooltip — picks add/remove off the lastState if
     // we have one, otherwise default to add.
     if (this.keyframeBtn) {

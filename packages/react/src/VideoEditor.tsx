@@ -129,8 +129,16 @@ export interface VideoEditorProps {
    * means a clip on two tracks plays from one currentTime only —
    * upload the file twice for separate ids if you need both ends
    * playing independently.
+   *
+   * `toolbarToggle: true` surfaces a built-in PiP icon button next
+   * to the keyframe button. Clicking it flips `enabled`. Defaults
+   * to false so the toolbar chrome stays unchanged for hosts that
+   * roll their own UI.
    */
-  pictureInPicture?: { enabled?: boolean };
+  pictureInPicture?: {
+    enabled?: boolean;
+    toolbarToggle?: boolean;
+  };
   /**
    * Dashed outline of the output canvas on top of the preview.
    * Defaults to `{ enabled: true }` — the frame is purely visual

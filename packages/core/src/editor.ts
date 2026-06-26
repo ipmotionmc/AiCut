@@ -157,8 +157,16 @@ export interface EditorOptions {
    * `HtmlVideoEngine`, `CanvasCompositorEngine` both implement PiP
    * via `PlaybackEngine.setPictureInPictureEnabled`. Other engines
    * fall back to single-clip.
+   *
+   * `toolbarToggle: true` surfaces a built-in PiP icon button in the
+   * toolbar (next to the keyframe button) — clicking it flips
+   * `enabled` between true / false. Defaults to false so the chrome
+   * stays unchanged for hosts that wire their own PiP UI.
    */
-  pictureInPicture?: { enabled?: boolean };
+  pictureInPicture?: {
+    enabled?: boolean;
+    toolbarToggle?: boolean;
+  };
 }
 
 export interface EditorEventMap {
@@ -498,6 +506,7 @@ export class Editor implements EditorApi {
   private aspectEnabled: boolean;
   private previewFrameEnabled: boolean;
   private pictureInPictureEnabled: boolean;
+  private pictureInPictureToolbarEnabled: boolean;
   /** Drag-session bookkeeping for ripple-merge undo. See
    *  beginInteraction / endInteraction docs on EditorApi. */
   private interactionDepth = 0;
@@ -521,6 +530,8 @@ export class Editor implements EditorApi {
     // preview pass `previewFrame: { enabled: false }` to opt out.
     this.previewFrameEnabled = opts.previewFrame?.enabled !== false;
     this.pictureInPictureEnabled = opts.pictureInPicture?.enabled === true;
+    this.pictureInPictureToolbarEnabled =
+      opts.pictureInPicture?.toolbarToggle === true;
 
     // Must run before EditorUI builds the Timeline — those layout
     // values are read at canvas init time.
@@ -565,6 +576,8 @@ export class Editor implements EditorApi {
       onSeekClipStart: () => this.seekToSelectedClipEdge("start"),
       onSeekClipEnd: () => this.seekToSelectedClipEdge("end"),
       onAspectChange: (a) => this.setAspect(a),
+      onPictureInPictureToggle: () =>
+        this.setPictureInPictureEnabled(!this.pictureInPictureEnabled),
     });
 
     const engineFactory: PlaybackEngineFactory =
@@ -1235,6 +1248,11 @@ export class Editor implements EditorApi {
 
   isPictureInPictureEnabled(): boolean {
     return this.pictureInPictureEnabled;
+  }
+
+  /** Whether the built-in PiP toolbar toggle is currently rendered. */
+  isPictureInPictureToolbarEnabled(): boolean {
+    return this.pictureInPictureToolbarEnabled;
   }
 
   setPictureInPictureEnabled(enabled: boolean): void {
