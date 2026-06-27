@@ -245,7 +245,6 @@ export class EditorUI {
       pipToolbarAddEnabled:
         this.editor.isPictureInPictureToolbarAddEnabled() &&
         this.editor.isPictureInPictureEnabled(),
-      layout: this.editor.getToolbarLayout(),
       snap,
       pxPerSec,
       ...kfState,
@@ -293,7 +292,6 @@ export class EditorUI {
       pipToolbarAddEnabled:
         this.editor.isPictureInPictureToolbarAddEnabled() &&
         this.editor.isPictureInPictureEnabled(),
-      layout: this.editor.getToolbarLayout(),
       snap: this.editor.getSnap(),
       pxPerSec: this.editor.getScale(),
       ...kfState,
