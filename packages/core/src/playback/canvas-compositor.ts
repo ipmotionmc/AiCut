@@ -324,7 +324,12 @@ export class CanvasCompositorEngine implements PlaybackEngine {
    * doesn't resize at clip boundaries. Returns null when nothing's
    * decoded yet.
    */
-  private canvasReferenceDims(): [number, number] | null {
+  getCanvasReferenceDims(): [number, number] | null {
+    // `Project.output` is the authoritative reference frame when set.
+    // Falls through to the anchor-clip dims so legacy projects with
+    // neither aspect nor output still resolve to a stable canvas.
+    const out = this.project.output;
+    if (out && out.width > 0 && out.height > 0) return [out.width, out.height];
     for (const track of this.project.tracks) {
       if (track.kind !== "video") continue;
       let earliest: { c: { sourceId: string; start: number } } | null = null;
@@ -337,6 +342,9 @@ export class CanvasCompositorEngine implements PlaybackEngine {
       return [v.videoWidth, v.videoHeight];
     }
     return null;
+  }
+  private canvasReferenceDims(): [number, number] | null {
+    return this.getCanvasReferenceDims();
   }
 
   private primaryActiveClip(): Clip | null {
@@ -576,18 +584,27 @@ export class CanvasCompositorEngine implements PlaybackEngine {
       const vidH = vh * vidContain;
       const t = getEffectiveTransform(clip, this.timeMs - clip.start);
 
+      // pan values are in CANVAS pixels (= units of `aw`/`ah`).
+      // Convert into preview-canvas backbuffer pixels by multiplying
+      // by `canvasScale` — that's the ratio of preview-canvas space
+      // per project-canvas unit.
       this.ctx.save();
       this.ctx.beginPath();
       this.ctx.rect(outX, outY, dw, dh);
       this.ctx.clip();
-      this.ctx.translate(ccx + t.panX * dpr, ccy + t.panY * dpr);
+      this.ctx.translate(
+        ccx + t.panX * canvasScale,
+        ccy + t.panY * canvasScale,
+      );
       this.ctx.scale(t.scale, t.scale);
       this.ctx.drawImage(v, -vidW / 2, -vidH / 2, vidW, vidH);
       this.ctx.restore();
 
-      // Cache this clip's content rect (CSS px) for the overlay.
-      const cssCx = cw / (2 * dpr) + t.panX;
-      const cssCy = ch / (2 * dpr) + t.panY;
+      // Cache this clip's content rect in CSS px for the overlay.
+      // CSS-px conversion: backbuffer / dpr; pan in canvas-px → CSS
+      // px = panX * canvasScale / dpr.
+      const cssCx = cw / (2 * dpr) + (t.panX * canvasScale) / dpr;
+      const cssCy = ch / (2 * dpr) + (t.panY * canvasScale) / dpr;
       const cssW = (vidW * t.scale) / dpr;
       const cssH = (vidH * t.scale) / dpr;
       this.frameRectsByClip.set(clip.id, {
@@ -678,8 +695,10 @@ export class CanvasCompositorEngine implements PlaybackEngine {
     const vidW = v.videoWidth * vidContain;
     const vidH = v.videoHeight * vidContain;
     const t = getEffectiveTransform(clip, this.timeMs - clip.start);
-    const cssCx = cw / (2 * dpr) + t.panX;
-    const cssCy = ch / (2 * dpr) + t.panY;
+    // panX/panY are in CANVAS pixels — convert to CSS px via
+    // `canvasScale / dpr` to match the paint() math.
+    const cssCx = cw / (2 * dpr) + (t.panX * canvasScale) / dpr;
+    const cssCy = ch / (2 * dpr) + (t.panY * canvasScale) / dpr;
     const cssW = (vidW * t.scale) / dpr;
     const cssH = (vidH * t.scale) / dpr;
     return {

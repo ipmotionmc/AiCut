@@ -721,21 +721,6 @@ export function App() {
   // dimensions. The keyframe-compilation branch on the backend is
   // ALSO gated on width+height, so silently exporting at "no dims"
   // would skip animation entirely — bug we just fixed.
-  // Single resolution per aspect — the export size mirrors the editor's
-  // current 比例 chip, no popover dropdown. 1080p across the board
-  // keeps the menu lean and matches CapCut's default export tier.
-  const DEFAULT_EXPORT_DIMS: Record<
-    AspectRatio,
-    { width: number; height: number }
-  > = {
-    "16:9": { width: 1920, height: 1080 },
-    "9:16": { width: 1080, height: 1920 },
-    "1:1": { width: 1080, height: 1080 },
-    "4:3": { width: 1440, height: 1080 },
-    "3:4": { width: 1080, height: 1440 },
-    "4:5": { width: 1080, height: 1350 },
-    "21:9": { width: 2560, height: 1080 },
-  };
   const FPS_OPTIONS = [24, 30, 60];
   const [exportPopoverOpen, setExportPopoverOpen] = useState(false);
   const [exportFps, setExportFps] = useState(30);
@@ -1193,15 +1178,17 @@ export function App() {
                   {exportPopoverOpen && !exportStatus.running ? (() => {
                     const liveAspect =
                       apiRef.current?.getAspect() ?? null;
-                    const dims = liveAspect
-                      ? DEFAULT_EXPORT_DIMS[liveAspect]
-                      : null;
+                    // Authoritative canvas dims — `Project.output`
+                    // (set whenever the user picks an aspect). Falls
+                    // back to the source-anchor when the project is
+                    // mid-load. Pixel-for-pixel == export dims.
+                    const out = apiRef.current?.getOutput();
                     return (
                       <ExportPopover
                         fps={exportFps}
                         aspectLabel={liveAspect ?? "Original"}
                         dimsLabel={
-                          dims ? `${dims.width}×${dims.height}` : "源素材尺寸"
+                          out ? `${out.width}×${out.height}` : "源素材尺寸"
                         }
                         onChangeFps={setExportFps}
                         onCancel={() => setExportPopoverOpen(false)}
@@ -1317,18 +1304,11 @@ export function App() {
           onChange={(p) => setSavedJson(JSON.stringify(p, null, 2))}
           onExport={(p) => {
             setExportJson(JSON.stringify(p, null, 2));
-            // Output size follows the editor's current aspect — the
-            // user already picked it in the 比例 chip, no reason to
-            // re-ask in a popover. "Original" (null) → omit dims and
-            // the backend probes the source.
-            const aspectNow = apiRef.current?.getAspect() ?? null;
-            const dims = aspectNow
-              ? DEFAULT_EXPORT_DIMS[aspectNow]
-              : null;
-            void runBackendExport(p, {
-              ...(dims ? { width: dims.width, height: dims.height } : {}),
-              fps: exportFps,
-            });
+            // The project carries its own `output` (set by the aspect
+            // chip / editor.setOutput). Backend uses it as the
+            // authoritative canvas — preview == export. We only pass
+            // fps overrides; dims travel in the project JSON itself.
+            void runBackendExport(p, { fps: exportFps });
           }}
         />
         {/* Hidden — driven by the toolbar "+ PiP overlay" button. */}

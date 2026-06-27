@@ -394,10 +394,18 @@ export class KeyframeOverlay {
   private onPointerMove = (e: PointerEvent): void => {
     if (!this.drag) return;
     if (this.drag.kind === "translate") {
-      const dx = e.clientX - this.drag.pointerStartX;
-      const dy = e.clientY - this.drag.pointerStartY;
-      const rawPanX = this.drag.startPanX + dx;
-      const rawPanY = this.drag.startPanY + dy;
+      const dxCss = e.clientX - this.drag.pointerStartX;
+      const dyCss = e.clientY - this.drag.pointerStartY;
+      // Convert the CSS-pixel cursor delta into CANVAS pixels — the
+      // unit pan values are stored in. `getActiveOutputFrameRect`
+      // returns the canvas guide's CSS-px bounds; the editor knows
+      // the canvas dims. Ratio = canvasPx / cssPx.
+      const out = this.editor.getActiveOutputFrameRect();
+      const canvas = this.editor.getOutput();
+      const cssToCanvasX = out && out.w > 0 ? canvas.width / out.w : 1;
+      const cssToCanvasY = out && out.h > 0 ? canvas.height / out.h : 1;
+      const rawPanX = this.drag.startPanX + dxCss * cssToCanvasX;
+      const rawPanY = this.drag.startPanY + dyCss * cssToCanvasY;
       // Snap to: centered (0), and (when content > output) left/right
       // / top/bottom edge alignment between content and output.
       const snapped = this.applySnap(this.drag.clipId, rawPanX, rawPanY);
@@ -487,8 +495,10 @@ export class KeyframeOverlay {
   /**
    * Snap raw pan to: centered (panX/Y = 0) and the four edge-alignment
    * stops (content's L/R/T/B edge flush with the output's matching
-   * edge). When content is smaller than output, the edge stops collapse
-   * to the same point as 0 — harmless dup. Threshold = 8 CSS px.
+   * edge). All math here is in CANVAS pixels — the unit pan values
+   * are stored in. CSS-px frame rects from the engine get converted
+   * up via the canvas/CSS ratio so snap thresholds stay visually 8 px
+   * on screen regardless of preview size.
    */
   private applySnap(
     clipId: string,
@@ -499,6 +509,9 @@ export class KeyframeOverlay {
     if (!out) return { panX: rawPanX, panY: rawPanY };
     const clip = this.findClip(clipId);
     if (!clip) return { panX: rawPanX, panY: rawPanY };
+    const canvas = this.editor.getOutput();
+    const cssToCanvasX = out.w > 0 ? canvas.width / out.w : 1;
+    const cssToCanvasY = out.h > 0 ? canvas.height / out.h : 1;
     // Content size at current scale (which may differ from base — the
     // user can be mid-scaling alongside the drag conceptually).
     const t = (() => {
@@ -510,18 +523,17 @@ export class KeyframeOverlay {
         return null;
       }
     })();
-    const contentW = t?.w ?? out.w;
-    const contentH = t?.h ?? out.h;
-    // Edge stops: content edge aligned with output edge.
-    //   contentRight = panX + contentW/2 + outCenter.x — but here we
-    //   work in "panX from centered=0", so the edge-alignment panX is
-    //   ±(contentW - outW)/2 (same for Y).
-    const edgeX = (contentW - out.w) / 2;
-    const edgeY = (contentH - out.h) / 2;
+    const contentWCss = t?.w ?? out.w;
+    const contentHCss = t?.h ?? out.h;
+    // Edge stops in canvas pixels.
+    const edgeX = ((contentWCss - out.w) / 2) * cssToCanvasX;
+    const edgeY = ((contentHCss - out.h) / 2) * cssToCanvasY;
     const xTargets = [0, edgeX, -edgeX];
     const yTargets = [0, edgeY, -edgeY];
-    const px = nearestSnap(rawPanX, xTargets, KeyframeOverlay.SNAP_PX);
-    const py = nearestSnap(rawPanY, yTargets, KeyframeOverlay.SNAP_PX);
+    const thresholdX = KeyframeOverlay.SNAP_PX * cssToCanvasX;
+    const thresholdY = KeyframeOverlay.SNAP_PX * cssToCanvasY;
+    const px = nearestSnap(rawPanX, xTargets, thresholdX);
+    const py = nearestSnap(rawPanY, yTargets, thresholdY);
     return { panX: px, panY: py };
   }
 

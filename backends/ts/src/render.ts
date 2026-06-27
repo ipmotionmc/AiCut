@@ -139,13 +139,23 @@ export async function renderProject(
       }),
     );
 
-    // Output dims: when the caller doesn't pass them, mirror the
-    // editor's `canvasReferenceDims` convention — use the intrinsic
-    // dimensions of the first video clip on the bottom track. Without
-    // this, panX/panY (which are CSS pixels of the preview canvas)
-    // would land at the wrong absolute positions in the export.
+    // Output dims: resolve in priority order:
+    //   1. explicit `opts.width/height` from the request body
+    //   2. `project.output.{width,height}` — authoritative canvas
+    //      authored by the user; every spatial value (panX/panY,
+    //      keyframe values) is in these units, so this is the only
+    //      size where preview == export pixel-for-pixel
+    //   3. ffprobe of the bottom track's first clip — last-resort
+    //      legacy fallback for old projects without `output`
+    //   4. 1920×1080
     let width = opts.width;
     let height = opts.height;
+    if (width == null || height == null) {
+      if (project.output?.width && project.output?.height) {
+        width ??= project.output.width;
+        height ??= project.output.height;
+      }
+    }
     if (width == null || height == null) {
       const bottomTrack = videoTracks[0]!;
       const anchor = [...bottomTrack.clips].sort(
@@ -170,7 +180,8 @@ export async function renderProject(
     // Even-pixel guard — H.264 requires even dims.
     width = width % 2 === 0 ? width : width - 1;
     height = height % 2 === 0 ? height : height - 1;
-    const fps = opts.fps ?? 30;
+    const fps =
+      opts.fps ?? project.output?.fps ?? project.fps ?? 30;
     const topTrackIndex = videoTracks.length - 1;
 
     const { fc, audioOut } = buildTimelineFilterComplex({
@@ -292,8 +303,21 @@ function buildTimelineFilterComplex(a: BuildArgs): {
   audioOut: string | null;
 } {
   const parts: string[] = [];
+  // Render the whole filter graph at 2× the final output dimensions
+  // and downscale at the very end. The browser preview gets sub-pixel
+  // smoothness for free (Retina canvases compose at 2× DPI + drawImage
+  // accepts float dx/dy/dw/dh); ffmpeg's `scale` filter outputs
+  // integer dimensions and an animated `scale=...:eval=frame` therefore
+  // wobbles in 1-output-pixel steps that the eye catches. Working at
+  // 2× internally and downsampling to the requested output halves the
+  // per-step displacement at the final resolution and matches the
+  // preview's perceived smoothness.
+  const ow = a.width;
+  const oh = a.height;
+  const w = ow * 2;
+  const h = oh * 2;
   parts.push(
-    `color=c=black:s=${a.width}x${a.height}:r=${a.fps}:d=${fmt(a.totalDurationSec)}[bg]`,
+    `color=c=black:s=${w}x${h}:r=${a.fps}:d=${fmt(a.totalDurationSec)}[bg]`,
   );
 
   // Walk tracks bottom→top in `project.tracks` order. Within each
@@ -328,20 +352,31 @@ function buildTimelineFilterComplex(a: BuildArgs): {
         { tVar },
       );
 
-      // 1. Trim source to [in, out], shift to timeline start
+      // 1. Trim source to [in, out], shift to timeline start, snap to
+      //    output framerate grid via `fps`. NOTE: do NOT chain another
+      //    `setpts=N/(fps*TB)` after `fps` — it resets PTS to start
+      //    from 0 (losing the clip.start offset) which makes
+      //    `overlay enable='between(t,a,b)'` show the upper stream out
+      //    of sync with the canvas, leaving a single-frame "twitch" on
+      //    every duplicated frame from the variable-fps source.
       parts.push(
-        `[${inputIdx}:v]trim=${fmt(inSec)}:${fmt(inSec + durSec)},setpts=PTS-STARTPTS+${fmt(startSec)}/TB[c${clipNum}t]`,
+        `[${inputIdx}:v]trim=${fmt(inSec)}:${fmt(inSec + durSec)},setpts=PTS-STARTPTS+${fmt(startSec)}/TB,fps=${a.fps}[c${clipNum}t]`,
       );
-      // 2. Fit to canvas (preserve aspect via decrease + setsar=1)
+      // 2. Single combined scale: fit-to-canvas × clip.scale, computed
+      //    in one filter pass instead of fit-then-rescale. Two-stage
+      //    scaling introduced cumulative interpolation drift that
+      //    showed up as the PiP "trembling" frame-to-frame.
+      //    `fit_ratio = min(W/iw, H/ih)` is constant (source ↔ canvas),
+      //    `scaleExpr` is the keyframe-animated multiplier. Even-pixel
+      //    guard isn't needed here — overlay onto the even canvas
+      //    happily accepts odd dims and H.264 only cares about the
+      //    final output. `round` keeps dim transitions 1px not 2px.
+      //    `setsar=1` keeps the encoder from inheriting a non-square
+      //    SAR from a screen-cap that lies about its display aspect.
+      const wExpr = `round(iw*min(${w}/iw\\,${h}/ih)*(${scaleExpr}))`;
+      const hExpr = `round(ih*min(${w}/iw\\,${h}/ih)*(${scaleExpr}))`;
       parts.push(
-        `[c${clipNum}t]scale=${a.width}:${a.height}:force_original_aspect_ratio=decrease,setsar=1[c${clipNum}f]`,
-      );
-      // 3. Scale by clip.scale (keyframe-animated). Even-pixel guard
-      //    so H.264 doesn't reject odd dimensions.
-      const wExpr = `trunc(iw*(${scaleExpr})/2)*2`;
-      const hExpr = `trunc(ih*(${scaleExpr})/2)*2`;
-      parts.push(
-        `[c${clipNum}f]scale=w='${wExpr}':h='${hExpr}':eval=frame[c${clipNum}z]`,
+        `[c${clipNum}t]scale=w='${wExpr}':h='${hExpr}':eval=frame:flags=bicubic,setsar=1[c${clipNum}z]`,
       );
       trackClipLabels.push({
         track,
@@ -355,14 +390,16 @@ function buildTimelineFilterComplex(a: BuildArgs): {
     }
   }
 
-  // 4. Overlay onto the canvas in the order we built clips — track 0
-  //    first (bottom), last track last (top). The last overlay tags
-  //    its output `[vout]`.
+  // 4. Overlay onto the (2×) canvas in track order — last track on
+  //    top. We hold the last comp at `[vfull]` so the final downscale
+  //    pass can land it at the requested output dimensions tagged
+  //    `[vout]`. Pan values are CSS pixels at OUTPUT scale; multiply
+  //    by 2 here to stay in step with the 2× internal canvas.
   let canvas = "bg";
   for (let i = 0; i < trackClipLabels.length; i += 1) {
     const entry = trackClipLabels[i]!;
     const isLast = i === trackClipLabels.length - 1;
-    const out = isLast ? "vout" : `L${i}`;
+    const out = isLast ? "vfull" : `L${i}`;
     const tVar = `(t-${fmt(entry.startSec)})`;
     const panXExpr = compileKeyframeExpression(
       entry.clip.keyframes,
@@ -378,13 +415,19 @@ function buildTimelineFilterComplex(a: BuildArgs): {
     );
     parts.push(
       `[${canvas}][${entry.label}]overlay=` +
-        `x='(W-w)/2+(${panXExpr})':` +
-        `y='(H-h)/2+(${panYExpr})':` +
+        `x='(W-w)/2+2*(${panXExpr})':` +
+        `y='(H-h)/2+2*(${panYExpr})':` +
         `enable='between(t,${fmt(entry.startSec)},${fmt(entry.endSec)})':` +
         `eval=frame:format=auto[${out}]`,
     );
     canvas = out;
   }
+
+  // 4b. Final downscale from the 2× internal canvas to the requested
+  //     output dimensions. `lanczos` keeps high-freq content crisp and
+  //     averages sub-pixel jitter from the per-frame scale animation
+  //     down to half-pixel motion at output resolution.
+  parts.push(`[vfull]scale=${ow}:${oh}:flags=lanczos[vout]`);
 
   // 5. Audio: only the top track contributes per the editor's PiP
   //    policy. Each clip's audio is trimmed, rebased, and delayed to

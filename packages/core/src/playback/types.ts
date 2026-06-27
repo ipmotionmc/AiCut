@@ -87,6 +87,19 @@ export interface PlaybackEngine {
   getFrameRect?(clipId?: string): { x: number; y: number; w: number; h: number } | null;
 
   /**
+   * Optional. Return the intrinsic dimensions in CANVAS PIXELS of the
+   * authoring canvas — the reference frame keyframe pan/scale values
+   * are stored in. When `Project.output` is set this returns those
+   * dims; otherwise engines fall back to "anchor" semantics (first
+   * clip on the bottom track) so legacy projects without `output`
+   * still resolve to a stable canvas across clip boundaries.
+   *
+   * Tuple form is `[width, height]`. Returns null when no source has
+   * decoded enough to know the anchor dims yet.
+   */
+  getCanvasReferenceDims?(): [number, number] | null;
+
+  /**
    * Optional. Toggle multi-track compositing. When `true`, the engine
    * paints every video track's currently-active clip at the playhead
    * with track `0` on top (matching the timeline's visual top-to-

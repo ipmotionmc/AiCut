@@ -8,6 +8,7 @@ export type {
 } from "./editor.js";
 export type {
   Project,
+  ProjectOutput,
   MediaSource,
   Track,
   Clip,
@@ -18,6 +19,7 @@ export type {
   Theme,
   AspectRatio,
 } from "./types.js";
+export { DEFAULT_OUTPUT_DIMS, defaultOutputForAspect } from "./model.js";
 
 // Keyframe interpolation — hosts can read the effective transform of a
 // clip at any time (e.g. for thumbnail previews) without touching the

@@ -180,8 +180,13 @@ export class HtmlVideoEngine implements PlaybackEngine {
     if (!clip) clip = this.primaryActiveClip();
     if (!clip) return base;
     const t = getEffectiveTransform(clip, this.timeMs - clip.start);
-    const cx = base.x + base.w / 2 + t.panX;
-    const cy = base.y + base.h / 2 + t.panY;
+    // panX/panY are CANVAS pixels — convert to CSS px via the same
+    // canvas-to-CSS ratio that sized `base.w`/`base.h`.
+    const ref = this.canvasReferenceDims();
+    const cssPerCanvasX = ref ? base.w / ref[0] : 1;
+    const cssPerCanvasY = ref ? base.h / ref[1] : 1;
+    const cx = base.x + base.w / 2 + t.panX * cssPerCanvasX;
+    const cy = base.y + base.h / 2 + t.panY * cssPerCanvasY;
     const w = base.w * t.scale;
     const h = base.h * t.scale;
     return { x: cx - w / 2, y: cy - h / 2, w, h };
@@ -243,7 +248,9 @@ export class HtmlVideoEngine implements PlaybackEngine {
    * doesn't resize at clip boundaries. Returns null when nothing's
    * decoded yet.
    */
-  private canvasReferenceDims(): [number, number] | null {
+  getCanvasReferenceDims(): [number, number] | null {
+    const out = this.project.output;
+    if (out && out.width > 0 && out.height > 0) return [out.width, out.height];
     for (const track of this.project.tracks) {
       if (track.kind !== "video") continue;
       let earliest: { c: { sourceId: string; start: number } } | null = null;
@@ -256,6 +263,9 @@ export class HtmlVideoEngine implements PlaybackEngine {
       return [v.videoWidth, v.videoHeight];
     }
     return null;
+  }
+  private canvasReferenceDims(): [number, number] | null {
+    return this.getCanvasReferenceDims();
   }
 
   /**
@@ -316,9 +326,16 @@ export class HtmlVideoEngine implements PlaybackEngine {
           zIndex: String(trackIndex + 1),
         });
         const t = getEffectiveTransform(clip, this.timeMs - clip.start);
-        // Identity = video fills wrapper exactly. Pan + scale move
-        // it within the wrapper; overflow:hidden clips.
-        src.video.style.transform = `translate(${t.panX.toFixed(2)}px, ${t.panY.toFixed(2)}px) scale(${t.scale.toFixed(4)})`;
+        // panX/panY are CANVAS pixels — convert to CSS px via the
+        // wrapper's `outRect.w/h` vs the canvas reference dims so a
+        // 1 px pan in canvas-units shows the same relative motion as
+        // the canvas-compositor + the backend export.
+        const ref = this.canvasReferenceDims();
+        const cssPerCanvasX = ref ? outRect.w / ref[0] : 1;
+        const cssPerCanvasY = ref ? outRect.h / ref[1] : 1;
+        const cssPanX = t.panX * cssPerCanvasX;
+        const cssPanY = t.panY * cssPerCanvasY;
+        src.video.style.transform = `translate(${cssPanX.toFixed(2)}px, ${cssPanY.toFixed(2)}px) scale(${t.scale.toFixed(4)})`;
       } else if (src.video.style.transform) {
         // Inactive — reset transform so stale state doesn't ghost when
         // we swap back.

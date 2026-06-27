@@ -5,6 +5,7 @@ import {
   clipDuration,
   clipEnd,
   createEmptyProject,
+  defaultOutputForAspect,
   findClipContaining,
   findTrackOfClip,
   normalizeProject,
@@ -371,11 +372,28 @@ export interface EditorApi {
   getAspect(): AspectRatio | null;
   /**
    * Set the output aspect ratio. Pass `null` to clear back to
-   * "Original". Persists on `Project.aspect`, emits `aspectChange`,
-   * and pushes a history entry so the change participates in undo.
-   * No-op when the value didn't change.
+   * "Original". Persists on `Project.aspect`, also writes the matching
+   * 1080p-tier dims into `Project.output`, emits `aspectChange`, and
+   * pushes a history entry so the change participates in undo. No-op
+   * when the value didn't change.
    */
   setAspect(aspect: AspectRatio | null): void;
+  /**
+   * Output canvas dims in pixels. THIS is the reference coordinate
+   * system every spatial value in the project lives in — keyframe
+   * panX/panY, the canvas guide rect, the export resolution. Falls
+   * back to `aspect`-derived dims, then to the first clip's intrinsic
+   * source size, when nothing's been set on the project explicitly.
+   */
+  getOutput(): { width: number; height: number; fps?: number };
+  /**
+   * Write output canvas dims into `Project.output`. Even-snaps both
+   * axes (H.264 requirement) and pushes history. Pan / scale already
+   * stored against the previous canvas are NOT rescaled — same as
+   * how Premiere handles a sequence-settings change. Hosts who want
+   * value preservation should normalize keyframes themselves.
+   */
+  setOutput(output: { width: number; height: number; fps?: number }): void;
   /** Screen-space CSS-pixel rect of the active rendered frame, post
    *  transform, relative to the editor preview. Null when none. */
   getActiveFrameRect():
@@ -1410,10 +1428,65 @@ export class Editor implements EditorApi {
       delete this.project.aspect;
     } else {
       this.project.aspect = aspect;
+      // Mirror the chosen aspect into the authoritative `output`
+      // dims — picking 9:16 should immediately give the canvas a
+      // 9:16 reference frame in EVERY consumer (preview, overlay,
+      // backend export), without each having to derive the size
+      // from the aspect string separately.
+      const dims = defaultOutputForAspect(aspect);
+      const prevFps = this.project.output?.fps;
+      this.project.output = {
+        width: dims.width,
+        height: dims.height,
+        ...(prevFps != null ? { fps: prevFps } : {}),
+      };
     }
     this.afterMutation();
     this.ui.setAspect(aspect);
     this.bus.emit("aspectChange", { aspect });
+  }
+
+  getOutput(): { width: number; height: number; fps?: number } {
+    const out = this.project.output;
+    if (out) {
+      return out.fps != null
+        ? { width: out.width, height: out.height, fps: out.fps }
+        : { width: out.width, height: out.height };
+    }
+    // No `output` field yet — derive a reasonable canvas size for
+    // hosts that need to query before the user picks anything. Order
+    // mirrors normalizeProject: aspect → first-clip source dims →
+    // 1080p fallback.
+    if (this.project.aspect) {
+      const dims = defaultOutputForAspect(this.project.aspect);
+      return { width: dims.width, height: dims.height };
+    }
+    const ref = this.engine.getCanvasReferenceDims?.();
+    if (ref) return { width: ref[0], height: ref[1] };
+    return { width: 1920, height: 1080 };
+  }
+
+  setOutput(output: { width: number; height: number; fps?: number }): void {
+    const w = evenPx(output.width);
+    const h = evenPx(output.height);
+    if (w <= 0 || h <= 0) return;
+    const current = this.project.output;
+    if (
+      current &&
+      current.width === w &&
+      current.height === h &&
+      (current.fps ?? null) === (output.fps ?? null)
+    ) {
+      return;
+    }
+    this.pushHistory();
+    this.project.output = {
+      width: w,
+      height: h,
+      ...(output.fps != null && output.fps > 0 ? { fps: output.fps } : {}),
+    };
+    this.afterMutation();
+    this.ui.render();
   }
 
   addKeyframe(
@@ -1930,4 +2003,12 @@ export class Editor implements EditorApi {
 
 function clampScale(s: number): number {
   return Math.max(MIN_PX_PER_SEC, Math.min(MAX_PX_PER_SEC, s));
+}
+
+/** H.264 requires even output dims — snap to the nearest even pixel,
+ *  trimming rather than expanding so the canvas never exceeds the
+ *  requested size. */
+function evenPx(n: number): number {
+  const r = Math.max(2, Math.round(n));
+  return r % 2 === 0 ? r : r - 1;
 }
