@@ -627,8 +627,16 @@ function drawClipAt(
   // typically the panX/panY/scale trio from a single toolbar click).
   // Painted on the clip body vertical center; selected = brand fill,
   // hovered = brighter + slightly bigger.
+  // Keyframes paint on BOTH the real (possibly dim) clip and any
+  // ghost clip during a drag — skipping them on dim made the diamond
+  // appear to vanish the moment a user clicked just outside the kf
+  // hit radius (their click drags the clip, the real clip dims, and
+  // the diamond on the ORIGINAL position quietly drops out of the
+  // canvas — looks like "I dragged the kf and it disappeared"). The
+  // ghost clip painted underneath still carries its own diamonds at
+  // the drag offset, so the user can see both the residual position
+  // and the destination.
   if (
-    !dim &&
     state.keyframesEnabled &&
     clip.keyframes &&
     clip.keyframes.length > 0
@@ -663,15 +671,21 @@ function drawClipAt(
       ctx.lineTo(kfX, diamondY + drawSize);
       ctx.lineTo(kfX - drawSize, diamondY);
       ctx.closePath();
+      // Dim clips paint diamonds at reduced opacity — visible but
+      // muted, so the user sees both the "where it WAS" residual on
+      // the source position and the "where it IS now" diamond on the
+      // ghost.
+      const fillAlpha = dim ? 0.4 : 0.85;
+      const strokeAlpha = dim ? 0.3 : 0.65;
       ctx.fillStyle = isSelected
         ? style.selectedRing
         : isHovered
           ? "#ffffff"
-          : withAlpha(style.text, 0.85);
+          : withAlpha(style.text, fillAlpha);
       ctx.fill();
       ctx.strokeStyle = isHovered
         ? style.selectedRing
-        : "rgba(0, 0, 0, 0.65)";
+        : `rgba(0, 0, 0, ${strokeAlpha})`;
       ctx.lineWidth = isHovered ? 1.5 : 1;
       ctx.stroke();
     }

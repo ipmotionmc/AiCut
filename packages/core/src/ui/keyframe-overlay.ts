@@ -480,12 +480,22 @@ export class KeyframeOverlay {
         this.drag.anchorX + this.drag.axisX * this.drag.dirX * (newW / 2);
       const newCenterY =
         this.drag.anchorY + this.drag.axisY * this.drag.dirY * (newH / 2);
+      // `newCenter - canvasCenter` is in CSS px (both are viewport
+      // coords). panX/panY now live in CANVAS pixels, so convert via
+      // the same ratio the translate-drag uses — without this the
+      // anchored corner appears to "jump" the moment the user starts
+      // dragging because the stored value reads back through paint()
+      // at the wrong scale.
+      const outRect = this.editor.getActiveOutputFrameRect();
+      const canvas = this.editor.getOutput();
+      const cssToCanvasX = outRect && outRect.w > 0 ? canvas.width / outRect.w : 1;
+      const cssToCanvasY = outRect && outRect.h > 0 ? canvas.height / outRect.h : 1;
       // Don't round pan offsets here — quantising them to integers
       // would let the anchored corner jitter as scale grows
       // continuously. Storage precision is fine for floats and the
       // editor commits one history entry per drag anyway.
-      const newPanX = newCenterX - this.drag.canvasCenterX;
-      const newPanY = newCenterY - this.drag.canvasCenterY;
+      const newPanX = (newCenterX - this.drag.canvasCenterX) * cssToCanvasX;
+      const newPanY = (newCenterY - this.drag.canvasCenterY) * cssToCanvasY;
       this.editor.setValueAtPlayhead(this.drag.clipId, "scale", next);
       this.editor.setValueAtPlayhead(this.drag.clipId, "panX", newPanX);
       this.editor.setValueAtPlayhead(this.drag.clipId, "panY", newPanY);

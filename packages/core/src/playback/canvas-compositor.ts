@@ -530,25 +530,22 @@ export class CanvasCompositorEngine implements PlaybackEngine {
       return;
     }
 
-    // Canvas size from Project.aspect when explicitly set; otherwise
-    // anchored to the first clip on the first video track (NOT the
-    // currently-active primary clip). That way the canvas stays
-    // stable across clip boundaries — same posture as CapCut's
-    // "Original" aspect, which locks to the first clip. Falls back
-    // to the active clip's dims when no anchor has decoded yet.
-    const projAspect = parseAspect(this.project.aspect);
+    // Canvas dims come from `getCanvasReferenceDims` — which prefers
+    // `project.output` (the authoritative authoring canvas, e.g.
+    // 1080×1920 for a 9:16 project) and falls back to the first clip
+    // on track 0 for legacy projects without `output`. NEVER use
+    // `parseAspect(project.aspect)` here — that returns the bare
+    // ratio numbers (9, 16) which would make `canvasScale = cw/9`
+    // huge, and any pan multiplied by that scale flings the content
+    // out of frame on the first cursor wiggle.
     let aw: number;
     let ah: number;
-    if (projAspect) {
-      [aw, ah] = projAspect;
+    const ref = this.canvasReferenceDims();
+    if (ref) {
+      [aw, ah] = ref;
     } else {
-      const ref = this.canvasReferenceDims();
-      if (ref) {
-        [aw, ah] = ref;
-      } else {
-        aw = primaryVideo.videoWidth;
-        ah = primaryVideo.videoHeight;
-      }
+      aw = primaryVideo.videoWidth;
+      ah = primaryVideo.videoHeight;
     }
     const canvasScale = Math.min(cw / aw, ch / ah);
     const dw = aw * canvasScale;
@@ -673,19 +670,15 @@ export class CanvasCompositorEngine implements PlaybackEngine {
     const cw = this.canvas.width;
     const ch = this.canvas.height;
     if (cw === 0 || ch === 0) return null;
-    const projAspect = parseAspect(this.project.aspect);
+    // Same canonical canvas dims as paint() — see the note there.
     let aw: number;
     let ah: number;
-    if (projAspect) {
-      [aw, ah] = projAspect;
+    const ref = this.canvasReferenceDims();
+    if (ref) {
+      [aw, ah] = ref;
     } else {
-      const ref = this.canvasReferenceDims();
-      if (ref) {
-        [aw, ah] = ref;
-      } else {
-        aw = v.videoWidth;
-        ah = v.videoHeight;
-      }
+      aw = v.videoWidth;
+      ah = v.videoHeight;
     }
     const canvasScale = Math.min(cw / aw, ch / ah);
     const dw = aw * canvasScale;

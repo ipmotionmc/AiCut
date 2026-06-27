@@ -203,6 +203,17 @@
   color: var(--aicut-controls-text, rgba(255, 255, 255, 0.85));
 }
 
+/* Pull the fullscreen button OUT of the centered flex group so the
+   time / play / duration trio stays perfectly centered. Absolute-
+   positioned to the right edge; everything else (icon size, hover,
+   color) inherits from the .aicut-fullscreen rules below. */
+.aicut-preview-controls .aicut-fullscreen {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
 .aicut-preview-controls .aicut-time-current,
 .aicut-preview-controls .aicut-time-total {
   min-width: 48px;

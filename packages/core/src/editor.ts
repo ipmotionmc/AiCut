@@ -1546,19 +1546,34 @@ export class Editor implements EditorApi {
     if (!trk || !cl || !kf || !cl.keyframes) return false;
     const duration = clipDuration(cl);
     const clamped = Math.max(0, Math.min(duration, Math.round(timeMs)));
-    if (clamped === kf.time) return false;
-    // Reject moves that would collide with another keyframe on the
-    // SAME prop at the exact same time — different props can coexist.
-    if (
-      cl.keyframes.some(
+    // Identify every kf in the same "moment" as the grabbed one (same
+    // clip-local time, within the 16 ms tolerance the timeline uses for
+    // visual grouping). When the user pins via the toolbar "+ kf"
+    // button all three props (panX / panY / scale) land at the same
+    // time; dragging one without the others would visually fracture
+    // the moment so move them all as a unit.
+    const MOMENT_TOL = 16;
+    const groupOriginalTime = kf.time;
+    const group = cl.keyframes.filter(
+      (k) => Math.abs(k.time - groupOriginalTime) <= MOMENT_TOL,
+    );
+    const groupIds = new Set(group.map((k) => k.id));
+    const delta = clamped - groupOriginalTime;
+    if (delta === 0) return false;
+    // Reject collisions: any kf that's NOT part of the moving group
+    // at the same prop+time would land on top.
+    for (const g of group) {
+      const newTime = g.time + delta;
+      const collision = cl.keyframes.some(
         (k) =>
-          k.id !== keyframeId && k.prop === kf.prop && k.time === clamped,
-      )
-    ) {
-      return false;
+          !groupIds.has(k.id) &&
+          k.prop === g.prop &&
+          Math.abs(k.time - newTime) < 1,
+      );
+      if (collision) return false;
     }
     this.pushHistory();
-    kf.time = clamped;
+    for (const g of group) g.time += delta;
     cl.keyframes.sort((a, b) => {
       if (a.prop !== b.prop) return a.prop.localeCompare(b.prop);
       return a.time - b.time;
