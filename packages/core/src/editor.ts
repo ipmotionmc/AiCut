@@ -12,7 +12,12 @@ import {
   splitClipAt,
   trackEnd,
 } from "./model.js";
-import { setTimelineMetrics, wouldOverlap } from "./timeline/layout.js";
+import {
+  SCALE_MAX,
+  SCALE_MIN,
+  setTimelineMetrics,
+  wouldOverlap,
+} from "./timeline/layout.js";
 import {
   HtmlVideoEngine,
   type PlaybackEngine,
@@ -90,6 +95,14 @@ export interface EditorOptions {
    * Reasonable range: [120, 480].
    */
   timelineHeight?: number;
+  /**
+   * Minimum pixel gap between ruler major ticks. The library picks the
+   * "nicest" interval (1s, 0.5s, 0.2s, …) that keeps majors at least
+   * this far apart for the current zoom. Default 80; lower (~50) packs
+   * labels denser, higher (~140) spaces them out. Reactive via
+   * `editor.setRulerMinTickPx(...)`.
+   */
+  rulerMinTickPx?: number;
   /**
    * Per-clip keyframe animation (X / Y / Scale). Off by default; flip
    * `enabled: true` to surface keyframe markers on the timeline and
@@ -176,7 +189,29 @@ export interface EditorOptions {
     enabled?: boolean;
     toolbarAdd?: boolean;
   };
+  /**
+   * High-level editor layout.
+   *
+   * - `"centered"` (default): three-column grid — host content on
+   *   the left, preview locked to the centre 1/3, host content on
+   *   the right. CapCut-desktop convention.
+   * - `"fullWidth"`: preview spans the editor's full width with no
+   *   side columns — useful for embeds where the host doesn't want
+   *   to render any panels.
+   *   The preview's aspect frame sizes its height from that 1/3
+   *   width and the video letterboxes inside. Playback chrome
+   *   (time / play / duration / fullscreen) renders as an overlay
+   *   inside the preview, CapCut-desktop style, so the top toolbar
+   *   collapses to edit + viewport clusters only.
+   *
+   * Hosts wire `panelLeft` / `panelRight` slots via the React /
+   * Vue wrappers to fill the side columns. Reactive — flip via
+   * `editor.setPreviewLayout(...)`.
+   */
+  previewLayout?: PreviewLayout;
 }
+
+export type PreviewLayout = "fullWidth" | "centered";
 
 export interface EditorEventMap {
   /** Emitted whenever the project mutates. */
@@ -207,6 +242,8 @@ export interface EditorEventMap {
   /** Multi-track preview compositing toggle changed
    *  (Editor.setPictureInPictureEnabled). */
   pictureInPictureEnabledChange: { enabled: boolean };
+  /** Layout flipped between fullWidth and centered. */
+  previewLayoutChange: { layout: PreviewLayout };
   /**
    * User clicked the built-in "+ PiP overlay" toolbar button. Host
    * is expected to surface its own file-picker / upload affordance
@@ -303,6 +340,11 @@ export interface EditorApi {
   getSnap(): boolean;
   setSnap(snap: boolean): void;
 
+  /** Read current ruler tick min-pixel-gap (see `rulerMinTickPx` option). */
+  getRulerMinTickPx(): number;
+  /** Update the ruler tick density at runtime. */
+  setRulerMinTickPx(px: number): void;
+
   // selection
   getSelection(): string | null;
   setSelection(clipId: string | null): void;
@@ -319,6 +361,9 @@ export interface EditorApi {
    *  to false. Flipping triggers an engine-side re-composite. */
   isPictureInPictureEnabled(): boolean;
   setPictureInPictureEnabled(enabled: boolean): void;
+  /** Current high-level editor layout. Defaults to "centered". */
+  getPreviewLayout(): PreviewLayout;
+  setPreviewLayout(layout: PreviewLayout): void;
   /** Built-in aspect picker visibility (CapCut-style 比例 dropdown). */
   isAspectEnabled(): boolean;
   setAspectEnabled(enabled: boolean): void;
@@ -486,6 +531,17 @@ export interface EditorApi {
   readonly headerLeft: HTMLElement;
   /** Right-side header slot — conventionally Share / Export / etc. */
   readonly headerRight: HTMLElement;
+  /**
+   * Side panel slot, rendered only when `previewLayout === "centered"`.
+   * Sits to the LEFT of the preview at 1/3 of the editor's width.
+   * Conventionally a media library / asset browser. Empty when the
+   * layout is `"fullWidth"` — the editor's overall grid still
+   * reserves the slot but CSS collapses it.
+   */
+  readonly panelLeft: HTMLElement;
+  /** Right side panel slot — conventionally an inspector / clip
+   *  properties panel. See `panelLeft`. */
+  readonly panelRight: HTMLElement;
 
   // events
   on<K extends EditorEventName>(
@@ -500,8 +556,8 @@ export interface EditorApi {
 }
 
 const DEFAULT_PX_PER_SEC = 80;
-const MIN_PX_PER_SEC = 10;
-const MAX_PX_PER_SEC = 400;
+const MIN_PX_PER_SEC = SCALE_MIN;
+const MAX_PX_PER_SEC = SCALE_MAX;
 /** Snap distance in pixels at the current zoom. Converted to ms per call. */
 const SNAP_PX = 8;
 
@@ -530,6 +586,7 @@ export class Editor implements EditorApi {
   private aspectEnabled: boolean;
   private previewFrameEnabled: boolean;
   private pictureInPictureEnabled: boolean;
+  private previewLayout: PreviewLayout;
   private pictureInPictureToolbarAddEnabled: boolean;
   /** Drag-session bookkeeping for ripple-merge undo. See
    *  beginInteraction / endInteraction docs on EditorApi. */
@@ -538,6 +595,7 @@ export class Editor implements EditorApi {
   private pxPerSec: number;
   private snap: boolean;
   private locale: Locale;
+  private rulerMinTickPx: number;
   private destroyed = false;
 
   constructor(opts: EditorOptions) {
@@ -546,6 +604,7 @@ export class Editor implements EditorApi {
     this.pxPerSec = clampScale(opts.initialScale ?? DEFAULT_PX_PER_SEC);
     this.snap = opts.initialSnap !== false;
     this.locale = mergeLocale(opts.locale);
+    this.rulerMinTickPx = Math.max(20, Math.round(opts.rulerMinTickPx ?? 80));
     this.keyframesEnabled = opts.keyframes?.enabled === true;
     this.clipEdgeNavEnabled = opts.clipEdgeNav?.enabled === true;
     this.aspectEnabled = opts.aspect?.enabled === true;
@@ -554,6 +613,7 @@ export class Editor implements EditorApi {
     // preview pass `previewFrame: { enabled: false }` to opt out.
     this.previewFrameEnabled = opts.previewFrame?.enabled !== false;
     this.pictureInPictureEnabled = opts.pictureInPicture?.enabled === true;
+    this.previewLayout = opts.previewLayout ?? "centered";
     this.pictureInPictureToolbarAddEnabled =
       opts.pictureInPicture?.toolbarAdd === true;
 
@@ -645,6 +705,14 @@ export class Editor implements EditorApi {
 
   get headerRight(): HTMLElement {
     return this.ui.headerRight;
+  }
+
+  get panelLeft(): HTMLElement {
+    return this.ui.panelLeft;
+  }
+
+  get panelRight(): HTMLElement {
+    return this.ui.panelRight;
   }
 
   // ---- playback -------------------------------------------------------
@@ -1051,6 +1119,7 @@ export class Editor implements EditorApi {
     // Re-fit on project swap — the new project's duration is likely
     // different so the previous scale is meaningless.
     this.ui.resetAutoFit();
+    this.ui.setAspect(this.getAspect());
     this.ui.render();
   }
 
@@ -1141,6 +1210,17 @@ export class Editor implements EditorApi {
     this.snap = snap;
     this.bus.emit("snapChange", { snap });
     this.ui.render();
+  }
+
+  getRulerMinTickPx(): number {
+    return this.rulerMinTickPx;
+  }
+
+  setRulerMinTickPx(px: number): void {
+    const next = Math.max(20, Math.round(px));
+    if (next === this.rulerMinTickPx) return;
+    this.rulerMinTickPx = next;
+    this.ui.setRulerMinTickPx(next);
   }
 
   /** Snap a candidate ms to the nearest snappable surface within SNAP_PX. */
@@ -1295,6 +1375,18 @@ export class Editor implements EditorApi {
     this.ui.render();
   }
 
+  getPreviewLayout(): PreviewLayout {
+    return this.previewLayout;
+  }
+
+  setPreviewLayout(layout: PreviewLayout): void {
+    if (layout === this.previewLayout) return;
+    this.previewLayout = layout;
+    this.ui.setPreviewLayout(layout);
+    this.bus.emit("previewLayoutChange", { layout });
+    this.ui.render();
+  }
+
   isAspectEnabled(): boolean {
     return this.aspectEnabled;
   }
@@ -1320,6 +1412,7 @@ export class Editor implements EditorApi {
       this.project.aspect = aspect;
     }
     this.afterMutation();
+    this.ui.setAspect(aspect);
     this.bus.emit("aspectChange", { aspect });
   }
 

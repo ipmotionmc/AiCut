@@ -20,10 +20,11 @@ import {
   contentLeftX,
   contentWidth,
   formatRulerLabel,
-  niceTickSeconds,
+  pickRulerTicks,
   trackY,
   uncoveredIntervals,
 } from "./layout.js";
+import { projectFps } from "../model.js";
 
 export interface DrawStyle {
   bg: string;
@@ -64,6 +65,9 @@ export interface DrawState {
   scrollbarActiveX: boolean;
   /** Resolved locale used for canvas-painted labels. */
   locale: Locale;
+  /** Minimum pixel gap between ruler major ticks — drives the auto
+   *  picker. Mirrored from `TimelineOptions.rulerMinTickPx` (default 80). */
+  rulerMinTickPx: number;
   /** When true, paint a diamond marker on each clip per keyframe.
    *  Wired to `Editor.isKeyframesEnabled()`. */
   keyframesEnabled: boolean;
@@ -397,9 +401,12 @@ function drawRuler(
   ctx.lineTo(W, RULER_HEIGHT - 0.5);
   ctx.stroke();
 
-  const minPx = 80;
-  const tickSec = niceTickSeconds(minPx / pxPerSec);
-  const subSec = tickSec / 5;
+  const minPx = state.rulerMinTickPx;
+  const fps = projectFps(state.project);
+  const { majorSec, subSec } = pickRulerTicks(minPx / pxPerSec, fps, pxPerSec);
+  // Sub-ticks per major. Round to int because sub-tick spacing is
+  // 1/fps at high zoom and the division isn't exact in binary.
+  const subDiv = Math.max(1, Math.round(majorSec / subSec));
 
   const firstVisibleSec = Math.max(0, scrollLeft / pxPerSec - subSec);
   const lastVisibleSec = (scrollLeft + rulerW) / pxPerSec + subSec;
@@ -416,12 +423,24 @@ function drawRuler(
     if (s < 0) continue;
     const x = baseX + s * pxPerSec - scrollLeft;
     if (x < baseX || x > W) continue;
-    const isMajor = Math.abs(((s / tickSec) % 1)) < 1e-3;
+    // Index within the current major (0 → at a whole-second boundary).
+    // Integer modulo dodges the float-mod glitch where e.g.
+    // `0.6 / 0.2 = 2.9999…` would miss a label like 0.6s.
+    const subIdx = ((i % subDiv) + subDiv) % subDiv;
+    const isMajor = subIdx === 0;
+    // Frame mode (subDiv > 5) gets secondary labels every 5 frames
+    // inside the second — keeps "5f / 10f / 15f / …" visible even
+    // when the next whole-second mark is off-screen. Low-zoom mode
+    // (subDiv === 5) already has labels at every major, no secondary
+    // needed.
+    const isMidLabel = !isMajor && subDiv > 5 && subIdx % 5 === 0;
     ctx.strokeStyle = isMajor
       ? withAlpha(style.text, 0.5)
-      : withAlpha(style.text, 0.25);
+      : isMidLabel
+        ? withAlpha(style.text, 0.35)
+        : withAlpha(style.text, 0.22);
     ctx.lineWidth = 1;
-    const h = isMajor ? 10 : 6;
+    const h = isMajor ? 10 : isMidLabel ? 8 : 5;
     ctx.beginPath();
     ctx.moveTo(x + 0.5, RULER_HEIGHT - h);
     ctx.lineTo(x + 0.5, RULER_HEIGHT - 1);
@@ -429,6 +448,9 @@ function drawRuler(
     if (isMajor) {
       ctx.fillStyle = withAlpha(style.textMuted, 0.85);
       ctx.fillText(formatRulerLabel(s), x + 3, RULER_HEIGHT - 12);
+    } else if (isMidLabel) {
+      ctx.fillStyle = withAlpha(style.textMuted, 0.55);
+      ctx.fillText(`${subIdx}f`, x + 3, RULER_HEIGHT - 12);
     }
   }
 }

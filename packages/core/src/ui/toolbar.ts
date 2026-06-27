@@ -1,11 +1,8 @@
 import type { Locale } from "../i18n.js";
+import { SCALE_MAX, SCALE_MIN } from "../timeline/layout.js";
 import type { AspectRatio } from "../types.js";
 import { AspectPicker } from "./aspect-picker.js";
-import { fmtClock } from "./format.js";
 import { ICONS, type IconName } from "./icons.js";
-
-const SCALE_MIN = 10;
-const SCALE_MAX = 400;
 
 export interface ToolbarCallbacks {
   onUndo: () => void;
@@ -13,8 +10,6 @@ export interface ToolbarCallbacks {
   onSplit: () => void;
   onTrimLeft: () => void;
   onTrimRight: () => void;
-  onPlayToggle: () => void;
-  onFullscreen: () => void;
   onReset: () => void;
   onSnapToggle: () => void;
   onScaleChange: (pxPerSec: number) => void;
@@ -37,9 +32,6 @@ export interface ToolbarCallbacks {
 }
 
 interface ToolbarState {
-  playing: boolean;
-  time: number;
-  duration: number;
   canUndo: boolean;
   canRedo: boolean;
   canSplit: boolean;
@@ -113,11 +105,6 @@ export class Toolbar {
   private seekClipEndBtn!: HTMLButtonElement;
   private keyframeBtn!: HTMLButtonElement;
   private pipBtn!: HTMLButtonElement;
-  private playBtn!: HTMLButtonElement;
-  private playIcon!: HTMLSpanElement;
-  private timeLabel!: HTMLSpanElement;
-  private durationLabel!: HTMLSpanElement;
-  private fullscreenBtn!: HTMLButtonElement;
   private snapBtn!: HTMLButtonElement;
   private zoomOutBtn!: HTMLButtonElement;
   private zoomSlider!: HTMLInputElement;
@@ -193,21 +180,6 @@ export class Toolbar {
       this.pipBtn,
     );
 
-    const center = mkGroup("aicut-toolbar-center");
-    this.timeLabel = mkSpan("aicut-time-current", "00:00", "aicut-time-current");
-    this.playBtn = document.createElement("button");
-    this.playBtn.type = "button";
-    this.playBtn.className = "aicut-play-btn";
-    this.playBtn.title = locale.playPause;
-    this.playBtn.setAttribute("data-testid", "aicut-play");
-    this.playIcon = document.createElement("span");
-    this.playIcon.innerHTML = ICONS.play;
-    this.playBtn.appendChild(this.playIcon);
-    this.playBtn.addEventListener("click", () => cb.onPlayToggle());
-    this.durationLabel = mkSpan("aicut-time-total", "00:00", "aicut-time-total");
-    this.fullscreenBtn = mkIconButton("fullscreen", locale.fullscreen, () => cb.onFullscreen(), "aicut-fullscreen");
-    center.append(this.timeLabel, this.playBtn, this.durationLabel, this.fullscreenBtn);
-
     const right = mkGroup("aicut-toolbar-right");
     this.snapBtn = mkIconButton("snap", locale.snap, () => cb.onSnapToggle(), "aicut-snap");
     this.zoomOutBtn = mkIconButton("zoomOut", locale.zoomOut, () => this.nudgeZoom(-1), "aicut-zoom-out");
@@ -225,7 +197,7 @@ export class Toolbar {
     this.resetBtn = mkIconButton("reset", locale.reset, () => cb.onReset(), "aicut-reset");
     right.append(this.snapBtn, this.zoomOutBtn, this.zoomSlider, this.zoomInBtn, this.resetBtn);
 
-    this.root.append(this.extrasLeft, left, center, right, this.extrasRight);
+    this.root.append(this.extrasLeft, left, right, this.extrasRight);
     host.appendChild(this.root);
   }
 
@@ -247,19 +219,6 @@ export class Toolbar {
    * unconditionally, but we still diff them for cheap CPU.
    */
   render(state: ToolbarState): void {
-    if (!this.lastState || this.lastState.time !== state.time) {
-      this.timeLabel.textContent = fmtClock(state.time);
-    }
-    if (!this.lastState || this.lastState.duration !== state.duration) {
-      this.durationLabel.textContent = fmtClock(state.duration);
-    }
-    if (!this.lastState || this.lastState.playing !== state.playing) {
-      this.playIcon.innerHTML = state.playing ? ICONS.pause : ICONS.play;
-      this.playBtn.setAttribute(
-        "data-state",
-        state.playing ? "playing" : "paused",
-      );
-    }
     if (!this.lastState || this.lastState.canUndo !== state.canUndo) {
       this.undoBtn.disabled = !state.canUndo;
     }
@@ -388,8 +347,6 @@ export class Toolbar {
     applyTitle(this.trimRightBtn, locale.trimRight);
     applyTitle(this.seekClipStartBtn, locale.seekClipStart);
     applyTitle(this.seekClipEndBtn, locale.seekClipEnd);
-    applyTitle(this.playBtn, locale.playPause);
-    applyTitle(this.fullscreenBtn, locale.fullscreen);
     applyTitle(this.snapBtn, locale.snap);
     applyTitle(this.zoomOutBtn, locale.zoomOut);
     applyTitle(this.zoomInBtn, locale.zoomIn);
@@ -426,14 +383,6 @@ function mkGroup(cls: string): HTMLDivElement {
   const d = document.createElement("div");
   d.className = cls;
   return d;
-}
-
-function mkSpan(cls: string, text: string, testId?: string): HTMLSpanElement {
-  const s = document.createElement("span");
-  s.className = cls;
-  s.textContent = text;
-  if (testId) s.setAttribute("data-testid", testId);
-  return s;
 }
 
 function mkIconButton(

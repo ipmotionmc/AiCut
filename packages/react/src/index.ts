@@ -10,6 +10,8 @@ export type {
   Keyframe,
   Ms,
   Theme,
+  AspectRatio,
+  PreviewLayout,
   EditorApi,
   Locale,
   PlaybackEngine,

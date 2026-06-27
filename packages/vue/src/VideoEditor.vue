@@ -7,6 +7,7 @@ import {
   type Locale,
   type Ms,
   type PlaybackEngineFactory,
+  type PreviewLayout,
   type Project,
   type Theme,
 } from "@aicut/core";
@@ -78,6 +79,19 @@ const props = defineProps<{
    * / export defaults.
    */
   aspect?: { enabled?: boolean };
+  /**
+   * Picks how the preview area sits in the row below the header.
+   * `"centered"` (default) pins it to the middle third (CapCut-desktop
+   * style) with `panelLeft` / `panelRight` slots flanking it.
+   * `"fullWidth"` spans the row with no side columns. Reactive.
+   */
+  previewLayout?: PreviewLayout;
+  /**
+   * Minimum pixel gap between timeline ruler major ticks. Default 80;
+   * lower (~50) packs labels denser, higher (~140) spaces them out.
+   * Reactive — change anytime to retune density.
+   */
+  rulerMinTickPx?: number;
 }>();
 
 const emit = defineEmits<{
@@ -105,6 +119,10 @@ const offs: Array<() => void> = [];
  *  `#headerLeft` / `#headerRight` portal whatever the host provides. */
 const headerLeftSlot = ref<HTMLElement | null>(null);
 const headerRightSlot = ref<HTMLElement | null>(null);
+/** Side-panel slot DOM nodes — visible only when
+ *  `previewLayout === "centered"`. */
+const panelLeftSlot = ref<HTMLElement | null>(null);
+const panelRightSlot = ref<HTMLElement | null>(null);
 
 onMounted(() => {
   if (!host.value) return;
@@ -128,6 +146,12 @@ onMounted(() => {
       ? { pictureInPicture: props.pictureInPicture }
       : {}),
     ...(props.aspect != null ? { aspect: props.aspect } : {}),
+    ...(props.previewLayout != null
+      ? { previewLayout: props.previewLayout }
+      : {}),
+    ...(props.rulerMinTickPx != null
+      ? { rulerMinTickPx: props.rulerMinTickPx }
+      : {}),
   });
 
   offs.push(
@@ -151,6 +175,8 @@ onMounted(() => {
 
   headerLeftSlot.value = editor.headerLeft;
   headerRightSlot.value = editor.headerRight;
+  panelLeftSlot.value = editor.panelLeft;
+  panelRightSlot.value = editor.panelRight;
   emit("ready", editor);
 });
 
@@ -228,6 +254,25 @@ watch(
   },
 );
 
+// Reactive — swap preview layout (fullWidth ↔ centered).
+watch(
+  () => props.previewLayout,
+  (layout) => {
+    if (!editor || layout == null) return;
+    if (editor.getPreviewLayout() !== layout) {
+      editor.setPreviewLayout(layout);
+    }
+  },
+);
+
+watch(
+  () => props.rulerMinTickPx,
+  (px) => {
+    if (!editor || px == null) return;
+    if (editor.getRulerMinTickPx() !== px) editor.setRulerMinTickPx(px);
+  },
+);
+
 // Reactive — sets the CSS custom property directly so the timeline
 // height can be tweaked without remounting.
 watch(
@@ -253,6 +298,8 @@ onBeforeUnmount(() => {
   editor = null;
   headerLeftSlot.value = null;
   headerRightSlot.value = null;
+  panelLeftSlot.value = null;
+  panelRightSlot.value = null;
 });
 
 defineExpose({
@@ -268,6 +315,12 @@ defineExpose({
     </Teleport>
     <Teleport v-if="headerRightSlot" :to="headerRightSlot">
       <slot name="headerRight" />
+    </Teleport>
+    <Teleport v-if="panelLeftSlot" :to="panelLeftSlot">
+      <slot name="panelLeft" />
+    </Teleport>
+    <Teleport v-if="panelRightSlot" :to="panelRightSlot">
+      <slot name="panelRight" />
     </Teleport>
   </div>
 </template>

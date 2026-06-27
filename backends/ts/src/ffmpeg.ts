@@ -56,7 +56,28 @@ export function runFfmpeg(
     // We want stdout when progress is being parsed; without an
     // onStdoutLine consumer, draining it costs nothing meaningful but
     // keeps the contract uniform.
-    const proc = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
+    // Strip any inherited HTTP/HTTPS proxy env vars from the ffmpeg
+    // subprocess. ffmpeg's HTTP client doesn't always honor NO_PROXY,
+    // and a user's system proxy (Clash, mitmproxy, work VPN) frequently
+    // intercepts `http://localhost:<vite-port>` and returns 503. For
+    // backend rendering of local dev sources we don't need a proxy —
+    // production hosts that legitimately need one should override this
+    // via their own deployment env. We ALSO append loopback hosts to
+    // NO_PROXY for clients that DO honor it (libcurl-based ones).
+    const noProxy = "localhost,127.0.0.1,::1";
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    delete env.HTTP_PROXY;
+    delete env.http_proxy;
+    delete env.HTTPS_PROXY;
+    delete env.https_proxy;
+    delete env.ALL_PROXY;
+    delete env.all_proxy;
+    env.NO_PROXY = noProxy;
+    env.no_proxy = noProxy;
+    const proc = spawn(bin, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env,
+    });
     let stderr = "";
     let stdoutBuf = "";
     proc.stdout.on("data", (b: Buffer) => {
