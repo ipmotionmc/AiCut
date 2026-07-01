@@ -45,6 +45,7 @@ import {
   localeZh,
   useEditor,
   useEditorState,
+  useLocale,
   createId,
   type Project,
   type Theme,
@@ -56,18 +57,40 @@ const SAMPLE_URL =
   (import.meta.env.VITE_PRELOAD_VIDEO_URL as string | undefined) ||
   "/sample.mp4";
 
-// The composition demo intentionally does NOT auto-add clips — it lets
-// the host media list drive project construction so users can see the
-// "empty state → add a source → clip appears on timeline" flow that a
-// real embedding host would build.
-const EMPTY_PROJECT: Project = {
-  version: 1,
-  sources: [],
-  tracks: [
-    { id: createId("track"), kind: "video", clips: [] },
-    { id: createId("track"), kind: "video", clips: [] },
-  ],
-};
+// Preload the sample clip on the first video track so first paint has
+// something to show — the empty state is available in the media list
+// too if a host wants to demo "add first source" flows.
+function makeSeedProject(): Project {
+  const sourceId = createId("src");
+  return {
+    version: 1,
+    sources: [
+      {
+        id: sourceId,
+        url: SAMPLE_URL,
+        kind: "video",
+        name: "sample.mp4",
+        duration: 5000,
+      },
+    ],
+    tracks: [
+      {
+        id: createId("track"),
+        kind: "video",
+        clips: [
+          {
+            id: createId("clip"),
+            sourceId,
+            in: 0,
+            out: 5000,
+            start: 0,
+          },
+        ],
+      },
+      { id: createId("track"), kind: "video", clips: [] },
+    ],
+  };
+}
 
 const THEME_LIGHT: Theme = {
   controlsBg: "#f6f6f8",
@@ -75,6 +98,9 @@ const THEME_LIGHT: Theme = {
   controlsText: "rgba(0, 0, 0, 0.78)",
   controlsHover: "rgba(0, 0, 0, 0.06)",
   controlsActive: "rgba(0, 0, 0, 0.08)",
+  // Letterbox that reads as "a slightly-sunken viewport" against the
+  // light chrome — enough contrast to frame the video but not the
+  // harsh black plate a naive `#000` would drop.
   previewBg: "#e4e4e7",
 };
 
@@ -84,7 +110,11 @@ const THEME_DARK: Theme = {
   controlsText: "rgba(255, 255, 255, 0.85)",
   controlsHover: "rgba(255, 255, 255, 0.08)",
   controlsActive: "rgba(255, 255, 255, 0.12)",
-  previewBg: "#000",
+  // Just a touch darker than the chrome so the letterbox reads as a
+  // sunken viewport (like Premiere / DaVinci program-monitor bezel)
+  // instead of a bright black plate stuck onto a dark chrome —
+  // matches CapCut's dark-mode chip too.
+  previewBg: "#141416",
 };
 
 interface MediaAsset {
@@ -106,10 +136,14 @@ export function CompositionDemo(): ReactElement {
     localeName === "zh" ? localeZh : localeEn;
 
   const [assets, setAssets] = useState<MediaAsset[]>(SEED_ASSETS);
+  // Same instance for the lifetime of the mount — `<EditorProvider>`
+  // reads `defaultProject` once at construction; re-creating it on
+  // every render would blow the useMemo guard.
+  const [seedProject] = useState(() => makeSeedProject());
 
   return (
     <EditorProvider
-      defaultProject={EMPTY_PROJECT}
+      defaultProject={seedProject}
       theme={theme}
       locale={locale}
       keyframes={{ enabled: true }}
@@ -123,6 +157,7 @@ export function CompositionDemo(): ReactElement {
             layout entirely host-defined — same theme + i18n tokens as{" "}
             <code>&lt;VideoEditor&gt;</code>
           </span>
+          <LocalePreviewBadge />
           <div className="composition-header-controls">
             <button
               type="button"
@@ -339,5 +374,22 @@ function ToolbarRow(): ReactElement {
         <SnapToggle className="composition-toolbar-btn" />
       </div>
     </div>
+  );
+}
+
+// ---- Locale sample text -------------------------------------------------
+
+/** Displays a couple of locale strings from the shared `Locale` object
+ *  so switching the header chip has an obvious visible effect. */
+function LocalePreviewBadge(): ReactElement {
+  const locale = useLocale();
+  return (
+    <span
+      className="composition-header-hint"
+      data-testid="composition-locale-preview"
+      style={{ marginLeft: 12 }}
+    >
+      · {locale.playPause} / {locale.split}
+    </span>
   );
 }

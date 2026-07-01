@@ -694,7 +694,11 @@ body,
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #000;
+  /* Preview letterbox — same token the built-in editor uses. Hosts
+     override it via `theme.previewBg` on `<EditorProvider>` (writes
+     the `--aicut-preview-bg` CSS var) so a light-mode composition
+     doesn't stick out with a hard black plate. */
+  background: var(--aicut-preview-bg, #000);
   border: 1px solid var(--aicut-controls-border, rgba(255, 255, 255, 0.08));
   border-radius: 8px;
   overflow: hidden;

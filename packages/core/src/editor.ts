@@ -317,6 +317,13 @@ export interface EditorEventMap {
   snapChange: { snap: boolean };
   /** Undo/redo stack states changed (button enablement). */
   historyChange: { canUndo: boolean; canRedo: boolean };
+  /** Theme tokens changed via `editor.setTheme(...)`. Subscribers (e.g.
+   *  the standalone `<TimelinePrimitive>`) use this to force a canvas
+   *  re-paint since CSS custom properties don't invalidate the canvas
+   *  on their own. */
+  themeChange: { theme: Theme };
+  /** Locale tokens changed via `editor.setLocale(...)`. */
+  localeChange: { locale: Locale };
 }
 
 export type EditorEventName = keyof EditorEventMap;
@@ -372,6 +379,10 @@ export interface EditorApi {
    * and timeline canvas labels pick up the new strings immediately.
    */
   setLocale(locale: Partial<Locale>): void;
+  /** Currently resolved `Locale` object (merged with `localeEn` for
+   *  any keys the host didn't override). Emits `localeChange` on
+   *  update — used by the React `useLocale()` hook. */
+  getLocale(): Locale;
   /**
    * Fire the `export` event with the current project JSON. Hosts call
    * this from their own export button (built into their toolbarRight
@@ -1318,11 +1329,17 @@ export class Editor implements EditorApi {
     // immediately via CSS but the canvas keeps its last colours until
     // the next interaction (wheel, click, etc.). Force a repaint now.
     this.ui?.render();
+    // Fanout to headless subscribers (e.g. the standalone
+    // `<TimelinePrimitive>` spun up under `<EditorProvider>`) — they
+    // need the signal because there's no built-in UI to call
+    // `timeline.setTheme` for them.
+    this.bus.emit("themeChange", { theme });
   }
 
   setLocale(locale: Partial<Locale>): void {
     this.locale = mergeLocale(locale);
     this.ui?.setLocale(this.locale);
+    this.bus.emit("localeChange", { locale: this.locale });
   }
 
   /** Internal — UI reads the resolved locale here on each render. */

@@ -8,6 +8,7 @@ export {
   EditorProvider,
   useEditor,
   useEditorState,
+  useLocale,
   Preview,
   Timeline as TimelinePrimitive,
   PlayButton,
