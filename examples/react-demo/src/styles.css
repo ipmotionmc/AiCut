@@ -1031,3 +1031,19 @@ body,
   font-size: 11px;
   opacity: 0.4;
 }
+
+/* Effects toggle chip in the API playground header. */
+.apiplay-chip {
+  margin-left: auto;
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--aicut-controls-border);
+  background: var(--aicut-controls-hover);
+  color: var(--aicut-controls-text);
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: ui-monospace, "SF Mono", monospace;
+}
+.apiplay-chip:hover {
+  background: var(--aicut-controls-active);
+}

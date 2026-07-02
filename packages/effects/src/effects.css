@@ -1,0 +1,18 @@
+/* CSS keyframes the shipped effects reference. Kept in one small
+   file rather than inline styles because keyframe rules can't be
+   set from React inline `style` props.
+   */
+
+@keyframes aicut-effect-saw-flash {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.6);
+  }
+  30% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  100% {
+    opacity: 0;
+  }
+}

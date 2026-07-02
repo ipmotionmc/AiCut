@@ -1,6 +1,6 @@
 {
   "name": "@aicut/effects",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "Optional visual-effects layer for @aicut/react — animated stick figures / characters that visualise every AI-facing edit operation as it fires. Fully opt-in, host-swappable.",
   "license": "MIT",
   "author": "ziqiang <ziqiangytu@gmail.com>",

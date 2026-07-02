@@ -37,6 +37,7 @@ import {
   type Project,
   type Theme,
 } from "@aicut/react";
+import { AiCutEffects } from "@aicut/effects";
 import "@aicut/core/styles.css";
 
 const SAMPLE_URL =
@@ -86,6 +87,10 @@ const THEME: Theme = {
 
 export function ApiPlayground(): ReactElement {
   const [seedProject] = useState(() => makeSeedProject());
+  // The effects layer is opt-in. Default ON so first-time visitors
+  // see the stick figure. Persisted intentionally NOT — this is a
+  // playground, not the demo they take home.
+  const [effectsOn, setEffectsOn] = useState(true);
   return (
     // CanvasCompositorEngine so composite frame capture actually works —
     // HtmlVideoEngine has no <canvas> to read from.
@@ -97,6 +102,10 @@ export function ApiPlayground(): ReactElement {
       pictureInPicture={{ enabled: true }}
       aspect={{ enabled: true }}
     >
+      {/* Effects layer sits outside the shell so its fixed-position
+          overlay stacks correctly. `<EditorProvider>` propagates
+          via context so this still binds to the same editor. */}
+      <AiCutEffects enabled={effectsOn} />
       <div className="apiplay-shell">
         <div className="apiplay-header">
           <strong>API playground</strong>
@@ -104,6 +113,14 @@ export function ApiPlayground(): ReactElement {
             Every card = one AI-facing method. Fire, watch the timeline
             respond, read the typed EditResult.
           </span>
+          <button
+            type="button"
+            className="apiplay-chip"
+            data-testid="apiplay-toggle-effects"
+            onClick={() => setEffectsOn((v) => !v)}
+          >
+            🎭 Effects: {effectsOn ? "on" : "off"}
+          </button>
         </div>
         <div className="apiplay-body">
           <aside className="apiplay-cards">
