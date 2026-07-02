@@ -4,10 +4,9 @@ export type {
   EffectContext,
   EffectHandler,
   EffectsMap,
-  CharacterProps,
-  CharacterPose,
 } from "./types.js";
-export { StickFigure } from "./characters/StickFigure.js";
+export { Bear } from "./characters/Bear.js";
+export type { BearPose, BearProps } from "./characters/Bear.js";
 export { defaultSplitEffect } from "./effects/splitEffect.js";
 export { defaultMoveEffect } from "./effects/moveEffect.js";
 export { buildEffectContext } from "./geometry.js";

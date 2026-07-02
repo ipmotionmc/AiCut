@@ -1,51 +1,63 @@
 /**
- * Default `splitClip` effect. Rebuilt from the "walk in and saw"
- * original to a **drop → strike → recoil** three-beat pattern that
- * aligns the visual peak (the strike + flash) with the actual API
- * commit moment. The old effect fired the flash ~600ms AFTER the
- * timeline had already visibly split, breaking the cause-effect
- * feel. The new effect fires the flash ~200ms after mount, when the
- * user's eye is still catching up to the data change — the split
- * reads as caused by the strike.
+ * Default `splitClip` effect — silky bear-driven choreography.
  *
- * Phases:
- *   drop     (200ms) — figure falls from above the cut point, saw
- *                      raised. Anticipation.
- *   strike   (150ms) — figure at rest position, saw slashes down,
- *                      bright vertical flash line spans the row.
- *   recoil   (450ms) — figure bounces up + fades, flash line
- *                      contracts to nothing.
+ * Design rationale
+ * ────────────────
  *
- * Total ~800ms. All motion runs on cubic-bezier curves that
- * approximate real anticipation / snap / follow-through — no linear
- * easing (which was what made the old version read as "sliding
- * around").
+ * The old StickFigure-based effect had two structural problems:
+ *
+ *   1. Pose swaps between frames read as stop-motion — SVG paths
+ *      snapping between "walking" and "cutting" postures with no
+ *      interpolation.
+ *
+ *   2. Causal timing was off — the timeline data mutated at t=0 but
+ *      the visual "cut" landed 200-600ms later, so the split appeared
+ *      *before* the character did the cutting motion.
+ *
+ * This rewrite solves both by:
+ *
+ *   • Using a single high-fidelity bear image (arms-up "chop" pose)
+ *     and animating it purely via CSS transforms — no pose swaps,
+ *     so no snap-frame perception.
+ *
+ *   • Landing a bright vertical light beam at the cut point *at t=0*
+ *     via a CSS animation with an aggressive early keyframe. The
+ *     beam is the causal cue: it appears in lock-step with the data
+ *     mutation. The bear's chop swing peaks around 45% of the beam's
+ *     lifetime so the two read as connected.
+ *
+ * Choreography (~600ms total, all driven by CSS keyframes so the
+ * browser handles frame timing — zero React re-renders after mount):
+ *
+ *   0ms      beam appears (opacity 0→1 in ~50ms)
+ *   0ms      bear pops in above cut, arms cocked (scale + rotate spring)
+ *   ~170ms   bear reaches peak windup
+ *   ~270ms   bear swings arms down (rotate -16° → +18°) — the "chop"
+ *   ~240ms   radial glow blooms at strike point, two sparks fly out
+ *   ~450ms   bear starts floating up and fading
+ *   600ms    everything cleaned up, onComplete fires
  */
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useEffect, useRef, type ReactElement } from "react";
 import type { EffectHandler } from "../types.js";
-import { StickFigure } from "../characters/StickFigure.js";
+import { Bear } from "../characters/Bear.js";
 
-const DROP_MS = 200;
-const STRIKE_MS = 150;
-const RECOIL_MS = 450;
-const TOTAL_MS = DROP_MS + STRIKE_MS + RECOIL_MS;
-const FIGURE_HALF = 24;
-const DROP_HEIGHT = 40; // pixels above the strike position where the figure starts
+const TOTAL_MS = 700;
+const BEAR_SIZE = 108;
 
 export const defaultSplitEffect: EffectHandler = (op, ctx, onComplete) => {
   if (op.kind !== "splitClip" || !op.result.ok) return null;
   const args = op.args as { clipId: string; timeMs: number };
   const cutX = ctx.timelineToScreenX(args.timeMs);
   const clipRect = ctx.clipToScreenRect(args.clipId);
-  const timelineTop = clipRect?.top ?? ctx.timelineRect?.top ?? 0;
-  const rowHeight = clipRect?.height ?? 56;
   if (cutX == null) return null;
+  const rowTop = clipRect?.top ?? ctx.timelineRect?.top ?? 0;
+  const rowHeight = clipRect?.height ?? 56;
   return (
     <SplitAnimation
       key={op.timestamp}
       x={cutX}
-      top={timelineTop}
-      height={rowHeight}
+      rowTop={rowTop}
+      rowHeight={rowHeight}
       onDone={onComplete}
     />
   );
@@ -53,130 +65,117 @@ export const defaultSplitEffect: EffectHandler = (op, ctx, onComplete) => {
 
 function SplitAnimation({
   x,
-  top,
-  height,
+  rowTop,
+  rowHeight,
   onDone,
 }: {
   x: number;
-  top: number;
-  height: number;
+  rowTop: number;
+  rowHeight: number;
   onDone: () => void;
 }): ReactElement {
-  const [phase, setPhase] = useState<"drop" | "strike" | "recoil">("drop");
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
-
   useEffect(() => {
-    const t1 = setTimeout(() => setPhase("strike"), DROP_MS);
-    const t2 = setTimeout(() => setPhase("recoil"), DROP_MS + STRIKE_MS);
-    const t3 = setTimeout(() => doneRef.current(), TOTAL_MS);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-    };
+    const t = setTimeout(() => doneRef.current(), TOTAL_MS);
+    return () => clearTimeout(t);
   }, []);
 
-  // Figure position — the strike position (top - 56) is where the saw
-  // meets the clip. Drop starts DROP_HEIGHT above; recoil ends 40px
-  // above with fade.
-  const strikeY = top - 56;
-  const figureY = useMemo(() => {
-    switch (phase) {
-      case "drop":
-        return strikeY - DROP_HEIGHT;
-      case "strike":
-        return strikeY;
-      case "recoil":
-        return strikeY - 24;
-    }
-  }, [phase, strikeY]);
-
-  // Anticipation → snap → follow-through easing per phase.
-  //  drop:   cubic-bezier accelerates into strike (weight of the fall)
-  //  strike: linear (instant, no easing to feel)
-  //  recoil: cubic-bezier decelerates as figure lifts + fades
-  const transition = useMemo(() => {
-    switch (phase) {
-      case "drop":
-        return `top ${DROP_MS}ms cubic-bezier(0.55, 0, 1, 0.45)`;
-      case "strike":
-        return "none";
-      case "recoil":
-        return `top ${RECOIL_MS}ms cubic-bezier(0.2, 0.8, 0.4, 1), opacity ${RECOIL_MS}ms ease-out`;
-    }
-  }, [phase]);
-
-  // Flash line — grows during strike, contracts during recoil.
-  const flashOpacity =
-    phase === "drop" ? 0 : phase === "strike" ? 1 : 0;
-  const flashHeight =
-    phase === "drop" ? 0 : phase === "strike" ? height : height * 0.3;
+  const rowCenterY = rowTop + rowHeight / 2;
+  // Bear sits above the timeline row with feet roughly at the row's
+  // top edge. `translate(-50%, -100%)` on the bear pins its bottom-
+  // center to the cut point coordinate, so `top` is set to the row
+  // top and the transform lifts the whole sprite upward.
+  const bearAnchorY = rowTop;
 
   return (
     <>
-      {/* Vertical flash line across the clip row — the "cut". */}
+      {/* Vertical light beam at the cut point. Fixed-positioned at
+       *  (x, rowCenterY). `translate(-50%, -50%)` centers it. Height
+       *  set to the row height so the beam spans the clip. */}
       <div
         style={{
           position: "fixed",
-          left: x - 1.5,
-          top: top + (height - flashHeight) / 2,
-          width: 3,
-          height: flashHeight,
+          left: x,
+          top: rowCenterY,
+          width: 6,
+          height: rowHeight * 2.2,
           background:
-            "linear-gradient(to bottom, rgba(255,240,180,0), rgba(255,235,120,1) 30%, rgba(255,235,120,1) 70%, rgba(255,240,180,0))",
+            "linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(200,240,255,1) 22%, rgba(255,255,255,1) 50%, rgba(200,240,255,1) 78%, rgba(255,255,255,0) 100%)",
           boxShadow:
-            phase === "strike"
-              ? "0 0 18px 4px rgba(255,230,120,0.75)"
-              : "none",
-          opacity: flashOpacity,
-          transition:
-            phase === "strike"
-              ? "opacity 60ms ease-out, height 100ms cubic-bezier(0.4, 0, 0.2, 1), top 100ms cubic-bezier(0.4, 0, 0.2, 1)"
-              : "opacity 250ms ease-out, height 250ms ease-out, top 250ms ease-out",
+            "0 0 16px 3px rgba(180,230,255,0.95), 0 0 40px 8px rgba(120,190,255,0.65)",
+          borderRadius: 2,
+          animation: `aicut-effect-split-beam ${TOTAL_MS}ms cubic-bezier(0.2, 0.9, 0.3, 1) forwards`,
+          animationFillMode: "forwards",
           pointerEvents: "none",
+          willChange: "transform, opacity",
         }}
       />
-      {/* Impact ring at strike — bright at strike moment, expanding + fading during recoil. */}
-      {phase !== "drop" ? (
-        <div
-          style={{
-            position: "fixed",
-            left: x - 20,
-            top: top + height / 2 - 20,
-            width: 40,
-            height: 40,
-            borderRadius: "50%",
-            border: "2px solid rgba(255,230,120,0.8)",
-            opacity: phase === "strike" ? 0.9 : 0,
-            transform:
-              phase === "strike" ? "scale(0.6)" : "scale(1.6)",
-            transition:
-              phase === "recoil"
-                ? "opacity 300ms ease-out, transform 300ms ease-out"
-                : "none",
-            pointerEvents: "none",
-          }}
-        />
-      ) : null}
-      {/* Stick figure — falls into strike position, bounces on recoil */}
+      {/* Radial glow burst — delayed to bloom at the chop moment. */}
       <div
         style={{
           position: "fixed",
-          left: x - FIGURE_HALF,
-          top: figureY,
-          transition,
-          opacity: phase === "recoil" ? 0 : 1,
+          left: x,
+          top: rowCenterY,
+          width: rowHeight * 1.6,
+          height: rowHeight * 1.6,
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle, rgba(200,235,255,0.55) 0%, rgba(140,200,255,0.35) 40%, rgba(80,140,255,0) 70%)",
+          animation: `aicut-effect-split-glow ${TOTAL_MS}ms cubic-bezier(0.2, 0.9, 0.3, 1) forwards`,
           pointerEvents: "none",
-          color: "rgba(255, 220, 100, 0.95)",
-          filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.4))",
+          willChange: "transform, opacity",
+        }}
+      />
+      {/* Two sparks that fly out post-chop. Absolute-positioned
+       *  relative to the cut point; their keyframes translate them
+       *  diagonally away. */}
+      <Spark direction="left" x={x} y={rowCenterY} />
+      <Spark direction="right" x={x} y={rowCenterY} />
+      {/* Bear character. Anchored to the row-top so translate(-50%,
+       *  -100%) puts feet on the timeline. */}
+      <div
+        style={{
+          position: "fixed",
+          left: x,
+          top: bearAnchorY,
+          animation: `aicut-effect-split-bear ${TOTAL_MS}ms cubic-bezier(0.3, 0.9, 0.4, 1) forwards`,
+          transformOrigin: "50% 100%",
+          pointerEvents: "none",
+          willChange: "transform, opacity",
         }}
       >
-        <StickFigure
-          pose={phase === "strike" ? "cutting" : "cutting"}
-          facing="right"
-        />
+        <Bear pose="chop" size={BEAR_SIZE} />
       </div>
     </>
+  );
+}
+
+function Spark({
+  direction,
+  x,
+  y,
+}: {
+  direction: "left" | "right";
+  x: number;
+  y: number;
+}): ReactElement {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        left: x - 4,
+        top: y - 4,
+        width: 8,
+        height: 8,
+        borderRadius: "50%",
+        background:
+          "radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(220,240,255,0.9) 50%, rgba(180,210,255,0) 100%)",
+        boxShadow: "0 0 8px 2px rgba(200,230,255,0.85)",
+        animation: `aicut-effect-split-spark-${direction} ${TOTAL_MS}ms cubic-bezier(0.3, 0.7, 0.4, 1) forwards`,
+        pointerEvents: "none",
+        willChange: "transform, opacity",
+      }}
+    />
   );
 }

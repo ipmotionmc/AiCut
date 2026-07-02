@@ -1,61 +1,56 @@
 /**
- * Default `moveClipTo` effect. Rebuilt from the naive "walk in →
- * lift → straight glide → drop → walk out" pattern to an
- * anticipation-driven arc pattern with a walk cycle during transit:
+ * Default `moveClipTo` effect — silky bear-driven choreography.
  *
- *   spawn    (150ms) — figure fades in at the source clip position
- *                      with a slight squash. Anticipation.
- *   lift     (200ms) — ghost clip pops UP out of the source rect as
- *                      figure raises arms overhead (overshoots, then
- *                      settles — spring easing).
- *   carry    (700ms) — figure + ghost traverse a **parabolic arc**
- *                      from source to destination. Figure alternates
- *                      walking pose every 140ms to read as legs
- *                      taking steps (not a slide).
- *   drop     (200ms) — ghost lands into destination rect with a
- *                      small squash; figure follows through with a
- *                      little bow.
- *   exit     (200ms) — figure fades out, tiny puff of motion.
+ * Design rationale — same as splitEffect's rewrite: no pose swaps, no
+ * walk-cycle frame flipping (both read as stop-motion at the source),
+ * and no parabolic arc (reads as gamey rather than professional-UI
+ * smooth). Instead: a single bear-carry image (arms outstretched) is
+ * translated in a flat ease-in-out curve from source to destination
+ * with an intrinsic wobble driven by CSS keyframes.
  *
- * Total ~1.45s. The arc height scales with horizontal distance so
- * a short move stays flat while a long cross-timeline move arcs
- * high — matches physical intuition for "carrying weight".
+ * Choreography (~900ms total):
+ *
+ *   0ms      bear pops in at source with a spring, arms open
+ *   0ms      ghost clip fades in above bear's arms
+ *   0ms      source-position ring pulses outward (indicating "grab")
+ *   ~160ms   bear + ghost hold for a beat (settled after spring)
+ *   160ms→720ms
+ *            bear + ghost translate to destination via a smooth
+ *            ease-in-out cubic. Bear wobbles a few degrees during
+ *            transit (keyframed, independent of translation) — reads
+ *            as "carrying weight" without the choppy walk-cycle
+ *            pose-flip the old effect used.
+ *   ~720ms   destination-position ring pulses outward (indicating
+ *            "drop")
+ *   ~740ms   ghost drops into the destination row with a slight
+ *            squash bounce
+ *   ~800ms   bear floats up and fades
+ *   900ms    everything cleaned up
+ *
+ * All motion runs on the compositor thread (transform / opacity only,
+ * with `will-change` hints) so it stays 60fps under load.
  */
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ReactElement,
 } from "react";
 import type { EffectContext, EffectHandler } from "../types.js";
-import { StickFigure } from "../characters/StickFigure.js";
+import { Bear } from "../characters/Bear.js";
 
-const SPAWN_MS = 150;
-const LIFT_MS = 200;
-const CARRY_MS = 700;
-const DROP_MS = 200;
-const EXIT_MS = 200;
-const TOTAL_MS = SPAWN_MS + LIFT_MS + CARRY_MS + DROP_MS + EXIT_MS;
-const FIGURE_HALF = 24;
-/** How many ms per walk-cycle pose swap during the carry phase. Two
- *  swaps at 140ms feels like "one step per 140ms" — brisk but not
- *  frantic. */
-const STEP_MS = 140;
-/** Peak arc height as a fraction of horizontal distance. Capped by
- *  MAX_ARC_HEIGHT so very-long moves don't parabola off the screen. */
-const ARC_FACTOR = 0.35;
-const MIN_ARC_HEIGHT = 30;
-const MAX_ARC_HEIGHT = 140;
+const TOTAL_MS = 900;
+const CARRY_START_MS = 160;
+const CARRY_MS = 560;
+const BEAR_SIZE = 100;
+const GHOST_LIFT = 34; // px the ghost floats above the row baseline
 
 export const defaultMoveEffect: EffectHandler = (op, ctx, onComplete) => {
   if (op.kind !== "moveClipTo" || !op.result.ok) return null;
   const args = op.args as { clipId: string };
-
   const destRect = ctx.clipToScreenRect(args.clipId);
   const srcRect = clipRectFromProject(op.beforeProject, args.clipId, ctx);
   if (!destRect || !srcRect) return null;
-
   return (
     <MoveAnimation
       key={op.timestamp}
@@ -66,6 +61,10 @@ export const defaultMoveEffect: EffectHandler = (op, ctx, onComplete) => {
   );
 };
 
+/** Reconstruct the source clip's on-screen rect from the pre-mutation
+ *  project snapshot. `clipToScreenRect` reads live DOM, which is
+ *  post-mutation — we need the *before* position to spawn the bear
+ *  where the clip used to live. */
 function clipRectFromProject(
   project: import("@aicut/core").Project,
   clipId: string,
@@ -74,12 +73,7 @@ function clipRectFromProject(
   let found: { trackIndex: number; start: number; end: number } | null = null;
   project.tracks.forEach((t, ti) => {
     const c = t.clips.find((cc) => cc.id === clipId);
-    if (c)
-      found = {
-        trackIndex: ti,
-        start: c.start,
-        end: c.start + (c.out - c.in),
-      };
+    if (c) found = { trackIndex: ti, start: c.start, end: c.start + (c.out - c.in) };
   });
   if (!found) return null;
   const timelineRect = ctx.timelineRect;
@@ -93,8 +87,6 @@ function clipRectFromProject(
   return new DOMRect(x0, y0, x1 - x0, trackH);
 }
 
-type Phase = "spawn" | "lift" | "carry" | "drop" | "exit";
-
 function MoveAnimation({
   srcRect,
   destRect,
@@ -104,220 +96,133 @@ function MoveAnimation({
   destRect: DOMRect;
   onDone: () => void;
 }): ReactElement {
-  const [phase, setPhase] = useState<Phase>("spawn");
-  const [step, setStep] = useState(0); // 0 or 1 — walk cycle toggle
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
-
+  // `carryStarted` toggles the transform on the position-wrapper, which
+  // owns the source→dest translation. Kept as state instead of a
+  // setTimeout-driven className because React needs a re-render for
+  // the transition to fire (initial `transform: translate3d(0,0,0)`,
+  // then after mount `transform: translate3d(dx, dy, 0)`).
+  const [carryStarted, setCarryStarted] = useState(false);
   useEffect(() => {
-    const t1 = setTimeout(() => setPhase("lift"), SPAWN_MS);
-    const t2 = setTimeout(() => setPhase("carry"), SPAWN_MS + LIFT_MS);
-    const t3 = setTimeout(
-      () => setPhase("drop"),
-      SPAWN_MS + LIFT_MS + CARRY_MS,
-    );
-    const t4 = setTimeout(
-      () => setPhase("exit"),
-      SPAWN_MS + LIFT_MS + CARRY_MS + DROP_MS,
-    );
-    const t5 = setTimeout(() => doneRef.current(), TOTAL_MS);
+    const t1 = setTimeout(() => setCarryStarted(true), CARRY_START_MS);
+    const t2 = setTimeout(() => doneRef.current(), TOTAL_MS);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
-      clearTimeout(t3);
-      clearTimeout(t4);
-      clearTimeout(t5);
     };
   }, []);
 
-  // Walk cycle — swap pose every STEP_MS during carry. Interval
-  // only lives during carry to avoid pointless re-renders in other
-  // phases.
-  useEffect(() => {
-    if (phase !== "carry") return;
-    const id = setInterval(() => setStep((s) => (s === 0 ? 1 : 0)), STEP_MS);
-    return () => clearInterval(id);
-  }, [phase]);
-
   const srcCenterX = srcRect.left + srcRect.width / 2;
   const destCenterX = destRect.left + destRect.width / 2;
-  const distance = Math.abs(destCenterX - srcCenterX);
-  const arcHeight = Math.min(
-    MAX_ARC_HEIGHT,
-    Math.max(MIN_ARC_HEIGHT, distance * ARC_FACTOR),
-  );
+  const dx = destCenterX - srcCenterX;
+  const dy = destRect.top - srcRect.top;
 
-  // Figure vertical anchor (top of the figure svg). During carry we
-  // stack the figure ABOVE its walking baseline so the ghost clip
-  // sits between figure hands and clip row.
-  const walkBaseY = (row: DOMRect): number => row.top - 56;
+  // Base anchor — bear/ghost mounted at srcCenter, translated to dest
+  // via CSS transition.
+  const anchorX = srcCenterX;
+  const anchorY = srcRect.top;
 
-  const figureX = useMemo(() => {
-    switch (phase) {
-      case "spawn":
-      case "lift":
-        return srcCenterX;
-      case "carry":
-        // Interpolated horizontally by CSS transition — start x is
-        // srcCenter and target is destCenter.
-        return destCenterX;
-      case "drop":
-      case "exit":
-        return destCenterX;
-    }
-  }, [phase, srcCenterX, destCenterX]);
+  const carryTranslate = carryStarted
+    ? `translate3d(${dx}px, ${dy}px, 0)`
+    : "translate3d(0, 0, 0)";
+  const carryTransition = carryStarted
+    ? `transform ${CARRY_MS}ms cubic-bezier(0.35, 0.05, 0.25, 1)`
+    : "none";
 
-  const figureY = useMemo(() => {
-    switch (phase) {
-      case "spawn":
-        return walkBaseY(srcRect) + 8; // squash — sits slightly low
-      case "lift":
-        return walkBaseY(srcRect) - 12; // arms overhead, figure lifts
-      case "carry":
-        // Handled by the arc transform below; anchor at destination
-        // top for the CSS `top` transition.
-        return walkBaseY(destRect) - 8;
-      case "drop":
-        return walkBaseY(destRect) + 4; // follow-through squash on drop
-      case "exit":
-        return walkBaseY(destRect);
-    }
-  }, [phase, srcRect, destRect]);
-
-  const transition = useMemo(() => {
-    switch (phase) {
-      case "spawn":
-        return `opacity ${SPAWN_MS}ms ease-out, top ${SPAWN_MS}ms cubic-bezier(0.4, 1.6, 0.6, 1)`;
-      case "lift":
-        // Spring — small overshoot on the lift feels weighted.
-        return `top ${LIFT_MS}ms cubic-bezier(0.34, 1.56, 0.64, 1)`;
-      case "carry":
-        // Long smooth glide on the horizontal; the arc-y comes from
-        // the transform (not top) so both animate independently.
-        return `left ${CARRY_MS}ms cubic-bezier(0.4, 0, 0.2, 1), top ${CARRY_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`;
-      case "drop":
-        return `top ${DROP_MS}ms cubic-bezier(0.34, 1.4, 0.64, 1)`;
-      case "exit":
-        return `opacity ${EXIT_MS}ms ease-out, top ${EXIT_MS}ms ease-out`;
-    }
-  }, [phase]);
-
-  // CSS animation on the transform gives us a mid-flight arc without
-  // needing a per-frame RAF loop. `translateY(-Arch)` at 50% peaks
-  // higher than start/end, forming a parabola.
-  const carryAnimation =
-    phase === "carry"
-      ? `aicut-effect-carry-arc-${Math.round(arcHeight)} ${CARRY_MS}ms cubic-bezier(0.4, 0, 0.2, 1) forwards`
-      : "none";
-
-  const opacity = phase === "exit" ? 0 : phase === "spawn" ? 0.2 : 1;
-
-  // Ghost clip visible from lift onward through drop; invisible on
-  // exit (already merged into the real clip row underneath).
-  const ghostVisible = phase !== "spawn" && phase !== "exit";
-  const ghostX = figureX - srcRect.width / 2;
-  const ghostY = useMemo(() => {
-    switch (phase) {
-      case "lift":
-        return srcRect.top - 20;
-      case "carry":
-        return destRect.top - 20; // baseline height above track
-      case "drop":
-        return destRect.top + 2;
-      default:
-        return srcRect.top;
-    }
-  }, [phase, srcRect, destRect]);
-
-  const ghostTransition = transition; // same choreography as figure
-
-  // Pose selection — during carry, alternate between walking-forward
-  // and walking-back on step timer for the "walk cycle" look.
-  const pose = useMemo(() => {
-    switch (phase) {
-      case "spawn":
-        return "idle" as const;
-      case "lift":
-        return "lifting" as const;
-      case "carry":
-        // Two variants of "carrying" — the SVG uses the same base
-        // pose but we flip legs via a subtle transform on the whole
-        // figure below (see wobble). Pose stays "carrying".
-        return "carrying" as const;
-      case "drop":
-        return "dropping" as const;
-      case "exit":
-        return "waving" as const;
-    }
-  }, [phase]);
-
-  // Vertical bob during carry — 4px sine using the step toggle. Not
-  // super realistic but reads as "walking" better than a straight
-  // glide.
-  const bobY = phase === "carry" && step === 1 ? -3 : 0;
+  const ghostWidth = srcRect.width;
+  const ghostHeight = srcRect.height * 0.55;
 
   return (
     <>
-      {/* Ghost clip rectangle following the arc. */}
-      {ghostVisible ? (
-        <div
-          style={{
-            position: "fixed",
-            left: ghostX,
-            top: ghostY,
-            width: srcRect.width,
-            height: srcRect.height * 0.55,
-            background: "rgba(154, 49, 244, 0.35)",
-            border: "1.5px dashed rgba(255, 255, 255, 0.75)",
-            borderRadius: 4,
-            transition: ghostTransition,
-            animation:
-              phase === "carry"
-                ? `aicut-effect-carry-arc-${Math.round(arcHeight)} ${CARRY_MS}ms cubic-bezier(0.4, 0, 0.2, 1) forwards`
-                : "none",
-            pointerEvents: "none",
-            boxShadow:
-              phase === "drop"
-                ? "0 4px 12px rgba(154, 49, 244, 0.4)"
-                : "none",
-          }}
-        />
-      ) : null}
-      {/* Stick figure — bobs during carry via transform, glides via
-       *  top/left, follows the parabolic arc alongside the ghost. */}
+      {/* Source-position ring pulse — signals "grab". Placed at source
+       *  center, animation starts on mount. */}
+      <Ring x={srcCenterX} y={srcRect.top + srcRect.height / 2} delay={0} />
+      {/* Destination-position ring pulse — signals "drop". Delayed
+       *  until just before the bear arrives. */}
+      <Ring
+        x={destCenterX}
+        y={destRect.top + destRect.height / 2}
+        delay={CARRY_START_MS + CARRY_MS - 80}
+      />
+      {/* Position wrapper — owns the translation from source to
+       *  destination. Everything inside inherits the translation. */}
       <div
         style={{
           position: "fixed",
-          left: figureX - FIGURE_HALF,
-          top: figureY,
-          transform: `translateY(${bobY}px)`,
-          transition,
-          animation: carryAnimation,
-          opacity,
+          left: anchorX,
+          top: anchorY,
+          transform: carryTranslate,
+          transition: carryTransition,
           pointerEvents: "none",
-          color: "rgba(180, 140, 255, 0.95)",
-          filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.4))",
+          willChange: "transform",
         }}
       >
-        <StickFigure
-          pose={pose}
-          facing={destCenterX > srcCenterX ? "right" : "left"}
+        {/* Ghost clip — floats above the anchor point at GHOST_LIFT
+         *  px, follows the wrapper's translation, wobbles via its own
+         *  keyframe. */}
+        <div
+          style={{
+            position: "absolute",
+            left: -ghostWidth / 2,
+            top: -GHOST_LIFT - ghostHeight,
+            width: ghostWidth,
+            height: ghostHeight,
+            background:
+              "linear-gradient(135deg, rgba(180,140,255,0.55) 0%, rgba(140,90,240,0.6) 100%)",
+            border: "1.5px solid rgba(230, 210, 255, 0.85)",
+            borderRadius: 6,
+            boxShadow:
+              "0 6px 18px rgba(120, 60, 220, 0.35), inset 0 1px 0 rgba(255,255,255,0.35)",
+            animation: `aicut-effect-move-ghost ${TOTAL_MS}ms cubic-bezier(0.35, 0.05, 0.25, 1) forwards`,
+            willChange: "transform, opacity",
+          }}
         />
+        {/* Bear character — anchored to the wrapper's origin (source
+         *  clip top), transform pulls it up by 100% of its height so
+         *  feet touch the row. */}
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            animation: `aicut-effect-move-bear ${TOTAL_MS}ms cubic-bezier(0.3, 0.9, 0.4, 1) forwards`,
+            transformOrigin: "50% 100%",
+            willChange: "transform, opacity",
+          }}
+        >
+          <Bear pose="carry" size={BEAR_SIZE} />
+        </div>
       </div>
-      {/* Register the arc keyframe once per arc height. Because the
-       *  peak is data-driven (parametric per move distance) we can't
-       *  put a single fixed keyframe in effects.css — inject a
-       *  <style> tag with the exact height. Small footprint since the
-       *  keyframe name includes the height, browsers dedupe. */}
-      {phase === "carry" ? (
-        <style>{`
-          @keyframes aicut-effect-carry-arc-${Math.round(arcHeight)} {
-            0%   { transform: translateY(0); }
-            50%  { transform: translateY(-${Math.round(arcHeight)}px); }
-            100% { transform: translateY(0); }
-          }
-        `}</style>
-      ) : null}
     </>
+  );
+}
+
+function Ring({
+  x,
+  y,
+  delay,
+}: {
+  x: number;
+  y: number;
+  delay: number;
+}): ReactElement {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        left: x,
+        top: y,
+        width: 60,
+        height: 60,
+        borderRadius: "50%",
+        border: "2.5px solid rgba(200, 170, 255, 0.9)",
+        boxShadow: "0 0 16px rgba(160, 110, 255, 0.55)",
+        animation: `aicut-effect-move-ring 520ms cubic-bezier(0.25, 0.8, 0.35, 1) ${delay}ms forwards`,
+        opacity: 0,
+        pointerEvents: "none",
+        willChange: "transform, opacity",
+      }}
+    />
   );
 }

@@ -65,34 +65,3 @@ export type EffectsMap = Partial<
   Record<OperationEvent["kind"], EffectHandler | false>
 >;
 
-/**
- * Character components consumed by the built-in effects. Effect
- * handlers pass a `pose` prop; character implementations decide how
- * to render each pose. Custom character components accept the same
- * prop shape via the `character` slot on `<AiCutEffects>`.
- */
-export interface CharacterProps {
-  pose?: CharacterPose;
-  facing?: "left" | "right";
-  /** Uniform scale multiplier. Default 1. Characters render at
-   *  ~48×48 CSS px at scale 1 — use 2 for retina-loud, 0.5 for
-   *  subtle. */
-  scale?: number;
-  /** Fill / stroke color. Defaults to `currentColor` so effects can
-   *  theme via CSS. */
-  color?: string;
-}
-
-/**
- * Well-known character pose names. Extend with your own strings for
- * custom characters — TypeScript widens `string` unions, so custom
- * poses type-check as long as the character component handles them.
- */
-export type CharacterPose =
-  | "idle"
-  | "walking"
-  | "cutting"
-  | "lifting"
-  | "carrying"
-  | "dropping"
-  | "waving";
