@@ -41,7 +41,9 @@ import { useEffect, useRef, type ReactElement } from "react";
 import type { EffectHandler } from "../types.js";
 import { Bear } from "../characters/Bear.js";
 
-const TOTAL_MS = 700;
+// Deliberately slow for the testing phase — halve back once we're happy
+// with the choreography shape.
+const TOTAL_MS = 1400;
 const BEAR_SIZE = 108;
 
 export const defaultSplitEffect: EffectHandler = (op, ctx, onComplete) => {

@@ -1,31 +1,26 @@
 /**
  * Default `moveClipTo` effect — silky bear-driven choreography.
  *
- * Design rationale — same as splitEffect's rewrite: no pose swaps, no
- * walk-cycle frame flipping (both read as stop-motion at the source),
- * and no parabolic arc (reads as gamey rather than professional-UI
- * smooth). Instead: a single bear-carry image (arms outstretched) is
- * translated in a flat ease-in-out curve from source to destination
- * with an intrinsic wobble driven by CSS keyframes.
- *
- * Choreography (~900ms total):
+ * Choreography (~1800ms total — deliberately slowed for the testing
+ * phase so the choreography reads clearly. Halve the constants once
+ * we're happy with the shape):
  *
  *   0ms      bear pops in at source with a spring, arms open
- *   0ms      ghost clip fades in above bear's arms
- *   0ms      source-position ring pulses outward (indicating "grab")
- *   ~160ms   bear + ghost hold for a beat (settled after spring)
- *   160ms→720ms
- *            bear + ghost translate to destination via a smooth
+ *   0ms      full-size ghost clip (looks like a real timeline clip
+ *            bar — solid purple fill, label) appears at the source
+ *            position and lifts up into the bear's arms. A fading
+ *            "outline" stays at the source spot to soften the fact
+ *            that the underlying timeline data has already teleported.
+ *   0ms      source-position ring pulses outward (signals "grab")
+ *   ~320ms   bear + ghost hold for a beat (settled after spring)
+ *   320→1440 bear + ghost translate to destination via a smooth
  *            ease-in-out cubic. Bear wobbles a few degrees during
- *            transit (keyframed, independent of translation) — reads
- *            as "carrying weight" without the choppy walk-cycle
- *            pose-flip the old effect used.
- *   ~720ms   destination-position ring pulses outward (indicating
- *            "drop")
- *   ~740ms   ghost drops into the destination row with a slight
+ *            transit — reads as "carrying weight" without pose flips.
+ *   ~1440ms  destination-position ring pulses outward (signals "drop")
+ *   ~1500ms  ghost drops into the destination row with a slight
  *            squash bounce
- *   ~800ms   bear floats up and fades
- *   900ms    everything cleaned up
+ *   ~1600ms  bear floats up and fades
+ *   1800ms   everything cleaned up
  *
  * All motion runs on the compositor thread (transform / opacity only,
  * with `will-change` hints) so it stays 60fps under load.
@@ -39,11 +34,11 @@ import {
 import type { EffectContext, EffectHandler } from "../types.js";
 import { Bear } from "../characters/Bear.js";
 
-const TOTAL_MS = 900;
-const CARRY_START_MS = 160;
-const CARRY_MS = 560;
-const BEAR_SIZE = 100;
-const GHOST_LIFT = 34; // px the ghost floats above the row baseline
+const TOTAL_MS = 1800;
+const CARRY_START_MS = 320;
+const CARRY_MS = 1120;
+const BEAR_SIZE = 108;
+const GHOST_LIFT = 44; // px the ghost floats above the row baseline
 
 export const defaultMoveEffect: EffectHandler = (op, ctx, onComplete) => {
   if (op.kind !== "moveClipTo" || !op.result.ok) return null;
@@ -56,6 +51,7 @@ export const defaultMoveEffect: EffectHandler = (op, ctx, onComplete) => {
       key={op.timestamp}
       srcRect={srcRect}
       destRect={destRect}
+      clipId={args.clipId}
       onDone={onComplete}
     />
   );
@@ -90,10 +86,12 @@ function clipRectFromProject(
 function MoveAnimation({
   srcRect,
   destRect,
+  clipId,
   onDone,
 }: {
   srcRect: DOMRect;
   destRect: DOMRect;
+  clipId: string;
   onDone: () => void;
 }): ReactElement {
   const doneRef = useRef(onDone);
@@ -118,8 +116,6 @@ function MoveAnimation({
   const dx = destCenterX - srcCenterX;
   const dy = destRect.top - srcRect.top;
 
-  // Base anchor — bear/ghost mounted at srcCenter, translated to dest
-  // via CSS transition.
   const anchorX = srcCenterX;
   const anchorY = srcRect.top;
 
@@ -130,20 +126,42 @@ function MoveAnimation({
     ? `transform ${CARRY_MS}ms cubic-bezier(0.35, 0.05, 0.25, 1)`
     : "none";
 
+  // Ghost = full source-clip footprint. Same width AND height as the
+  // real clip bar it represents. This is what makes it read as "the
+  // video strip being lifted" instead of "a dashed drag hint".
   const ghostWidth = srcRect.width;
-  const ghostHeight = srcRect.height * 0.55;
+  const ghostHeight = srcRect.height;
 
   return (
     <>
-      {/* Source-position ring pulse — signals "grab". Placed at source
-       *  center, animation starts on mount. */}
+      {/* Source-spot "outline" — where the clip used to sit before the
+       *  data teleported. Fades out over the first ~360ms as the bear
+       *  picks it up, so the user's eye reads the whole sequence as
+       *  "clip was here → bear lifted it → carried it → put it down"
+       *  rather than "clip teleported and bear caught up". */}
+      <div
+        style={{
+          position: "fixed",
+          left: srcRect.left,
+          top: srcRect.top,
+          width: srcRect.width,
+          height: srcRect.height,
+          background:
+            "linear-gradient(135deg, rgba(140,90,240,0.18) 0%, rgba(180,140,255,0.14) 100%)",
+          border: "1.5px dashed rgba(220, 200, 255, 0.7)",
+          borderRadius: 4,
+          animation: `aicut-effect-move-source-hint ${TOTAL_MS}ms ease-out forwards`,
+          pointerEvents: "none",
+          willChange: "opacity",
+        }}
+      />
+      {/* Source-position ring pulse — signals "grab". */}
       <Ring x={srcCenterX} y={srcRect.top + srcRect.height / 2} delay={0} />
-      {/* Destination-position ring pulse — signals "drop". Delayed
-       *  until just before the bear arrives. */}
+      {/* Destination-position ring pulse — signals "drop". */}
       <Ring
         x={destCenterX}
         y={destRect.top + destRect.height / 2}
-        delay={CARRY_START_MS + CARRY_MS - 80}
+        delay={CARRY_START_MS + CARRY_MS - 120}
       />
       {/* Position wrapper — owns the translation from source to
        *  destination. Everything inside inherits the translation. */}
@@ -158,9 +176,10 @@ function MoveAnimation({
           willChange: "transform",
         }}
       >
-        {/* Ghost clip — floats above the anchor point at GHOST_LIFT
-         *  px, follows the wrapper's translation, wobbles via its own
-         *  keyframe. */}
+        {/* Ghost clip — full-height solid-purple bar styled to look
+         *  like a real timeline clip (not a drag preview). Sits at
+         *  GHOST_LIFT px above the row so it appears "held up" by the
+         *  bear rather than resting on the timeline. */}
         <div
           style={{
             position: "absolute",
@@ -169,18 +188,31 @@ function MoveAnimation({
             width: ghostWidth,
             height: ghostHeight,
             background:
-              "linear-gradient(135deg, rgba(180,140,255,0.55) 0%, rgba(140,90,240,0.6) 100%)",
-            border: "1.5px solid rgba(230, 210, 255, 0.85)",
-            borderRadius: 6,
+              "linear-gradient(180deg, rgba(180,120,255,0.95) 0%, rgba(140,80,230,0.95) 55%, rgba(120,60,220,0.95) 100%)",
+            border: "1.5px solid rgba(240, 220, 255, 0.9)",
+            borderRadius: 4,
             boxShadow:
-              "0 6px 18px rgba(120, 60, 220, 0.35), inset 0 1px 0 rgba(255,255,255,0.35)",
+              "0 10px 24px rgba(90, 40, 200, 0.5), 0 2px 6px rgba(60, 20, 160, 0.35), inset 0 1px 0 rgba(255,255,255,0.4)",
             animation: `aicut-effect-move-ghost ${TOTAL_MS}ms cubic-bezier(0.35, 0.05, 0.25, 1) forwards`,
             willChange: "transform, opacity",
+            overflow: "hidden",
+            display: "flex",
+            alignItems: "center",
+            paddingLeft: 8,
+            color: "rgba(255, 255, 255, 0.92)",
+            fontSize: 11,
+            fontFamily:
+              "ui-monospace, SFMono-Regular, Menlo, monospace",
+            fontWeight: 600,
+            letterSpacing: 0.2,
+            textShadow: "0 1px 2px rgba(0,0,0,0.4)",
+            whiteSpace: "nowrap",
           }}
-        />
+        >
+          {clipId}
+        </div>
         {/* Bear character — anchored to the wrapper's origin (source
-         *  clip top), transform pulls it up by 100% of its height so
-         *  feet touch the row. */}
+         *  clip top), keyframe pulls it up so feet touch the row. */}
         <div
           style={{
             position: "absolute",
@@ -213,12 +245,12 @@ function Ring({
         position: "fixed",
         left: x,
         top: y,
-        width: 60,
-        height: 60,
+        width: 70,
+        height: 70,
         borderRadius: "50%",
-        border: "2.5px solid rgba(200, 170, 255, 0.9)",
-        boxShadow: "0 0 16px rgba(160, 110, 255, 0.55)",
-        animation: `aicut-effect-move-ring 520ms cubic-bezier(0.25, 0.8, 0.35, 1) ${delay}ms forwards`,
+        border: "3px solid rgba(200, 170, 255, 0.9)",
+        boxShadow: "0 0 20px rgba(160, 110, 255, 0.6)",
+        animation: `aicut-effect-move-ring 900ms cubic-bezier(0.25, 0.8, 0.35, 1) ${delay}ms forwards`,
         opacity: 0,
         pointerEvents: "none",
         willChange: "transform, opacity",

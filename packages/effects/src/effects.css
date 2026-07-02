@@ -193,26 +193,57 @@
 
 /* Ghost clip that lifts, follows the bear, then settles. The
    intrinsic wobble matches the bear's — outer wrapper handles the
-   translation. */
+   translation.
+
+   Now sized to the full source clip rect (not a mini-preview), so the
+   wobble is subtle — a full-height bar exaggerates would look silly.
+   Squash-on-arrival provides the "landed" cue. */
 @keyframes aicut-effect-move-ghost {
   0% {
     opacity: 0;
-    transform: translate(0, 0) scale(0.9);
+    transform: translate(0, 10px) scale(0.94);
   }
-  12% {
-    opacity: 0.85;
-    transform: translate(0, -6px) scale(1);
-  }
-  75% {
-    opacity: 0.85;
+  10% {
+    opacity: 0.95;
     transform: translate(0, -4px) scale(1);
   }
+  20% {
+    opacity: 0.95;
+    transform: translate(0, 0) scale(1);
+  }
+  78% {
+    opacity: 0.95;
+    transform: translate(0, 0) scale(1);
+  }
   86% {
-    opacity: 0.85;
-    transform: translate(0, 4px) scale(1.02);
+    opacity: 0.95;
+    transform: translate(0, 6px) scale(1.015, 0.94);
+  }
+  92% {
+    opacity: 0.9;
+    transform: translate(0, 2px) scale(1);
   }
   100% {
     opacity: 0;
     transform: translate(0, 0) scale(1);
+  }
+}
+
+/* Faded outline that stays at the source position for a moment after
+   the clip is "lifted" — softens the fact that timeline data has
+   already teleported. Fades quickly (over the first ~30% of the
+   effect) so it doesn't linger after the bear is well underway. */
+@keyframes aicut-effect-move-source-hint {
+  0% {
+    opacity: 0.85;
+  }
+  25% {
+    opacity: 0.6;
+  }
+  40% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
   }
 }
