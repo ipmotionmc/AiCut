@@ -415,8 +415,26 @@ function runOperationAnimation(
       const args = op.args as { clipId: string; timeMs: number };
       const location = findClipLocation(op.beforeProject, args.clipId);
       if (!location) return;
-      // Testing-phase duration; ship at ~180ms.
-      timeline.flashCut(location.trackIndex, args.timeMs, 420);
+      // op.result.data.newClipIds is [leftId, rightId] for a successful
+      // split — that's what animateSplit needs to pull the two halves
+      // apart at the cut point. Fall back to the older flashCut-only
+      // path if for any reason we can't extract them (defensive; the
+      // core always returns them on ok=true).
+      const newIds = (op.result.data as { newClipIds?: [string, string] })
+        ?.newClipIds;
+      if (newIds && newIds.length === 2) {
+        timeline.animateSplit(
+          newIds[0],
+          newIds[1],
+          args.timeMs,
+          location.trackIndex,
+          // Testing-phase durations; ship at durationMs ~260ms and
+          // peakGapPx ~7 once the shape is locked.
+          { durationMs: 520, peakGapPx: 14 },
+        );
+      } else {
+        timeline.flashCut(location.trackIndex, args.timeMs, 420);
+      }
       return;
     }
     default:

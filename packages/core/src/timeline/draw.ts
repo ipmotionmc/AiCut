@@ -103,10 +103,28 @@ export interface DrawState {
    * values instead of `clip.start` / its own track index. Values can be
    * fractional (in particular `trackIndex` is a float during
    * cross-track moves, so the clip physically slides between rows).
+   *
+   * `startPxOffset` is an optional pixel-space nudge added to the
+   * computed startX AFTER pxPerSec conversion. It exists for effects
+   * that want to operate in screen pixels regardless of zoom — most
+   * notably the split effect, which opens a temporary gap between the
+   * two new halves that should stay a constant pixel width no matter
+   * what the current scale is. When absent the offset is 0.
    */
   clipPositionOverrides?: ReadonlyMap<
     string,
-    { startMs: number; trackIndex: number }
+    {
+      /** When present, replaces `clip.start` for rendering. Otherwise
+       *  `clip.start` is used. */
+      startMs?: number;
+      /** When present, replaces the host track's index for rendering.
+       *  Fractional values slide the clip between rows. */
+      trackIndex?: number;
+      /** Pixel-space nudge added to the computed startX after
+       *  pxPerSec conversion. Used by the split effect to open a
+       *  constant-pixel gap regardless of zoom. */
+      startPxOffset?: number;
+    }
   > | null;
   /**
    * Active flash overlays — bright vertical lines painted on top of
@@ -544,6 +562,7 @@ function drawTrackRow(
     const override = state.clipPositionOverrides?.get(clip.id);
     const renderStartMs = override?.startMs ?? clip.start;
     const renderTrackIndex = override?.trackIndex ?? trackIndex;
+    const renderStartPxOffset = override?.startPxOffset ?? 0;
     drawClipAt(
       ctx,
       clip,
@@ -555,6 +574,7 @@ function drawTrackRow(
       thumbs,
       dim,
       false,
+      renderStartPxOffset,
     );
   }
 }
@@ -619,10 +639,15 @@ function drawClipAt(
   thumbs: ThumbnailRibbon,
   dim: boolean,
   warn: boolean,
+  /** Optional pixel-space nudge applied after pxPerSec conversion. Used
+   *  by the split animation to open a gap between the two new halves
+   *  without depending on the current zoom level. */
+  startPxOffset = 0,
 ): void {
   const { pxPerSec, scrollLeft } = state;
   const baseX = contentLeftX(state.showHeader);
-  const startX = baseX + (startMs / 1000) * pxPerSec - scrollLeft;
+  const startX =
+    baseX + (startMs / 1000) * pxPerSec - scrollLeft + startPxOffset;
   const widthPx = Math.max(2, ((clip.out - clip.in) / 1000) * pxPerSec);
   const y = trackY(trackIndex) + CLIP_INSET;
   const h = TRACK_HEIGHT - CLIP_INSET * 2;

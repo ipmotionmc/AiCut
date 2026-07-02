@@ -286,6 +286,19 @@ export class Timeline {
     startedAt: number;
     durationMs: number;
   }> = [];
+  /** Active split animations — pull the two new clip halves briefly
+   *  apart in pixel space then relax them back into contact. Registered
+   *  by `animateSplit`. */
+  private splitAnimations: Array<{
+    leftClipId: string;
+    rightClipId: string;
+    trackIndex: number;
+    cutAtMs: number;
+    startedAt: number;
+    durationMs: number;
+    /** Peak gap in CSS pixels at the animation's peak point. */
+    peakGapPx: number;
+  }> = [];
 
   static create(opts: TimelineOptions): Timeline {
     return new Timeline(opts);
@@ -451,6 +464,46 @@ export class Timeline {
       startedAt: performance.now(),
       durationMs: Math.max(1, durationMs),
     });
+    this.scheduleRender();
+  }
+
+  /**
+   * Schedule a refined "physical cleave" split animation. The two new
+   * clip halves briefly separate along the cut line — the left half's
+   * right edge and the right half's left edge each pull `peakGapPx/2`
+   * pixels *away* from the cut point (opening a total gap of
+   * `peakGapPx`), then relax back into contact. Combined with a
+   * persistent flash at the cut position, this reads as the clip being
+   * cleaved and settling — much more literal than a plain flash line.
+   *
+   * The gap curve is asymmetric on purpose: fast open (first ~35% of
+   * the window), long relax (remaining ~65%), so the eye catches the
+   * moment of separation and then watches the pieces come back
+   * together. Peak gap is deliberately generous (12px default) at the
+   * testing-phase duration; halve it once the shape is locked.
+   */
+  animateSplit(
+    leftClipId: string,
+    rightClipId: string,
+    cutAtMs: number,
+    trackIndex: number,
+    opts?: { durationMs?: number; peakGapPx?: number },
+  ): void {
+    const durationMs = Math.max(1, opts?.durationMs ?? 480);
+    const peakGapPx = Math.max(0, opts?.peakGapPx ?? 12);
+    this.splitAnimations.push({
+      leftClipId,
+      rightClipId,
+      trackIndex,
+      cutAtMs,
+      startedAt: performance.now(),
+      durationMs,
+      peakGapPx,
+    });
+    // Also fire a stateless flash spanning the same window, so the
+    // cut line is bright while the gap is open. Slightly shorter so
+    // the flash fades before the halves fully close.
+    this.flashCut(trackIndex, cutAtMs, Math.round(durationMs * 0.7));
     this.scheduleRender();
   }
 
@@ -708,7 +761,11 @@ export class Timeline {
       // heartbeat: keep firing raf frames as long as anything's still
       // in flight. `buildDrawState` above already cleaned finished
       // entries, so a size check here is authoritative.
-      if (this.clipAnimations.size > 0 || this.flashes.length > 0) {
+      if (
+        this.clipAnimations.size > 0 ||
+        this.flashes.length > 0 ||
+        this.splitAnimations.length > 0
+      ) {
         this.scheduleRender();
       }
     });
@@ -753,8 +810,10 @@ export class Timeline {
     const now = performance.now();
     // Resolve per-clip position tweens into an override map. Completed
     // entries drop out here — no need for a separate cleanup pass.
-    let overrides: Map<string, { startMs: number; trackIndex: number }> | null =
-      null;
+    let overrides: Map<
+      string,
+      { startMs?: number; trackIndex?: number; startPxOffset?: number }
+    > | null = null;
     if (this.clipAnimations.size > 0) {
       for (const [clipId, anim] of this.clipAnimations) {
         const raw = (now - anim.startedAt) / anim.durationMs;
@@ -776,6 +835,48 @@ export class Timeline {
             (anim.toTrackIndex - anim.fromTrackIndex) * eased,
         });
       }
+    }
+    // Split animations — pull the two halves apart in pixel space,
+    // then relax. Each anim adds `startPxOffset` overrides for both
+    // halves without touching startMs / trackIndex (the halves stay
+    // at their data position; only the visible position is nudged).
+    if (this.splitAnimations.length > 0) {
+      const stillLive: typeof this.splitAnimations = [];
+      for (const anim of this.splitAnimations) {
+        const raw = (now - anim.startedAt) / anim.durationMs;
+        if (raw >= 1) continue;
+        const t = Math.max(0, raw);
+        // Asymmetric envelope: fast open (0 → 0.35), slow relax
+        // (0.35 → 1). Peak gap sits at t=0.35 so the eye catches the
+        // separation early and watches the pieces close over the
+        // longer decay.
+        const peakT = 0.35;
+        let gapPx: number;
+        if (t < peakT) {
+          const u = t / peakT;
+          gapPx = anim.peakGapPx * (1 - (1 - u) * (1 - u));
+        } else {
+          const u = (t - peakT) / (1 - peakT);
+          gapPx = anim.peakGapPx * (1 - u * u * u);
+        }
+        const half = gapPx / 2;
+        if (!overrides) overrides = new Map();
+        // Compose with any existing override (in case a clip is also
+        // being animateClip'd simultaneously) — we only *add* to the
+        // startPxOffset field.
+        const left = overrides.get(anim.leftClipId) ?? {};
+        overrides.set(anim.leftClipId, {
+          ...left,
+          startPxOffset: (left.startPxOffset ?? 0) - half,
+        });
+        const right = overrides.get(anim.rightClipId) ?? {};
+        overrides.set(anim.rightClipId, {
+          ...right,
+          startPxOffset: (right.startPxOffset ?? 0) + half,
+        });
+        stillLive.push(anim);
+      }
+      this.splitAnimations = stillLive;
     }
     // Same pattern for flashes — pre-compute alpha + glow per frame,
     // drop finished ones.
