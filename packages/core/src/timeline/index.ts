@@ -263,6 +263,29 @@ export class Timeline {
   private hasAutoFitted = false;
   private resizeObs: ResizeObserver | null = null;
   private destroyed = false;
+  /** Per-clip position tweens driven by `animateClip`. While a clip
+   *  id sits here, the draw layer renders it at an interpolated
+   *  (start, trackIndex) instead of its data-model position. Entries
+   *  auto-clear once their duration elapses. */
+  private clipAnimations = new Map<
+    string,
+    {
+      fromStartMs: number;
+      fromTrackIndex: number;
+      toStartMs: number;
+      toTrackIndex: number;
+      durationMs: number;
+      startedAt: number;
+    }
+  >();
+  /** Active split-cut flashes driven by `flashCut`. Each fades over
+   *  its `durationMs` window and auto-clears when done. */
+  private flashes: Array<{
+    trackIndex: number;
+    atMs: number;
+    startedAt: number;
+    durationMs: number;
+  }> = [];
 
   static create(opts: TimelineOptions): Timeline {
     return new Timeline(opts);
@@ -374,6 +397,60 @@ export class Timeline {
   refit(): void {
     if (!this.autoFitEnabled) return;
     this.hasAutoFitted = false;
+    this.scheduleRender();
+  }
+
+  /**
+   * Schedule an AI-op "smooth move" for the clip with `clipId`. While
+   * the animation runs (over `durationMs`, default 320ms), the timeline
+   * renders the clip at a tweened `(startMs, trackIndex)` starting
+   * from `(fromStartMs, fromTrackIndex)` and easing into
+   * `(toStartMs, toTrackIndex)`. The clip's data-model position is
+   * unaffected — this is a pure render-time override, so hit-tests,
+   * exports, and downstream consumers still see the final position
+   * immediately. The animation clears itself when its window elapses.
+   *
+   * Typical use: React primitive receives an `operation` event of kind
+   * `moveClipTo`, computes the pre- and post-mutation rects from the
+   * before/after project snapshots, and calls this method so the user
+   * sees the clip smoothly slide across the timeline instead of
+   * teleporting.
+   */
+  animateClip(
+    clipId: string,
+    spec: {
+      fromStartMs: number;
+      fromTrackIndex: number;
+      toStartMs: number;
+      toTrackIndex: number;
+      durationMs?: number;
+    },
+  ): void {
+    this.clipAnimations.set(clipId, {
+      fromStartMs: spec.fromStartMs,
+      fromTrackIndex: spec.fromTrackIndex,
+      toStartMs: spec.toStartMs,
+      toTrackIndex: spec.toTrackIndex,
+      durationMs: Math.max(1, spec.durationMs ?? 320),
+      startedAt: performance.now(),
+    });
+    this.scheduleRender();
+  }
+
+  /**
+   * Schedule a short bright vertical flash at (trackIndex, atMs) on
+   * top of the clip body — the canonical "a cut just happened here"
+   * cue for the AI-op split effect. Fades out over `durationMs`
+   * (default 220ms). Multiple concurrent flashes are supported;
+   * completed ones auto-clear.
+   */
+  flashCut(trackIndex: number, atMs: number, durationMs = 220): void {
+    this.flashes.push({
+      trackIndex,
+      atMs,
+      startedAt: performance.now(),
+      durationMs: Math.max(1, durationMs),
+    });
     this.scheduleRender();
   }
 
@@ -626,6 +703,14 @@ export class Timeline {
       );
       this.canvas.style.cursor = this.hoverCursor;
       this.maybeContinueFade();
+      // AI-op animations (clip tweens + flashes) live outside the
+      // pointer / scrollbar interaction lifecycles, so we need our own
+      // heartbeat: keep firing raf frames as long as anything's still
+      // in flight. `buildDrawState` above already cleaned finished
+      // entries, so a size check here is authoritative.
+      if (this.clipAnimations.size > 0 || this.flashes.length > 0) {
+        this.scheduleRender();
+      }
     });
   }
 
@@ -665,6 +750,67 @@ export class Timeline {
   }
 
   private buildDrawState(): DrawState {
+    const now = performance.now();
+    // Resolve per-clip position tweens into an override map. Completed
+    // entries drop out here — no need for a separate cleanup pass.
+    let overrides: Map<string, { startMs: number; trackIndex: number }> | null =
+      null;
+    if (this.clipAnimations.size > 0) {
+      for (const [clipId, anim] of this.clipAnimations) {
+        const raw = (now - anim.startedAt) / anim.durationMs;
+        if (raw >= 1) {
+          this.clipAnimations.delete(clipId);
+          continue;
+        }
+        const t = Math.max(0, raw);
+        // Material-standard out-cubic — snappy start, gentle settle,
+        // no bounce. Reads as "the AI decisively moved this" without
+        // feeling flighty.
+        const eased = 1 - (1 - t) * (1 - t) * (1 - t);
+        if (!overrides) overrides = new Map();
+        overrides.set(clipId, {
+          startMs:
+            anim.fromStartMs + (anim.toStartMs - anim.fromStartMs) * eased,
+          trackIndex:
+            anim.fromTrackIndex +
+            (anim.toTrackIndex - anim.fromTrackIndex) * eased,
+        });
+      }
+    }
+    // Same pattern for flashes — pre-compute alpha + glow per frame,
+    // drop finished ones.
+    let flashes:
+      | Array<{
+          trackIndex: number;
+          atMs: number;
+          alpha: number;
+          glow: number;
+        }>
+      | null = null;
+    if (this.flashes.length > 0) {
+      const stillLive: typeof this.flashes = [];
+      for (const f of this.flashes) {
+        const t = (now - f.startedAt) / f.durationMs;
+        if (t >= 1) continue;
+        // Sharp attack (12% of window ramps in) then long decay.
+        // Peak alpha stays at 1 briefly before falling — the eye
+        // catches the peak even at short durations.
+        const attackTop = 0.12;
+        const alpha =
+          t < attackTop
+            ? t / attackTop
+            : Math.pow(1 - (t - attackTop) / (1 - attackTop), 1.4);
+        const glow = Math.max(0, 1 - t) * (0.6 + 1.2 * (1 - t));
+        (flashes ??= []).push({
+          trackIndex: f.trackIndex,
+          atMs: f.atMs,
+          alpha,
+          glow,
+        });
+        stillLive.push(f);
+      }
+      this.flashes = stillLive;
+    }
     return {
       project: this.project,
       pxPerSec: this.pxPerSec,
@@ -698,6 +844,8 @@ export class Timeline {
               ghostTimeMs: this.drag.ghostTimeMs,
             }
           : null,
+      clipPositionOverrides: overrides,
+      flashes,
     };
   }
 
