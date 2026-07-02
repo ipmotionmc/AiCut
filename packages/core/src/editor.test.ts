@@ -708,3 +708,192 @@ describe("Editor addClip()", () => {
     editor.destroy();
   });
 });
+
+/**
+ * Operation event bus — Layer 1 of the effects architecture. Every
+ * AI-facing mutator (splitClip / moveClipTo / trimClip / deleteClip
+ * / addClip) fires exactly one `operation` event carrying enough
+ * context for a downstream effect layer to render an animation.
+ * Failures fire too (with result.ok = false).
+ *
+ * `batch()` groups ops via a shared `batchId`.
+ */
+describe("Editor operation events", () => {
+  let container: HTMLDivElement;
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+  });
+  afterEach(() => container.remove());
+
+  function editorWith(p: Project) {
+    return Editor.create({
+      container,
+      project: p,
+      playbackEngine: () => makeStubEngine(),
+    });
+  }
+
+  it("splitClip fires one event with before/after snapshots", () => {
+    const editor = editorWith(tinyProject());
+    const events: unknown[] = [];
+    editor.on("operation", (op) => events.push(op));
+    editor.splitClip({ clipId: "c1", timeMs: 2500 });
+    expect(events).toHaveLength(1);
+    const op = events[0] as {
+      kind: string;
+      args: { clipId: string; timeMs: number };
+      result: { ok: boolean };
+      timestamp: number;
+      beforeProject: Project;
+      afterProject: Project;
+      batchId?: string;
+    };
+    expect(op.kind).toBe("splitClip");
+    expect(op.args.clipId).toBe("c1");
+    expect(op.args.timeMs).toBe(2500);
+    expect(op.result.ok).toBe(true);
+    // Before had 1 clip; after has 2.
+    expect(op.beforeProject.tracks[0]!.clips.length).toBe(1);
+    expect(op.afterProject.tracks[0]!.clips.length).toBe(2);
+    expect(op.timestamp).toBeGreaterThan(0);
+    expect(op.batchId).toBeUndefined();
+    editor.destroy();
+  });
+
+  it("failed splitClip still fires event with ok:false + reason", () => {
+    const editor = editorWith(tinyProject());
+    const events: unknown[] = [];
+    editor.on("operation", (op) => events.push(op));
+    editor.splitClip({ clipId: "does-not-exist", timeMs: 2500 });
+    expect(events).toHaveLength(1);
+    const op = events[0] as { result: { ok: boolean; reason?: string } };
+    expect(op.result.ok).toBe(false);
+    expect(op.result.reason).toBe("clip-not-found");
+    editor.destroy();
+  });
+
+  it("moveClipTo fires with same event structure", () => {
+    const editor = editorWith({
+      version: 1,
+      sources: [{ id: "s1", url: "blob:x", kind: "video", name: "a" }],
+      tracks: [
+        {
+          id: "t1",
+          kind: "video",
+          clips: [{ id: "c1", sourceId: "s1", in: 0, out: 2000, start: 0 }],
+        },
+        { id: "t2", kind: "video", clips: [] },
+      ],
+    });
+    const events: Array<{ kind: string }> = [];
+    editor.on("operation", (op) => events.push(op as { kind: string }));
+    editor.moveClipTo({ clipId: "c1", toTrackId: "t2", startMs: 5000 });
+    expect(events).toHaveLength(1);
+    expect(events[0]!.kind).toBe("moveClipTo");
+    editor.destroy();
+  });
+
+  it("trimClip / deleteClip each fire one event", () => {
+    const editor = editorWith(tinyProject());
+    const events: Array<{ kind: string }> = [];
+    editor.on("operation", (op) => events.push(op as { kind: string }));
+    editor.trimClip({ clipId: "c1", edge: "left", timeMs: 1000 });
+    editor.deleteClip({ clipId: "c1" });
+    expect(events.map((e) => e.kind)).toEqual(["trimClip", "deleteClip"]);
+    editor.destroy();
+  });
+
+  it("addClip fires event on success", async () => {
+    const editor = editorWith({
+      version: 1,
+      sources: [
+        {
+          id: "src-1",
+          url: "blob:sample",
+          kind: "video",
+          name: "sample.mp4",
+          duration: 5000,
+        },
+      ],
+      tracks: [{ id: "t1", kind: "video", clips: [] }],
+    });
+    const events: Array<{ kind: string; result: { ok: boolean } }> = [];
+    editor.on("operation", (op) =>
+      events.push(op as { kind: string; result: { ok: boolean } }),
+    );
+    await editor.addClip({
+      sourceId: "src-1",
+      trackId: "t1",
+      startMs: 0,
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]!.kind).toBe("addClip");
+    expect(events[0]!.result.ok).toBe(true);
+    editor.destroy();
+  });
+
+  it("batch groups ops via shared batchId", () => {
+    const editor = editorWith(tinyProject());
+    const events: Array<{ kind: string; batchId?: string }> = [];
+    editor.on("operation", (op) =>
+      events.push(op as { kind: string; batchId?: string }),
+    );
+    editor.batch("two-splits", () => {
+      editor.splitClip({ clipId: "c1", timeMs: 1500 });
+      // Splitting produces c1-left and c1-right; second split on the right part.
+      const right = editor.getProject().tracks[0]!.clips[1]!.id;
+      editor.splitClip({ clipId: right, timeMs: 3000 });
+    });
+    expect(events).toHaveLength(2);
+    expect(events[0]!.batchId).toBeDefined();
+    expect(events[0]!.batchId).toBe(events[1]!.batchId);
+    editor.destroy();
+  });
+
+  it("ops outside batch have no batchId", () => {
+    const editor = editorWith(tinyProject());
+    const events: Array<{ batchId?: string }> = [];
+    editor.on("operation", (op) =>
+      events.push(op as { batchId?: string }),
+    );
+    editor.splitClip({ clipId: "c1", timeMs: 2500 });
+    expect(events[0]!.batchId).toBeUndefined();
+    editor.destroy();
+  });
+
+  it("nested batches reuse the outermost batchId", () => {
+    const editor = editorWith(tinyProject());
+    const events: Array<{ batchId?: string }> = [];
+    editor.on("operation", (op) =>
+      events.push(op as { batchId?: string }),
+    );
+    editor.batch("outer", () => {
+      editor.splitClip({ clipId: "c1", timeMs: 1000 });
+      editor.batch("inner", () => {
+        const clips = editor.getProject().tracks[0]!.clips;
+        editor.splitClip({ clipId: clips[1]!.id, timeMs: 3000 });
+      });
+    });
+    expect(events).toHaveLength(2);
+    expect(events[0]!.batchId).toBe(events[1]!.batchId);
+    editor.destroy();
+  });
+
+  it("before/after snapshots are deep-cloned (mutation-safe)", () => {
+    const editor = editorWith(tinyProject());
+    let captured: { beforeProject: Project; afterProject: Project } | null =
+      null;
+    editor.on("operation", (op) => {
+      captured = op as {
+        beforeProject: Project;
+        afterProject: Project;
+      };
+    });
+    editor.splitClip({ clipId: "c1", timeMs: 2500 });
+    // Mutate the captured snapshot — editor state should be untouched.
+    (captured! as { afterProject: Project }).afterProject.tracks[0]!.clips = [];
+    expect(editor.getProject().tracks[0]!.clips.length).toBe(2);
+    editor.destroy();
+  });
+});

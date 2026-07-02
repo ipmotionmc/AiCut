@@ -52,6 +52,7 @@ export type {
   EditResult,
   EditErrorReason,
   ProbedMedia,
+  OperationEvent,
 } from "@aicut/core";
 export {
   createEmptyProject,

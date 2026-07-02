@@ -1,5 +1,9 @@
 export { Editor } from "./editor.js";
-export type { EditResult, EditErrorReason } from "./editor.js";
+export type {
+  EditResult,
+  EditErrorReason,
+  OperationEvent,
+} from "./editor.js";
 // Standalone metadata probe — same helper `Editor.addClip({ sourceUrl })`
 // uses internally. Hosts can call it directly to pre-fetch duration
 // + dimensions before deciding whether to insert.

@@ -280,6 +280,50 @@ export type EditResult<T = Record<string, never>> =
   | { ok: true; data: T }
   | { ok: false; reason: EditErrorReason; hint?: string };
 
+/**
+ * Every AI-facing mutator (`splitClip`, `moveClipTo`, `trimClip`,
+ * `deleteClip`, `addClip`) fires one `operation` event on the bus
+ * after committing. The event carries enough context for a visual
+ * effect layer (e.g. `@aicut/effects`) to render an animation over
+ * the top — before / after project snapshots so a UI can diff, plus
+ * a monotonically increasing `timestamp` for ordering.
+ *
+ * `batchId` groups ops fired inside a single `editor.batch(...)` call
+ * so effects can play a single "worker does 3 things in sequence"
+ * animation instead of stacking 3 independent ones.
+ *
+ * Fires on both success AND failure — a failed op is worth animating
+ * (a puzzled character shrugs?), and downstream telemetry might want
+ * to log rejected attempts. Check `result.ok` to branch.
+ */
+export interface OperationEvent {
+  kind:
+    | "splitClip"
+    | "moveClipTo"
+    | "trimClip"
+    | "deleteClip"
+    | "addClip";
+  /** Original method args, forwarded verbatim. Effect handlers use
+   *  this to look up the affected clip / track / time. */
+  args: unknown;
+  /** The `EditResult` returned by the mutator. `ok: true` means the
+   *  project was actually mutated. */
+  result: EditResult<unknown>;
+  /** Wall-clock ms at the emit moment. Effect handlers use this to
+   *  dedupe / order concurrent ops. */
+  timestamp: number;
+  /** Deep-cloned project snapshot BEFORE the mutation. Empty object
+   *  when the mutation failed at the guard layer before touching
+   *  state — check `result.ok` first. */
+  beforeProject: Project;
+  /** Deep-cloned project snapshot AFTER the mutation. Same as
+   *  `editor.getProject()` at emit time. */
+  afterProject: Project;
+  /** Present when the op fired inside `editor.batch(label, fn)`.
+   *  All ops in one batch share the same id. */
+  batchId?: string;
+}
+
 export type EditErrorReason =
   /** Referenced clipId doesn't exist in the current project. */
   | "clip-not-found"
@@ -367,6 +411,13 @@ export interface EditorEventMap {
   themeChange: { theme: Theme };
   /** Locale tokens changed via `editor.setLocale(...)`. */
   localeChange: { locale: Locale };
+  /** An AI-facing mutator (`splitClip`, `moveClipTo`, `trimClip`,
+   *  `deleteClip`, `addClip`) just fired. Payload carries kind, args,
+   *  the returned `EditResult`, and before/after project snapshots
+   *  so downstream visual-effect layers can play an animation on top
+   *  of the timeline / preview without recomputing state. See
+   *  `OperationEvent` for the full contract. */
+  operation: OperationEvent;
 }
 
 export type EditorEventName = keyof EditorEventMap;
@@ -878,6 +929,11 @@ export class Editor implements EditorApi {
    *  beginInteraction / endInteraction docs on EditorApi. */
   private interactionDepth = 0;
   private interactionStartSnapshot: string | null = null;
+  /** Non-null while `batch(label, fn)` is running. Every operation
+   *  event emitted inside gets this id, so effect layers can group
+   *  animations (e.g. one worker performs all three ops in sequence
+   *  rather than three separate workers overlapping). */
+  private currentBatchId: string | null = null;
   private pxPerSec: number;
   private snap: boolean;
   private locale: Locale;
@@ -1266,6 +1322,15 @@ export class Editor implements EditorApi {
     clipId: string;
     timeMs: Ms;
   }): EditResult<{ newClipIds: [string, string] }> {
+    const before = JSON.stringify(this.project);
+    const result = this.splitClipInternal(args);
+    this.emitOperation("splitClip", args, result, before);
+    return result;
+  }
+  private splitClipInternal(args: {
+    clipId: string;
+    timeMs: Ms;
+  }): EditResult<{ newClipIds: [string, string] }> {
     if (!Number.isFinite(args.timeMs) || args.timeMs < 0) {
       return { ok: false, reason: "invalid-time" };
     }
@@ -1292,6 +1357,17 @@ export class Editor implements EditorApi {
   }
 
   moveClipTo(args: {
+    clipId: string;
+    toTrackId?: string;
+    startMs?: Ms;
+    onOverlap?: "error" | "auto";
+  }): EditResult<{ clipId: string; trackId: string; startMs: Ms }> {
+    const before = JSON.stringify(this.project);
+    const result = this.moveClipToInternal(args);
+    this.emitOperation("moveClipTo", args, result, before);
+    return result;
+  }
+  private moveClipToInternal(args: {
     clipId: string;
     toTrackId?: string;
     startMs?: Ms;
@@ -1374,6 +1450,16 @@ export class Editor implements EditorApi {
     edge: "left" | "right";
     timeMs: Ms;
   }): EditResult<{ clipId: string }> {
+    const before = JSON.stringify(this.project);
+    const result = this.trimClipInternal(args);
+    this.emitOperation("trimClip", args, result, before);
+    return result;
+  }
+  private trimClipInternal(args: {
+    clipId: string;
+    edge: "left" | "right";
+    timeMs: Ms;
+  }): EditResult<{ clipId: string }> {
     if (!Number.isFinite(args.timeMs) || args.timeMs < 0) {
       return { ok: false, reason: "invalid-time" };
     }
@@ -1413,6 +1499,14 @@ export class Editor implements EditorApi {
   }
 
   deleteClip(args: { clipId: string }): EditResult<{ clipId: string }> {
+    const before = JSON.stringify(this.project);
+    const result = this.deleteClipInternal(args);
+    this.emitOperation("deleteClip", args, result, before);
+    return result;
+  }
+  private deleteClipInternal(args: {
+    clipId: string;
+  }): EditResult<{ clipId: string }> {
     const trk = findTrackOfClip(this.project, args.clipId);
     if (!trk) return { ok: false, reason: "clip-not-found" };
     const ok = this.removeClip(args.clipId);
@@ -1421,6 +1515,21 @@ export class Editor implements EditorApi {
   }
 
   async addClip(args: {
+    sourceUrl?: string;
+    sourceId?: string;
+    trackId: string;
+    startMs: Ms;
+    inMs?: Ms;
+    outMs?: Ms;
+    onOverlap?: "error" | "auto";
+    meta?: Record<string, unknown>;
+  }): Promise<EditResult<{ clipId: string; sourceId: string }>> {
+    const before = JSON.stringify(this.project);
+    const result = await this.addClipInternal(args);
+    this.emitOperation("addClip", args, result, before);
+    return result;
+  }
+  private async addClipInternal(args: {
     sourceUrl?: string;
     sourceId?: string;
     trackId: string;
@@ -2585,21 +2694,57 @@ export class Editor implements EditorApi {
   }
 
   batch<T>(_label: string, fn: () => T | Promise<T>): T | Promise<T> {
+    // Every op fired inside gets tagged with this id so an effects
+    // layer can render a single grouped animation. Nested batch()
+    // calls REUSE the outermost id — same undo entry, same visual.
+    const outerBatchId = this.currentBatchId;
+    if (outerBatchId == null) {
+      this.currentBatchId = createId("batch");
+    }
+    const clearBatch = (): void => {
+      if (outerBatchId == null) this.currentBatchId = null;
+    };
     this.beginInteraction();
     try {
       const result = fn();
       if (result instanceof Promise) {
-        // Async — schedule end on settle. Errors still commit the
-        // partial batch (matching begin/endInteraction semantics);
-        // callers who want atomicity call `editor.undo()` in catch.
-        return result.finally(() => this.endInteraction());
+        return result.finally(() => {
+          this.endInteraction();
+          clearBatch();
+        });
       }
       this.endInteraction();
+      clearBatch();
       return result;
     } catch (e) {
       this.endInteraction();
+      clearBatch();
       throw e;
     }
+  }
+
+  /**
+   * Emit an `operation` event. Called by every AI-facing mutator
+   * right after it commits (or right after it decided to reject).
+   * Keeps deep clones so subscribers can mutate freely without
+   * corrupting editor state — same policy as `getProject()`.
+   */
+  private emitOperation(
+    kind: OperationEvent["kind"],
+    args: unknown,
+    result: EditResult<unknown>,
+    beforeSnapshotJson: string,
+  ): void {
+    const payload: OperationEvent = {
+      kind,
+      args,
+      result,
+      timestamp: Date.now(),
+      beforeProject: JSON.parse(beforeSnapshotJson) as Project,
+      afterProject: this.getProject(),
+      ...(this.currentBatchId ? { batchId: this.currentBatchId } : {}),
+    };
+    this.bus.emit("operation", payload);
   }
 
   /**
