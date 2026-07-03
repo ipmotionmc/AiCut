@@ -29,3 +29,7 @@ coverage
 # Kept out of the repo so we don't ship large binary fixtures.
 /examples/react-demo/public/*.mov
 /examples/react-demo/public/*.mp4
+
+# publish creds — never committed
+scripts/.publish-creds.local
+scripts/.publish-creds.*

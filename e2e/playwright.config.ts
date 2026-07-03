@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 /**
  * E2E runs against the React demo app, not the library directly — this
- * keeps the published packages (`@aicut/core`, `@aicut/react`, `@aicut/vue`)
+ * keeps the published packages (`@ipmotionmc/aicut-core`, `@ipmotionmc/aicut-react`, `@ipmotionmc/aicut-vue`)
  * free of any test-only props or fixtures. See the project's
  * library-isolation note.
  *
@@ -55,7 +55,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm --filter @aicut/react-demo dev",
+    command: "pnpm --filter @ipmotionmc/aicut-react-demo dev",
     cwd: "..",
     url: "http://127.0.0.1:5173",
     reuseExistingServer: !process.env["CI"],

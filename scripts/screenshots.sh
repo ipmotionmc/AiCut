@@ -39,7 +39,7 @@ EOF
 fi
 
 # Forward any extra args (e.g. --grep "dark") to playwright.
-pnpm --filter @aicut/e2e exec playwright test screenshots.spec.ts "$@"
+pnpm --filter @ipmotionmc/e2e exec playwright test screenshots.spec.ts "$@"
 
 echo
 echo "[screenshots] Wrote → docs/screenshots/"

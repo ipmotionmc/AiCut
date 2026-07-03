@@ -1,0 +1,136 @@
+name: Publish to CodeArtifact
+
+# Tag-driven publish, mirroring the Iplex ipvise-* model.
+#
+# Trigger with a tag of the form <pkg>-v<version>:
+#   git tag core-v0.7.5 && git push origin core-v0.7.5
+#   git tag react-v0.7.5 && git push origin react-v0.7.5
+#   git tag vue-v0.7.5 && git push origin vue-v0.7.5
+#
+# The workflow parses the tag, sanity-checks the version against the
+# matching packages/<pkg>/package.json, builds, mints a CodeArtifact
+# token via OIDC (no long-lived AWS key), and publishes.
+#
+# Requires an IAM role that trusts GitHub Actions OIDC for this repo.
+# See docs/codeartifact-publish.md for the IAM setup.
+
+on:
+  push:
+    tags:
+      - "core-v*"
+      - "react-v*"
+      - "vue-v*"
+
+concurrency:
+  # Serialise tag-driven publishes so back-to-back tags don't race
+  # against each other for the same CodeArtifact repo.
+  group: publish-codeartifact
+  cancel-in-progress: false
+
+env:
+  CA_DOMAIN: iplex
+  CA_OWNER: "883218392300"
+  CA_REGION: us-west-2
+  CA_REPO: iplex-npm
+  # Pre-computed for the .npmrc — never changes as long as the four
+  # values above don't.
+  CA_REGISTRY: https://iplex-883218392300.d.codeartifact.us-west-2.amazonaws.com/npm/iplex-npm/
+
+permissions:
+  # Both required for OIDC-based AWS auth.
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parse tag → package + version
+        id: tag
+        run: |
+          # ${{ github.ref_name }} is the tag as pushed, e.g. "core-v0.7.5"
+          TAG="${{ github.ref_name }}"
+          PKG="${TAG%%-v*}"
+          VER="${TAG#*-v}"
+          if [ -z "$PKG" ] || [ -z "$VER" ] || [ "$PKG" = "$TAG" ]; then
+            echo "❌ tag '$TAG' does not match '<pkg>-v<version>' shape" >&2
+            exit 1
+          fi
+          case "$PKG" in
+            core|react|vue) ;;
+            *) echo "❌ unknown package '$PKG'; expected core|react|vue" >&2; exit 1 ;;
+          esac
+          echo "pkg=$PKG"    >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Verify package.json version matches tag
+        run: |
+          PKG=${{ steps.tag.outputs.pkg }}
+          VER=${{ steps.tag.outputs.version }}
+          FILE_VER=$(node -p "require('./packages/$PKG/package.json').version")
+          if [ "$FILE_VER" != "$VER" ]; then
+            echo "❌ tag says $VER but packages/$PKG/package.json says $FILE_VER" >&2
+            echo "   bump the package.json OR retag with the matching version." >&2
+            exit 1
+          fi
+          echo "✓ version match: $VER"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all publishable packages (dependants need dist/)
+        run: pnpm -r --filter "./packages/**" build
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PUBLISH_ROLE_ARN }}
+          aws-region: ${{ env.CA_REGION }}
+          # Session tag lets audit logs trace WHICH tag caused the publish.
+          role-session-name: aicut-publish-${{ steps.tag.outputs.pkg }}-${{ steps.tag.outputs.version }}
+
+      - name: Mint CodeArtifact auth token
+        id: token
+        run: |
+          TOKEN=$(aws codeartifact get-authorization-token \
+            --domain "$CA_DOMAIN" \
+            --domain-owner "$CA_OWNER" \
+            --region "$CA_REGION" \
+            --query authorizationToken --output text)
+          # Mask so it never leaks in logs.
+          echo "::add-mask::$TOKEN"
+          echo "value=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Write publish .npmrc
+        run: |
+          HOST="${CA_REGISTRY#https://}"; HOST="${HOST%/}"
+          cat > "$RUNNER_TEMP/.npmrc" <<EOF
+          registry=${CA_REGISTRY}
+          @ipmotionmc:registry=${CA_REGISTRY}
+          //${HOST}/:always-auth=true
+          //${HOST}/:_authToken=${{ steps.token.outputs.value }}
+          EOF
+
+      - name: pnpm publish
+        run: |
+          PKG=${{ steps.tag.outputs.pkg }}
+          cd "packages/$PKG"
+          pnpm publish \
+            --no-git-checks \
+            --registry "$CA_REGISTRY" \
+            --userconfig "$RUNNER_TEMP/.npmrc"
+
+      - name: Summary
+        run: |
+          echo "✓ published @ipmotionmc/${{ steps.tag.outputs.pkg }}@${{ steps.tag.outputs.version }}"
+          echo "   to $CA_REGISTRY"

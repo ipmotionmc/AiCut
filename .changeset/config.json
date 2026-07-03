@@ -2,10 +2,10 @@
   "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [["@aicut/core", "@aicut/react", "@aicut/vue"]],
+  "fixed": [["@ipmotionmc/aicut-core", "@ipmotionmc/aicut-react", "@ipmotionmc/aicut-vue"]],
   "linked": [],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@aicut/react-demo", "@aicut/vue-demo", "@aicut/e2e", "@aicut/backend-ts"]
+  "ignore": ["@ipmotionmc/aicut-react-demo", "@ipmotionmc/aicut-vue-demo", "@ipmotionmc/e2e", "@ipmotionmc/backend-ts"]
 }

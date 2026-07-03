@@ -6,7 +6,7 @@ import {
   type Locale,
   type Ms,
   type Project,
-} from "@aicut/core";
+} from "@ipmotionmc/aicut-core";
 
 /**
  * Standalone canvas Timeline wrapped for Vue 3. Same surface as the

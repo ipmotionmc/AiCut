@@ -5,8 +5,8 @@ import {
   type LightingConfig,
   type LightingEditorApi,
   type LightingView,
-} from "@aicut/react/lighting";
-import { localeZh, type Theme } from "@aicut/react";
+} from "@ipmotionmc/aicut-react/lighting";
+import { localeZh, type Theme } from "@ipmotionmc/aicut-react";
 
 const THEMES: Record<"dark" | "light", Theme> = {
   dark: {

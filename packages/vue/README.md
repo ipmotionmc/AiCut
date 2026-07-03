@@ -1,9 +1,9 @@
-# @aicut/vue
+# @ipmotionmc/aicut-vue
 
 > Vue 3 wrapper for the **AiCut** video editor — canvas timeline, custom toolbar slots, theming, i18n, drop-in `<VideoEditor>`.
 
-[![npm](https://img.shields.io/npm/v/@aicut/vue.svg)](https://www.npmjs.com/package/@aicut/vue)
-[![License](https://img.shields.io/npm/l/@aicut/vue.svg)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/@ipmotionmc/aicut-vue.svg)](https://www.npmjs.com/package/@ipmotionmc/aicut-vue)
+[![License](https://img.shields.io/npm/l/@ipmotionmc/aicut-vue.svg)](./LICENSE)
 [![GitHub](https://img.shields.io/badge/repo-ziqiangai/AiCut-181717?logo=github)](https://github.com/ziqiangai/AiCut)
 
 ![AiCut editor](https://raw.githubusercontent.com/ziqiangai/AiCut/main/docs/screenshots/editor-dark.png)
@@ -11,7 +11,7 @@
 ## Install
 
 ```bash
-pnpm add @aicut/vue @aicut/core
+pnpm add @ipmotionmc/aicut-vue @ipmotionmc/aicut-core
 ```
 
 ## Quick start
@@ -23,8 +23,8 @@ import {
   VideoEditor,
   type EditorApi,
   type Project,
-} from "@aicut/vue";
-import "@aicut/core/styles.css";
+} from "@ipmotionmc/aicut-vue";
+import "@ipmotionmc/aicut-core/styles.css";
 
 const project: Project = {
   version: 1,
@@ -116,7 +116,7 @@ selection-change   (clipId: string | null)
 error              (error: Error)
 ```
 
-The exposed `api()` returns the full **`EditorApi`** described in [@aicut/core](https://www.npmjs.com/package/@aicut/core) — `play`, `pause`, `seek`, `split`, `setProject`, `requestExport`, `setTheme`, `setLocale`, and more.
+The exposed `api()` returns the full **`EditorApi`** described in [@ipmotionmc/aicut-core](https://www.npmjs.com/package/@ipmotionmc/aicut-core) — `play`, `pause`, `seek`, `split`, `setProject`, `requestExport`, `setTheme`, `setLocale`, and more.
 
 ## Theming
 
@@ -139,7 +139,7 @@ The exposed `api()` returns the full **`EditorApi`** described in [@aicut/core](
 ```vue
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { VideoEditor, localeEn, localeZh, type Locale } from "@aicut/vue";
+import { VideoEditor, localeEn, localeZh, type Locale } from "@ipmotionmc/aicut-vue";
 
 const lang = ref<"en" | "zh">("en");
 const locale = computed<Locale>(() =>
@@ -184,7 +184,7 @@ desktop-wrapper IPC bridge — pass a factory:
 
 ```vue
 <script setup lang="ts">
-import { VideoEditor, type PlaybackEngineFactory } from "@aicut/vue";
+import { VideoEditor, type PlaybackEngineFactory } from "@ipmotionmc/aicut-vue";
 
 const myEngine: PlaybackEngineFactory = ({ host, project }) =>
   new MyCustomEngine(host, project); // implements PlaybackEngine
@@ -200,10 +200,10 @@ const myEngine: PlaybackEngineFactory = ({ host, project }) =>
 ```
 
 `PlaybackEngine`, `PlaybackEngineFactory`, `PlaybackEngineOptions`, and
-the built-in `HtmlVideoEngine` are re-exported from `@aicut/vue` so
-you don't need a separate `@aicut/core` import to write one.
+the built-in `HtmlVideoEngine` are re-exported from `@ipmotionmc/aicut-vue` so
+you don't need a separate `@ipmotionmc/aicut-core` import to write one.
 
-See [@aicut/core's playback section](https://www.npmjs.com/package/@aicut/core#playback-engine)
+See [@ipmotionmc/aicut-core's playback section](https://www.npmjs.com/package/@ipmotionmc/aicut-core#playback-engine)
 for the full interface contract.
 
 ### WebCodecs engine (opt-in sub-entry)
@@ -213,11 +213,11 @@ For frame-accurate playback via the browser's `VideoDecoder` API, import from th
 ```vue
 <script setup lang="ts">
 import { computed } from "vue";
-import { VideoEditor } from "@aicut/vue";
+import { VideoEditor } from "@ipmotionmc/aicut-vue";
 import {
   WebCodecsEngine,
   isWebCodecsSupported,
-} from "@aicut/vue/webcodecs";
+} from "@ipmotionmc/aicut-vue/webcodecs";
 
 const factory = computed(() =>
   isWebCodecsSupported()
@@ -270,11 +270,11 @@ api.setSelection("clip-1");
 api.toggleKeyframeAtPlayhead();
 ```
 
-`Keyframe`, `KeyframeProp`, `EasingKind`, `EffectiveTransform`, `getEffectiveTransform`, `getTransformAtTimelineTime`, `IDENTITY_TRANSFORM`, `isIdentityTransform` are all re-exported from `@aicut/vue` for thumbnail / preview rendering outside the editor.
+`Keyframe`, `KeyframeProp`, `EasingKind`, `EffectiveTransform`, `getEffectiveTransform`, `getTransformAtTimelineTime`, `IDENTITY_TRANSFORM`, `isIdentityTransform` are all re-exported from `@ipmotionmc/aicut-vue` for thumbnail / preview rendering outside the editor.
 
-**Backend export:** both `@aicut/backend-ts` and `@aicut/backend-go` compile keyframes to ffmpeg `t`-expressions (`scale=…:eval=frame` + `overlay=…:eval=frame`). Pass `output: { width, height, fps }` in the export request — required for the keyframe filter graph to apply.
+**Backend export:** both `@ipmotionmc/backend-ts` and `@ipmotionmc/backend-go` compile keyframes to ffmpeg `t`-expressions (`scale=…:eval=frame` + `overlay=…:eval=frame`). Pass `output: { width, height, fps }` in the export request — required for the keyframe filter graph to apply.
 
-See [@aicut/core's keyframes section](https://www.npmjs.com/package/@aicut/core#keyframes-per-clip-panx--pany--scale-animation) for the full API.
+See [@ipmotionmc/aicut-core's keyframes section](https://www.npmjs.com/package/@ipmotionmc/aicut-core#keyframes-per-clip-panx--pany--scale-animation) for the full API.
 
 ## `<LightingEditor>` (opt-in sub-entry)
 
@@ -286,9 +286,9 @@ import { ref } from "vue";
 import {
   LightingEditor,
   type LightingConfig,
-} from "@aicut/vue/lighting";
-import type { LightingEditor as CoreLightingEditor } from "@aicut/core/lighting";
-import "@aicut/core/styles.css";
+} from "@ipmotionmc/aicut-vue/lighting";
+import type { LightingEditor as CoreLightingEditor } from "@ipmotionmc/aicut-core/lighting";
+import "@ipmotionmc/aicut-core/styles.css";
 
 const editor = ref<{ api(): CoreLightingEditor | null } | null>(null);
 
@@ -337,7 +337,7 @@ The library is intentionally scoped to the picker — Smart mode UI / Generate b
 ```vue
 <script setup lang="ts">
 import { ref } from "vue";
-import { Timeline } from "@aicut/vue";
+import { Timeline } from "@ipmotionmc/aicut-vue";
 
 const picked = ref(0);
 </script>
@@ -354,4 +354,4 @@ const picked = ref(0);
 
 ---
 
-[Full docs & demo](https://github.com/ziqiangai/AiCut) · [@aicut/core](https://www.npmjs.com/package/@aicut/core) · [@aicut/react](https://www.npmjs.com/package/@aicut/react)
+[Full docs & demo](https://github.com/ziqiangai/AiCut) · [@ipmotionmc/aicut-core](https://www.npmjs.com/package/@ipmotionmc/aicut-core) · [@ipmotionmc/aicut-react](https://www.npmjs.com/package/@ipmotionmc/aicut-react)

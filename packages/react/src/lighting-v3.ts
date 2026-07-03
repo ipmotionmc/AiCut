@@ -1,10 +1,10 @@
 /**
- * @aicut/react/lighting-v3 — Figma-driven v3 redesign of the
+ * @ipmotionmc/aicut-react/lighting-v3 — Figma-driven v3 redesign of the
  * lighting picker. Same three.js bundle as v2 underneath, but a fresh
  * UI shell with the in-sphere rotation knob, CSS soap-bubble sphere,
  * and the brand-color Generate CTA.
  *
- * v2 (`@aicut/react/lighting`) is unchanged — adopt per-feature.
+ * v2 (`@ipmotionmc/aicut-react/lighting`) is unchanged — adopt per-feature.
  */
 export { LightingEditorV3 } from "./LightingEditorV3.js";
 export type {
@@ -21,11 +21,11 @@ export {
   lightingLocaleZh,
   mergeLightingLocale,
   snapToPreset,
-} from "@aicut/core/lighting-v3";
+} from "@ipmotionmc/aicut-core/lighting-v3";
 export type {
   KeyPresetV3,
   LightingConfigV3,
   LightingEditorV3Options,
   LightingLocale,
   LightingView,
-} from "@aicut/core/lighting-v3";
+} from "@ipmotionmc/aicut-core/lighting-v3";

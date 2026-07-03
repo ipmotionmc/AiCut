@@ -1,4 +1,4 @@
-import type { EasingKind, Keyframe, KeyframeProp } from "@aicut/core";
+import type { EasingKind, Keyframe, KeyframeProp } from "@ipmotionmc/aicut-core";
 
 /**
  * Compile a per-property keyframe array into an ffmpeg filter

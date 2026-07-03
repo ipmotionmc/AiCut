@@ -7,10 +7,10 @@ Canvas-rendered timeline · plain JSON projects · real mp4 export · opt-in thr
 
 <br />
 
-[![npm core](https://img.shields.io/npm/v/@aicut/core?label=%40aicut%2Fcore&style=flat-square&logo=npm&color=cb3837)](https://www.npmjs.com/package/@aicut/core)
-[![npm react](https://img.shields.io/npm/v/@aicut/react?label=%40aicut%2Freact&style=flat-square&logo=react&color=149eca)](https://www.npmjs.com/package/@aicut/react)
-[![npm vue](https://img.shields.io/npm/v/@aicut/vue?label=%40aicut%2Fvue&style=flat-square&logo=vuedotjs&color=42b883)](https://www.npmjs.com/package/@aicut/vue)
-[![License](https://img.shields.io/npm/l/@aicut/core?style=flat-square&color=4c1)](./LICENSE)
+[![npm core](https://img.shields.io/npm/v/@ipmotionmc/aicut-core?label=%40aicut%2Fcore&style=flat-square&logo=npm&color=cb3837)](https://www.npmjs.com/package/@ipmotionmc/aicut-core)
+[![npm react](https://img.shields.io/npm/v/@ipmotionmc/aicut-react?label=%40aicut%2Freact&style=flat-square&logo=react&color=149eca)](https://www.npmjs.com/package/@ipmotionmc/aicut-react)
+[![npm vue](https://img.shields.io/npm/v/@ipmotionmc/aicut-vue?label=%40aicut%2Fvue&style=flat-square&logo=vuedotjs&color=42b883)](https://www.npmjs.com/package/@ipmotionmc/aicut-vue)
+[![License](https://img.shields.io/npm/l/@ipmotionmc/aicut-core?style=flat-square&color=4c1)](./LICENSE)
 [![Stars](https://img.shields.io/github/stars/ziqiangai/AiCut?style=flat-square&logo=github)](https://github.com/ziqiangai/AiCut/stargazers)
 
 ### **🌐 [Try the live demo →](https://ziqiangai.github.io/AiCut/)**
@@ -29,7 +29,7 @@ Most "video editor in the browser" projects are either a finished SaaS (you can'
 
 <table>
   <tr>
-    <td>🧠</td><td><b>One engine, multiple frontends</b><br/><code>@aicut/core</code> does all the work; the React / Vue wrappers are &lt;100&nbsp;LOC shells. Same shape as ag-Grid.</td>
+    <td>🧠</td><td><b>One engine, multiple frontends</b><br/><code>@ipmotionmc/aicut-core</code> does all the work; the React / Vue wrappers are &lt;100&nbsp;LOC shells. Same shape as ag-Grid.</td>
   </tr>
   <tr>
     <td>🚀</td><td><b>Canvas timeline, zero DOM clip nodes</b><br/>Hundreds of clips render in &lt;2&nbsp;ms; smooth pan, zoom, drag-snap, edge auto-scroll.</td>
@@ -47,7 +47,7 @@ Most "video editor in the browser" projects are either a finished SaaS (you can'
     <td>🧩</td><td><b>Custom slots everywhere</b><br/>Optional <code>headerLeft</code>/<code>headerRight</code> above the preview (project name, Share / Export, profile) and <code>toolbarLeft</code>/<code>toolbarRight</code> bookends on the toolbar. All collapse to zero when empty — default editor is unchanged for callers that don't use them.</td>
   </tr>
   <tr>
-    <td>💡</td><td><b>Opt-in 3D lighting picker</b><br/>A separate <code>@aicut/core/lighting</code> entry powers an interactive sphere-and-image lighting director with perspective / front views, drag-snap directions, and a host-supplied AI smart panel. Three.js is bundled only on this sub-entry — the video-editor bundle stays small.</td>
+    <td>💡</td><td><b>Opt-in 3D lighting picker</b><br/>A separate <code>@ipmotionmc/aicut-core/lighting</code> entry powers an interactive sphere-and-image lighting director with perspective / front views, drag-snap directions, and a host-supplied AI smart panel. Three.js is bundled only on this sub-entry — the video-editor bundle stays small.</td>
   </tr>
 </table>
 
@@ -56,7 +56,7 @@ Most "video editor in the browser" projects are either a finished SaaS (you can'
 ## 🚀 Quick start (React)
 
 ```bash
-pnpm add @aicut/react @aicut/core
+pnpm add @ipmotionmc/aicut-react @ipmotionmc/aicut-core
 ```
 
 ```tsx
@@ -65,8 +65,8 @@ import {
   VideoEditor,
   type VideoEditorApi,
   type Project,
-} from "@aicut/react";
-import "@aicut/core/styles.css";
+} from "@ipmotionmc/aicut-react";
+import "@ipmotionmc/aicut-core/styles.css";
 
 const project: Project = {
   version: 1,
@@ -101,14 +101,14 @@ The `apiRef` exposes imperative methods (`split`, `seek`, `setProject`, `request
 ### 🟢 Vue 3
 
 ```bash
-pnpm add @aicut/vue @aicut/core
+pnpm add @ipmotionmc/aicut-vue @ipmotionmc/aicut-core
 ```
 
 ```vue
 <script setup lang="ts">
 import { ref } from "vue";
-import { VideoEditor, type EditorApi, type Project } from "@aicut/vue";
-import "@aicut/core/styles.css";
+import { VideoEditor, type EditorApi, type Project } from "@ipmotionmc/aicut-vue";
+import "@ipmotionmc/aicut-core/styles.css";
 
 const editor = ref<{ api(): EditorApi | null } | null>(null);
 const project: Project = { /* same shape */ };
@@ -127,8 +127,8 @@ const project: Project = { /* same shape */ };
 ### 🟡 Vanilla JS
 
 ```ts
-import { Editor } from "@aicut/core";
-import "@aicut/core/styles.css";
+import { Editor } from "@ipmotionmc/aicut-core";
+import "@ipmotionmc/aicut-core/styles.css";
 
 const editor = Editor.create({
   container: document.getElementById("app")!,
@@ -174,7 +174,7 @@ Every variable is also writeable as plain CSS — `.aicut-root { --aicut-control
 English by default. The bundled `localeZh` covers the editor end-to-end (toolbar tooltips, canvas track headers, exit-fullscreen overlay). Hosts can override any subset of keys, and runtime switching is supported.
 
 ```tsx
-import { VideoEditor, localeZh } from "@aicut/react";
+import { VideoEditor, localeZh } from "@ipmotionmc/aicut-react";
 
 // Whole-locale swap
 <VideoEditor locale={localeZh} />
@@ -285,7 +285,7 @@ clip.keyframes = [
 | **Per-property model** | `panX` / `panY` / `scale` animate independently. Pre-easing tuple-keyframes auto-migrate via `normalizeProject`. |
 | **Easing curves** | `linear` / `easeIn` / `easeOut` / `easeInOut` (cubic). Stored on the leaving kf — matches AE / Premiere / CapCut convention. Omitted = linear (back-compat). |
 | **Editor UI** | Toolbar diamond toggle, draggable preview overlay (translate body / scale corners / pinch wheel), floating numeric panel with easing dropdown, **timeline diamond markers** with drag-to-retime (drags the whole moment — every prop pinned at the same time travels together) + snap. |
-| **Backend export** | `compileKeyframeExpression` emits a `gte(t,A)*lt(t,B)*…` sum compiled into `scale=...:eval=frame` + `overlay=…:eval=frame` filters. Both `@aicut/backend-ts` and `@aicut/backend-go` support it identically. |
+| **Backend export** | `compileKeyframeExpression` emits a `gte(t,A)*lt(t,B)*…` sum compiled into `scale=...:eval=frame` + `overlay=…:eval=frame` filters. Both `@ipmotionmc/backend-ts` and `@ipmotionmc/backend-go` support it identically. |
 | **PiP semantics** | Output frame is fixed; pan/scale moves the *content* inside it (`overflow: hidden` in the HTML engine, `ctx.clip()` in canvas, ffmpeg `overlay` onto a fixed-size `color` background on the backend). |
 | **Lossless splits** | `splitClipAt` mid-segment **inserts interpolated boundary keyframes** so cutting and not moving the halves plays back identically to the un-cut clip. |
 | **Drag-burst undo** | `Editor.beginInteraction()` / `endInteraction()` coalesce a 30+ tick drag into ONE history entry. Wheel-pinch debounces 200ms. |
@@ -373,7 +373,7 @@ The [live demo on GitHub Pages](https://ziqiangai.github.io/AiCut/) is a fully w
 
 For the GitHub Pages deploy, set them as repository secrets (`Settings → Secrets and variables → Actions`). The workflow at [`.github/workflows/pages.yml`](.github/workflows/pages.yml) reads them at build time and bakes the values into the static bundle. Empty / missing → the demo gracefully degrades to "local-only" mode with toast hints when you hit the missing piece.
 
-For local dev, copy [`examples/react-demo/.env.example`](./examples/react-demo/.env.example) to `.env.local` and fill in. Without an `.env.local` the demo defaults to `http://127.0.0.1:8787` (TS) and `http://127.0.0.1:8788` (Go) — start either backend with `pnpm --filter @aicut/backend-ts dev` (or `--filter @aicut/backend-go`) and exports just work.
+For local dev, copy [`examples/react-demo/.env.example`](./examples/react-demo/.env.example) to `.env.local` and fill in. Without an `.env.local` the demo defaults to `http://127.0.0.1:8787` (TS) and `http://127.0.0.1:8788` (Go) — start either backend with `pnpm --filter @ipmotionmc/backend-ts dev` (or `--filter @ipmotionmc/backend-go`) and exports just work.
 
 ### One-time GitHub Pages setup
 
@@ -387,7 +387,7 @@ For local dev, copy [`examples/react-demo/.env.example`](./examples/react-demo/.
 
 An independent 3D component for AI-relighting workflows. The picker shows the host-picked frame on a flat plane inside a wireframe sphere; the user drags a light dot around the surface to set direction. Brightness drives the cone-beam length; color tints the beam.
 
-Three.js powers the scene and ships only on the **`@aicut/core/lighting`** sub-entry — consumers of the video editor pay nothing for it.
+Three.js powers the scene and ships only on the **`@ipmotionmc/aicut-core/lighting`** sub-entry — consumers of the video editor pay nothing for it.
 
 <div align="center">
 
@@ -399,8 +399,8 @@ The library renders **just the picker** (scene + controls). Smart-mode prompt, p
 
 ```tsx
 import { useRef, useState } from "react";
-import { LightingEditor, type LightingEditorApi } from "@aicut/react/lighting";
-import "@aicut/core/styles.css";
+import { LightingEditor, type LightingEditorApi } from "@ipmotionmc/aicut-react/lighting";
+import "@ipmotionmc/aicut-core/styles.css";
 
 function Relight() {
   const apiRef = useRef<LightingEditorApi | null>(null);
@@ -450,7 +450,7 @@ The `<Timeline>` component works without the rest of the editor — useful for a
 </div>
 
 ```tsx
-import { Timeline } from "@aicut/react";
+import { Timeline } from "@ipmotionmc/aicut-react";
 
 <Timeline
   defaultProject={{ /* single clip */ }}
@@ -468,7 +468,7 @@ import { Timeline } from "@aicut/react";
 
 ```
 packages/
-  core/           @aicut/core    framework-agnostic engine
+  core/           @ipmotionmc/aicut-core    framework-agnostic engine
                                   ├─ Editor + Project + EventBus
                                   ├─ Pluggable PlaybackEngine
                                   │   (default: HtmlVideoEngine; host
@@ -477,8 +477,8 @@ packages/
                                   ├─ Canvas Timeline (ruler, tracks, clips,
                                   │   thumbnails, playhead, snap, scrollbars)
                                   └─ Theme + i18n (en / zh)
-  react/          @aicut/react   thin React shell, portal-based slots
-  vue/            @aicut/vue     thin Vue 3 shell, slot watchers
+  react/          @ipmotionmc/aicut-react   thin React shell, portal-based slots
+  vue/            @ipmotionmc/aicut-vue     thin Vue 3 shell, slot watchers
 examples/
   react-demo/     Vite playground covering every public surface
 e2e/              Playwright (system Chrome, --no-proxy-server)
@@ -538,9 +538,9 @@ The script is idempotent — already-published versions are skipped, so a re-run
 - [x] Top-toolbar slots for host-supplied controls
 - [x] SSE-progress export backends (TS + Go)
 - [x] Bundled `en` / `zh` locale packs + runtime switch
-- [x] 3D lighting picker (`@aicut/core/lighting` sub-entry)
+- [x] 3D lighting picker (`@ipmotionmc/aicut-core/lighting` sub-entry)
 - [x] Pluggable `PlaybackEngine` interface (HTML5 default, host can inject)
-- [x] WebCodecs preview engine for frame-accurate seek (`@aicut/core/webcodecs`, PoC: single-track MP4)
+- [x] WebCodecs preview engine for frame-accurate seek (`@ipmotionmc/aicut-core/webcodecs`, PoC: single-track MP4)
 - [x] Density knobs — `timelineHeight` (reactive), `trackHeight`, `rulerHeight` for compact viewports
 - [x] Per-clip keyframe animation (X / Y / Scale) + easing curves (linear / easeIn / easeOut / easeInOut)
 - [x] Backend ffmpeg compilation of keyframes — animated `scale` + `overlay` filter graph with per-frame `t`-expressions, both TS + Go
@@ -578,9 +578,9 @@ The script is idempotent — already-published versions are skipped, so a re-run
 
 <div align="center">
 
-**[npm — @aicut/core](https://www.npmjs.com/package/@aicut/core)** ·
-**[@aicut/react](https://www.npmjs.com/package/@aicut/react)** ·
-**[@aicut/vue](https://www.npmjs.com/package/@aicut/vue)** ·
+**[npm — @ipmotionmc/aicut-core](https://www.npmjs.com/package/@ipmotionmc/aicut-core)** ·
+**[@ipmotionmc/aicut-react](https://www.npmjs.com/package/@ipmotionmc/aicut-react)** ·
+**[@ipmotionmc/aicut-vue](https://www.npmjs.com/package/@ipmotionmc/aicut-vue)** ·
 **[Issues](https://github.com/ziqiangai/AiCut/issues)**
 
 Made with ❤️ for browser-based video editing · MIT License

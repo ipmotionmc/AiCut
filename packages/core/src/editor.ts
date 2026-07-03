@@ -649,7 +649,7 @@ const SNAP_PX = 8;
  * interacts with. Owns the project, the playback engine, the vanilla
  * DOM UI, plus viewport (zoom/snap), selection, and history state.
  *
- * Framework wrappers (`@aicut/react`, `@aicut/vue`) should mount a
+ * Framework wrappers (`@ipmotionmc/aicut-react`, `@ipmotionmc/aicut-vue`) should mount a
  * container, instantiate this once, mirror prop changes (`theme`)
  * into it, and forward events as framework-native callbacks.
  */

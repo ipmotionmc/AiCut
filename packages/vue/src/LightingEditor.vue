@@ -5,8 +5,8 @@ import {
   type LightingConfig,
   type LightingEditorOptions,
   type LightingView,
-} from "@aicut/core/lighting";
-import type { Theme } from "@aicut/core";
+} from "@ipmotionmc/aicut-core/lighting";
+import type { Theme } from "@ipmotionmc/aicut-core";
 
 const props = defineProps<{
   subjectImageUrl?: string;

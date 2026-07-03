@@ -1,6 +1,6 @@
 package main
 
-// Project mirrors the @aicut/core Project JSON shape. Keep this in
+// Project mirrors the @ipmotionmc/aicut-core Project JSON shape. Keep this in
 // sync with packages/core/src/types.ts.
 
 type MediaSource struct {

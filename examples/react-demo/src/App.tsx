@@ -23,11 +23,11 @@ import {
   type Theme,
   type TimelineApi,
   type VideoEditorApi,
-} from "@aicut/react";
+} from "@ipmotionmc/aicut-react";
 import {
   WebCodecsEngine,
   isWebCodecsSupported,
-} from "@aicut/react/webcodecs";
+} from "@ipmotionmc/aicut-react/webcodecs";
 import { useToast } from "./Toast.js";
 import { UploadPanel, type UploadResult } from "./UploadPanel.js";
 

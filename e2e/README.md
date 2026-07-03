@@ -1,11 +1,11 @@
-# @aicut/e2e
+# @ipmotionmc/e2e
 
 Playwright end-to-end tests, run against the React demo app.
 
 ```bash
 pnpm install
-pnpm --filter @aicut/e2e exec playwright install chrome   # one-time, only if you don't have Chrome already
-pnpm --filter @aicut/e2e test
+pnpm --filter @ipmotionmc/e2e exec playwright install chrome   # one-time, only if you don't have Chrome already
+pnpm --filter @ipmotionmc/e2e test
 ```
 
 Notes:

@@ -1,17 +1,17 @@
 {
-  "name": "@aicut/vue",
+  "name": "@ipmotionmc/aicut-vue",
   "version": "0.7.5",
-  "description": "Vue 3 wrapper for the AiCut video editor + lighting picker — thin declarative shells over @aicut/core.",
+  "description": "Vue 3 wrapper for the AiCut video editor + lighting picker — thin declarative shells over @ipmotionmc/aicut-core.",
   "license": "MIT",
   "author": "ziqiang <ziqiangytu@gmail.com>",
-  "homepage": "https://github.com/ziqiangai/AiCut#readme",
+  "homepage": "https://github.com/ipmotionmc/AiCut#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ziqiangai/AiCut.git",
+    "url": "git+https://github.com/ipmotionmc/AiCut.git",
     "directory": "packages/vue"
   },
   "bugs": {
-    "url": "https://github.com/ziqiangai/AiCut/issues"
+    "url": "https://github.com/ipmotionmc/AiCut/issues"
   },
   "keywords": [
     "video-editor",
@@ -70,7 +70,7 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
-    "@aicut/core": "workspace:*"
+    "@ipmotionmc/aicut-core": "workspace:*"
   },
   "peerDependencies": {
     "vue": "^3.4.0"
@@ -83,6 +83,7 @@
     "vue-tsc": "^2.1.10"
   },
   "publishConfig": {
-    "access": "public"
+    "registry": "https://iplex-883218392300.d.codeartifact.us-west-2.amazonaws.com/npm/iplex-npm/",
+    "access": "restricted"
   }
 }

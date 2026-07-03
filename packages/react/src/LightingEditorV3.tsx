@@ -11,8 +11,8 @@ import {
   type LightingConfigV3,
   type LightingEditorV3Options,
   type LightingView,
-} from "@aicut/core/lighting-v3";
-import type { Theme } from "@aicut/core";
+} from "@ipmotionmc/aicut-core/lighting-v3";
+import type { Theme } from "@ipmotionmc/aicut-core";
 
 export interface LightingEditorV3Api {
   setConfig(partial: Partial<LightingConfigV3>): void;

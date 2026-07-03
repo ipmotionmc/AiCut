@@ -1,7 +1,7 @@
 import { mkdtemp, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import type { Clip, MediaSource, Project, Track } from "@aicut/core";
+import type { Clip, MediaSource, Project, Track } from "@ipmotionmc/aicut-core";
 import {
   probeHasAudio,
   probeVideoDimensions,
