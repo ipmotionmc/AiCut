@@ -16,7 +16,7 @@ import {
   type Project,
   type Theme,
   type TimelineOptions,
-} from "@ipmotionmc/aicut-core";
+} from "@iplex/aicut-core";
 
 /** Imperative handle exposed via `apiRef`. */
 export interface TimelineApi {

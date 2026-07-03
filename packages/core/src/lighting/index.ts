@@ -1,8 +1,8 @@
 /**
- * @ipmotionmc/aicut-core/lighting — opt-in 3D lighting picker.
+ * @iplex/aicut-core/lighting — opt-in 3D lighting picker.
  *
  * Pulls in three.js; importing this module is the cost. The main
- * `@ipmotionmc/aicut-core` entry never imports anything from here, so consumers
+ * `@iplex/aicut-core` entry never imports anything from here, so consumers
  * of the video editor pay nothing for this component.
  */
 

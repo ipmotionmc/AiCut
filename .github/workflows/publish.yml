@@ -1,0 +1,84 @@
+name: Release
+
+# Changesets-driven publish to Iplex's private AWS CodeArtifact registry.
+#
+# Flow (2-phase, matches the ipvise-* model in the iplex repo):
+#
+#   1. A feature PR lands a changeset file (`pnpm changeset` locally).
+#   2. On merge to main this workflow runs and either
+#        - opens/updates the "Version Packages" PR (bumps versions +
+#          changelogs), OR
+#        - if a Version PR just merged, actually publishes the fixed
+#          group @iplex/aicut-{core,react,vue} together.
+#
+# AWS auth is short-lived: GitHub OIDC → assume the pre-provisioned
+# publish role (repo-scoped trust, @iplex/aicut-* namespace-scoped
+# permission) → mint a CodeArtifact token → export as NODE_AUTH_TOKEN so
+# the committed root `.npmrc` picks it up for publish.
+#
+# Repo secrets required (both live in Settings → Secrets → Actions):
+#   AWS_ROLE_ARN   arn:aws:iam::883218392300:role/github-actions-aicut-publish
+#   AWS_REGION     us-west-2   (optional; falls back to the env literal)
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write      # assume the AWS role via GitHub OIDC
+  contents: write      # changesets creates the "Version Packages" PR + tags
+  pull-requests: write # changesets opens/updates that PR
+
+env:
+  CODEARTIFACT_DOMAIN: iplex
+  AWS_REGION: us-west-2
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4   # reads packageManager from root package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Configure AWS credentials (GitHub OIDC → publish role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Mint CodeArtifact auth token
+        run: |
+          set -euo pipefail
+          TOKEN=$(aws codeartifact get-authorization-token \
+            --domain "$CODEARTIFACT_DOMAIN" \
+            --query authorizationToken --output text)
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "None" ]; then
+            echo "::error::Failed to mint CodeArtifact token."; exit 1
+          fi
+          echo "::add-mask::$TOKEN"
+          # The committed .npmrc references ${NODE_AUTH_TOKEN}; exporting it here
+          # makes both install and publish authenticate against CodeArtifact.
+          echo "NODE_AUTH_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Version PR or publish to CodeArtifact
+        uses: changesets/action@v1
+        with:
+          publish: pnpm release   # = pnpm build && changeset publish
+        env:
+          NODE_AUTH_TOKEN: ${{ env.NODE_AUTH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

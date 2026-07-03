@@ -6,7 +6,7 @@ import { pipeline } from "node:stream/promises";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
-import type { Project } from "@ipmotionmc/aicut-core";
+import type { Project } from "@iplex/aicut-core";
 import { renderProject, type ProgressEvent } from "./render.js";
 
 const app = Fastify({

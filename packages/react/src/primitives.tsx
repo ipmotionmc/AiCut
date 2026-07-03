@@ -38,7 +38,7 @@ import {
   type Ms,
   type Project,
   type Theme,
-} from "@ipmotionmc/aicut-core";
+} from "@iplex/aicut-core";
 
 /**
  * Render one of the core-provided SVG icons. Kept as a plain span

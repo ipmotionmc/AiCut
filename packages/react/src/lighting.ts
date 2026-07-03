@@ -1,5 +1,5 @@
 /**
- * @ipmotionmc/aicut-react/lighting — separate entry that pulls three.js. Users
+ * @iplex/aicut-react/lighting — separate entry that pulls three.js. Users
  * who never import this path don't pay the three.js bundle cost.
  */
 export { LightingEditor } from "./LightingEditor.js";
@@ -17,11 +17,11 @@ export {
   lightingLocaleZh,
   mergeLightingLocale,
   snapToPreset,
-} from "@ipmotionmc/aicut-core/lighting";
+} from "@iplex/aicut-core/lighting";
 export type {
   KeyPreset,
   LightingConfig,
   LightingEditorOptions,
   LightingLocale,
   LightingView,
-} from "@ipmotionmc/aicut-core/lighting";
+} from "@iplex/aicut-core/lighting";

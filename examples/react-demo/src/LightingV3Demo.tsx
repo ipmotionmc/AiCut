@@ -5,8 +5,8 @@ import {
   lightingLocaleZh,
   type LightingConfigV3,
   type LightingEditorV3Api,
-} from "@ipmotionmc/aicut-react/lighting-v3";
-import "@ipmotionmc/aicut-core/lighting-v3.css";
+} from "@iplex/aicut-react/lighting-v3";
+import "@iplex/aicut-core/lighting-v3.css";
 
 /**
  * Demo of the React wrapper for the v3 lighting picker. Shows:

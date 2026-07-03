@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Keyframe } from "@ipmotionmc/aicut-core";
+import type { Keyframe } from "@iplex/aicut-core";
 import {
   compileKeyframeExpression,
   easingExpression,

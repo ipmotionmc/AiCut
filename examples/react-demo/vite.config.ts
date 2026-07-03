@@ -25,14 +25,14 @@ export default defineConfig({
   },
   // Workspace packages mutate during development — exclude them from
   // Vite's esbuild pre-bundle so the demo always picks up the latest
-  // `pnpm build` of `@ipmotionmc/aicut-core` / `@ipmotionmc/aicut-react` on page reload
+  // `pnpm build` of `@iplex/aicut-core` / `@iplex/aicut-react` on page reload
   // instead of serving a frozen cached chunk.
   optimizeDeps: {
     exclude: [
-      "@ipmotionmc/aicut-core",
-      "@ipmotionmc/aicut-core/lighting",
-      "@ipmotionmc/aicut-react",
-      "@ipmotionmc/aicut-react/lighting",
+      "@iplex/aicut-core",
+      "@iplex/aicut-core/lighting",
+      "@iplex/aicut-react",
+      "@iplex/aicut-react/lighting",
     ],
   },
 });

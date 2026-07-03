@@ -1,5 +1,5 @@
 /**
- * @ipmotionmc/aicut-vue/webcodecs — separate entry that pulls mp4box.js for
+ * @iplex/aicut-vue/webcodecs — separate entry that pulls mp4box.js for
  * frame-accurate WebCodecs playback. Users who never import this
  * path don't pay the mp4box bundle cost.
  *
@@ -12,4 +12,4 @@ export {
   isWebCodecsSupported,
   type WebCodecsEngineOptions,
   type DemuxedTrack,
-} from "@ipmotionmc/aicut-core/webcodecs";
+} from "@iplex/aicut-core/webcodecs";

@@ -1,6 +1,6 @@
 /**
  * Composition demo — shows the primitive-based API. The layout is
- * host-defined (nothing structural comes from `@ipmotionmc/aicut-core`):
+ * host-defined (nothing structural comes from `@iplex/aicut-core`):
  *
  *   ┌────────────────────┬───────────────────────────────────────┐
  *   │  Media list        │  <Preview />                          │
@@ -14,7 +14,7 @@
  *   │  <Timeline />                                              │
  *   └────────────────────────────────────────────────────────────┘
  *
- * Every AiCut element is a primitive picked from `@ipmotionmc/aicut-react`:
+ * Every AiCut element is a primitive picked from `@iplex/aicut-react`:
  *   <EditorProvider>          state + engine context
  *   <Preview>                 playback surface
  *   <TimelinePrimitive>       timeline bound to shared editor
@@ -50,8 +50,8 @@ import {
   type Project,
   type Theme,
   type Locale,
-} from "@ipmotionmc/aicut-react";
-import "@ipmotionmc/aicut-core/styles.css";
+} from "@iplex/aicut-react";
+import "@iplex/aicut-core/styles.css";
 
 const SAMPLE_URL =
   (import.meta.env.VITE_PRELOAD_VIDEO_URL as string | undefined) ||

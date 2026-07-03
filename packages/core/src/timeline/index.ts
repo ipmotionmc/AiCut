@@ -36,7 +36,7 @@ import {
 
 /**
  * Public options for the standalone `Timeline` component. The class
- * is framework-agnostic — `@ipmotionmc/aicut-react` and `@ipmotionmc/aicut-vue` wrap it,
+ * is framework-agnostic — `@iplex/aicut-react` and `@iplex/aicut-vue` wrap it,
  * and the built-in `Editor` composes one internally for its timeline
  * panel. Reuse the same instance for a "frame-picker" use case by
  * loading a project with a single video clip and `readOnly: true`.

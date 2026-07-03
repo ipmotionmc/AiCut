@@ -23,7 +23,7 @@ importers:
       '@fastify/multipart':
         specifier: ^10.0.0
         version: 10.0.0
-      '@ipmotionmc/aicut-core':
+      '@iplex/aicut-core':
         specifier: workspace:*
         version: link:../../packages/core
       fastify:
@@ -54,10 +54,10 @@ importers:
 
   examples/react-demo:
     dependencies:
-      '@ipmotionmc/aicut-core':
+      '@iplex/aicut-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@ipmotionmc/aicut-react':
+      '@iplex/aicut-react':
         specifier: workspace:*
         version: link:../../packages/react
       react:
@@ -113,7 +113,7 @@ importers:
 
   packages/react:
     dependencies:
-      '@ipmotionmc/aicut-core':
+      '@iplex/aicut-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -138,7 +138,7 @@ importers:
 
   packages/vue:
     dependencies:
-      '@ipmotionmc/aicut-core':
+      '@iplex/aicut-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
