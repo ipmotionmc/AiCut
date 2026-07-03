@@ -2,7 +2,7 @@
  * UI strings the editor paints into the DOM (toolbar tooltips, the
  * fullscreen exit button) and onto the timeline canvas (phantom new-
  * track label, track header labels). Every user-visible literal in
- * `@ipmotionmc/aicut-core` flows through this interface — there are no hidden
+ * `@iplex/aicut-core` flows through this interface — there are no hidden
  * hard-coded translations elsewhere in the library.
  *
  * Defaults to English. Hosts that want Chinese (or any other locale)

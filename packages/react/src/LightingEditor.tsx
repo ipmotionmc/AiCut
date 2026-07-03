@@ -13,8 +13,8 @@ import {
   type LightingConfig,
   type LightingEditorOptions,
   type LightingView,
-} from "@ipmotionmc/aicut-core/lighting";
-import type { Theme } from "@ipmotionmc/aicut-core";
+} from "@iplex/aicut-core/lighting";
+import type { Theme } from "@iplex/aicut-core";
 
 export interface LightingEditorApi {
   setConfig(partial: Partial<LightingConfig>): void;

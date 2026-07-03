@@ -42,7 +42,7 @@ const CONE_UP = new Vector3(0, 1, 0);
  * three.js scene wrapper for the lighting picker. ONLY file in the
  * lighting module that imports `three` — everything else stays plain
  * DOM / TypeScript so tree-shaking for users who never instantiate
- * `LightingEditor` keeps the rest of `@ipmotionmc/aicut-core/lighting` cheap.
+ * `LightingEditor` keeps the rest of `@iplex/aicut-core/lighting` cheap.
  */
 export class LightingScene {
   private renderer: WebGLRenderer;

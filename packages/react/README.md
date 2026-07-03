@@ -1,9 +1,9 @@
-# @ipmotionmc/aicut-react
+# @iplex/aicut-react
 
 > React wrapper for the **AiCut** video editor — canvas timeline, custom toolbar slots, theming, i18n, drop-in `<VideoEditor>`.
 
-[![npm](https://img.shields.io/npm/v/@ipmotionmc/aicut-react.svg)](https://www.npmjs.com/package/@ipmotionmc/aicut-react)
-[![License](https://img.shields.io/npm/l/@ipmotionmc/aicut-react.svg)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/@iplex/aicut-react.svg)](https://www.npmjs.com/package/@iplex/aicut-react)
+[![License](https://img.shields.io/npm/l/@iplex/aicut-react.svg)](./LICENSE)
 [![GitHub](https://img.shields.io/badge/repo-ziqiangai/AiCut-181717?logo=github)](https://github.com/ziqiangai/AiCut)
 
 ![AiCut editor](https://raw.githubusercontent.com/ziqiangai/AiCut/main/docs/screenshots/editor-dark.png)
@@ -11,7 +11,7 @@
 ## Install
 
 ```bash
-pnpm add @ipmotionmc/aicut-react @ipmotionmc/aicut-core
+pnpm add @iplex/aicut-react @iplex/aicut-core
 ```
 
 ## Quick start
@@ -22,8 +22,8 @@ import {
   VideoEditor,
   type VideoEditorApi,
   type Project,
-} from "@ipmotionmc/aicut-react";
-import "@ipmotionmc/aicut-core/styles.css";
+} from "@iplex/aicut-react";
+import "@iplex/aicut-core/styles.css";
 
 const project: Project = {
   version: 1,
@@ -102,7 +102,7 @@ interface VideoEditorProps {
 }
 ```
 
-The `apiRef` value exposes the full **`EditorApi`** — `play`, `pause`, `seek`, `split`, `trimLeft`, `trimRight`, `setProject`, `getProject`, `addSource`, `addTrack`, `removeClip`, `undo`, `redo`, `setTheme`, `setLocale`, `requestExport`, and more. See [@ipmotionmc/aicut-core](https://www.npmjs.com/package/@ipmotionmc/aicut-core) for the complete surface.
+The `apiRef` value exposes the full **`EditorApi`** — `play`, `pause`, `seek`, `split`, `trimLeft`, `trimRight`, `setProject`, `getProject`, `addSource`, `addTrack`, `removeClip`, `undo`, `redo`, `setTheme`, `setLocale`, `requestExport`, and more. See [@iplex/aicut-core](https://www.npmjs.com/package/@iplex/aicut-core) for the complete surface.
 
 ## Custom slots (header + toolbar)
 
@@ -163,7 +163,7 @@ The `theme` prop is reactive — swap it any time and the editor calls `setTheme
 ## i18n
 
 ```tsx
-import { VideoEditor, localeZh } from "@ipmotionmc/aicut-react";
+import { VideoEditor, localeZh } from "@iplex/aicut-react";
 
 // Whole-locale swap
 <VideoEditor locale={localeZh} /* … */ />
@@ -203,7 +203,7 @@ desktop-wrapper IPC bridge — pass a factory:
 import {
   VideoEditor,
   type PlaybackEngineFactory,
-} from "@ipmotionmc/aicut-react";
+} from "@iplex/aicut-react";
 
 const myEngine: PlaybackEngineFactory = ({ host, project }) =>
   new MyCustomEngine(host, project); // implements PlaybackEngine
@@ -216,10 +216,10 @@ const myEngine: PlaybackEngineFactory = ({ host, project }) =>
 ```
 
 `PlaybackEngine`, `PlaybackEngineFactory`, `PlaybackEngineOptions`, and
-the built-in `HtmlVideoEngine` are re-exported from `@ipmotionmc/aicut-react` so
-you don't need a separate `@ipmotionmc/aicut-core` import to write one.
+the built-in `HtmlVideoEngine` are re-exported from `@iplex/aicut-react` so
+you don't need a separate `@iplex/aicut-core` import to write one.
 
-See [@ipmotionmc/aicut-core's playback section](https://www.npmjs.com/package/@ipmotionmc/aicut-core#playback-engine)
+See [@iplex/aicut-core's playback section](https://www.npmjs.com/package/@iplex/aicut-core#playback-engine)
 for the full interface contract.
 
 ### WebCodecs engine (opt-in sub-entry)
@@ -230,7 +230,7 @@ For frame-accurate playback via the browser's `VideoDecoder` API, import from th
 import {
   WebCodecsEngine,
   isWebCodecsSupported,
-} from "@ipmotionmc/aicut-react/webcodecs";
+} from "@iplex/aicut-react/webcodecs";
 
 const factory = isWebCodecsSupported()
   ? (opts) => new WebCodecsEngine({ ...opts, debug: true })
@@ -272,11 +272,11 @@ apiRef.current?.setSelection("clip-1");
 apiRef.current?.toggleKeyframeAtPlayhead();
 ```
 
-`Keyframe`, `KeyframeProp`, `EasingKind`, `EffectiveTransform`, `getEffectiveTransform`, `getTransformAtTimelineTime`, `IDENTITY_TRANSFORM`, `isIdentityTransform` are all re-exported from `@ipmotionmc/aicut-react` for thumbnail / preview rendering outside the editor.
+`Keyframe`, `KeyframeProp`, `EasingKind`, `EffectiveTransform`, `getEffectiveTransform`, `getTransformAtTimelineTime`, `IDENTITY_TRANSFORM`, `isIdentityTransform` are all re-exported from `@iplex/aicut-react` for thumbnail / preview rendering outside the editor.
 
-**Backend export:** both `@ipmotionmc/backend-ts` and `@ipmotionmc/backend-go` compile keyframes to ffmpeg `t`-expressions (`scale=…:eval=frame` + `overlay=…:eval=frame`). Pass `output: { width, height, fps }` in the export request — required for the keyframe filter graph to apply.
+**Backend export:** both `@iplex/backend-ts` and `@iplex/backend-go` compile keyframes to ffmpeg `t`-expressions (`scale=…:eval=frame` + `overlay=…:eval=frame`). Pass `output: { width, height, fps }` in the export request — required for the keyframe filter graph to apply.
 
-See [@ipmotionmc/aicut-core's keyframes section](https://www.npmjs.com/package/@ipmotionmc/aicut-core#keyframes-per-clip-panx--pany--scale-animation) for the full API surface.
+See [@iplex/aicut-core's keyframes section](https://www.npmjs.com/package/@iplex/aicut-core#keyframes-per-clip-panx--pany--scale-animation) for the full API surface.
 
 ## `<LightingEditor>` (opt-in sub-entry)
 
@@ -288,8 +288,8 @@ import {
   LightingEditor,
   type LightingEditorApi,
   type LightingConfig,
-} from "@ipmotionmc/aicut-react/lighting";
-import "@ipmotionmc/aicut-core/styles.css";
+} from "@iplex/aicut-react/lighting";
+import "@iplex/aicut-core/styles.css";
 
 function Relight() {
   const apiRef = useRef<LightingEditorApi | null>(null);
@@ -334,7 +334,7 @@ The library is intentionally focused on the picker — Smart mode UI, Generate b
 Use the canvas timeline without the rest of the editor — frame-pickers, thumbnail strips, read-only previews.
 
 ```tsx
-import { Timeline, type TimelineApi } from "@ipmotionmc/aicut-react";
+import { Timeline, type TimelineApi } from "@iplex/aicut-react";
 
 <Timeline
   apiRef={timelineRef}
@@ -350,4 +350,4 @@ import { Timeline, type TimelineApi } from "@ipmotionmc/aicut-react";
 
 ---
 
-[Full docs & demo](https://github.com/ziqiangai/AiCut) · [@ipmotionmc/aicut-core](https://www.npmjs.com/package/@ipmotionmc/aicut-core) · [@ipmotionmc/aicut-vue](https://www.npmjs.com/package/@ipmotionmc/aicut-vue)
+[Full docs & demo](https://github.com/ziqiangai/AiCut) · [@iplex/aicut-core](https://www.npmjs.com/package/@iplex/aicut-core) · [@iplex/aicut-vue](https://www.npmjs.com/package/@iplex/aicut-vue)

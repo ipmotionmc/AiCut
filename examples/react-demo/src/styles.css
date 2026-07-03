@@ -1,4 +1,4 @@
-@import "@ipmotionmc/aicut-core/styles.css";
+@import "@iplex/aicut-core/styles.css";
 
 * {
   box-sizing: border-box;
@@ -592,7 +592,7 @@ body,
 
 /* ================================================================
  * Composition demo — layout for the primitives-based editor page.
- * Nothing here is prescribed by @ipmotionmc/aicut-react; it's all host code
+ * Nothing here is prescribed by @iplex/aicut-react; it's all host code
  * demonstrating that primitives compose into any shape.
  * ================================================================ */
 

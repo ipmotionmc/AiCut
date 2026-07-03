@@ -1,11 +1,11 @@
 /**
- * `@ipmotionmc/aicut-core/webcodecs` — opt-in playback engine that decodes via
+ * `@iplex/aicut-core/webcodecs` — opt-in playback engine that decodes via
  * WebCodecs (frame-accurate seek, foundation for compositing /
  * transitions / shaders). Bundles mp4box.js for MP4/MOV demuxing.
  *
  * Re-exporting the interface and base options from the main entry's
  * playback module so consumers can write `Engine implements PlaybackEngine`
- * without a second import from `@ipmotionmc/aicut-core`.
+ * without a second import from `@iplex/aicut-core`.
  */
 export {
   WebCodecsEngine,

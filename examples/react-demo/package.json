@@ -1,5 +1,5 @@
 {
-  "name": "@ipmotionmc/aicut-react-demo",
+  "name": "@iplex/aicut-react-demo",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,8 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ipmotionmc/aicut-core": "workspace:*",
-    "@ipmotionmc/aicut-react": "workspace:*",
+    "@iplex/aicut-core": "workspace:*",
+    "@iplex/aicut-react": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

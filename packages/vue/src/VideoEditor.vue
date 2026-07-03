@@ -10,10 +10,10 @@ import {
   type PreviewLayout,
   type Project,
   type Theme,
-} from "@ipmotionmc/aicut-core";
+} from "@iplex/aicut-core";
 
 /**
- * Vue 3 wrapper around `@ipmotionmc/aicut-core`. Same shape as `@ipmotionmc/aicut-react`:
+ * Vue 3 wrapper around `@iplex/aicut-core`. Same shape as `@iplex/aicut-react`:
  * uncontrolled for project state, theme is reactive, API exposed via
  * `defineExpose` so a parent `ref` can call cut/seek/setProject/etc.
  */

@@ -7,7 +7,7 @@ export default defineConfig({
   //   - lighting/index.ts              → opt-in 3D picker. Bundles three.js.
   //   - playback/webcodecs/index.ts    → opt-in WebCodecs engine. Bundles
   //                                      mp4box.js for the MP4 demuxer.
-  // Importing only `@ipmotionmc/aicut-core` leaves three.js + mp4box.js completely
+  // Importing only `@iplex/aicut-core` leaves three.js + mp4box.js completely
   // out of the consumer's bundle; sub-entries opt in per feature.
   entry: [
     "src/index.ts",

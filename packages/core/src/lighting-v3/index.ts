@@ -1,9 +1,9 @@
 /**
- * @ipmotionmc/aicut-core/lighting-v3 — Figma-driven redesign of the lighting
+ * @iplex/aicut-core/lighting-v3 — Figma-driven redesign of the lighting
  * picker with a new `rotation` knob. Same three.js scene as v2 under
  * the hood (re-exported for tree-shaking) but a fresh chrome.
  *
- * v2 (`@ipmotionmc/aicut-core/lighting`) remains untouched — hosts can adopt v3
+ * v2 (`@iplex/aicut-core/lighting`) remains untouched — hosts can adopt v3
  * incrementally or run both side-by-side.
  */
 

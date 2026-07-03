@@ -48,7 +48,7 @@ export type {
   PlaybackEngineOptions,
   CanvasCompositorEngineOptions,
   EffectiveTransform,
-} from "@ipmotionmc/aicut-core";
+} from "@iplex/aicut-core";
 export {
   createEmptyProject,
   createId,
@@ -73,4 +73,4 @@ export {
   isIdentityTransform,
   getEffectiveTransform,
   getTransformAtTimelineTime,
-} from "@ipmotionmc/aicut-core";
+} from "@iplex/aicut-core";

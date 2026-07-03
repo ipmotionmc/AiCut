@@ -12,7 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * screenshots in `docs/screenshots/` whenever we re-run them.
  *
  * Run just this suite:
- *   pnpm --filter @ipmotionmc/e2e exec playwright test screenshots.spec.ts
+ *   pnpm --filter @iplex/e2e exec playwright test screenshots.spec.ts
  *
  * Framing rules — these are README hero shots, NOT proof of demo
  * tooling. So:

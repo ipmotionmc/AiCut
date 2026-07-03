@@ -1,5 +1,5 @@
 {
-  "name": "@ipmotionmc/aicut-core",
+  "name": "@iplex/aicut-core",
   "version": "0.7.5",
   "description": "Framework-agnostic core for the AiCut video editor — canvas timeline, data model, pluggable PlaybackEngine (HTML5 / Canvas / WebCodecs), plus opt-in 3D lighting picker.",
   "license": "MIT",
@@ -95,7 +95,6 @@
     "vitest": "^4.1.9"
   },
   "publishConfig": {
-    "registry": "https://iplex-883218392300.d.codeartifact.us-west-2.amazonaws.com/npm/iplex-npm/",
-    "access": "restricted"
+    "registry": "https://iplex-883218392300.d.codeartifact.us-west-2.amazonaws.com/npm/iplex-npm/"
   }
 }
