@@ -22,9 +22,9 @@ export default defineConfig({
     rollupOptions: {
       external: [
         "vue",
-        "@aicut/core",
-        "@aicut/core/lighting",
-        "@aicut/core/webcodecs",
+        "@ipmotionmc/aicut-core",
+        "@ipmotionmc/aicut-core/lighting",
+        "@ipmotionmc/aicut-core/webcodecs",
       ],
       output: { globals: { vue: "Vue" } },
     },

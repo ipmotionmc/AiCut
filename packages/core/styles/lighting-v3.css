@@ -1,5 +1,5 @@
-/* @aicut/core/lighting-v3 — Figma-driven styles.
-   Import via `@aicut/core/lighting-v3.css` alongside the main theme.
+/* @ipmotionmc/aicut-core/lighting-v3 — Figma-driven styles.
+   Import via `@ipmotionmc/aicut-core/lighting-v3.css` alongside the main theme.
    Uses theme tokens (`--color-brand`, `--aicut-controls-*`) so light /
    dark modes track the rest of the editor automatically. */
 

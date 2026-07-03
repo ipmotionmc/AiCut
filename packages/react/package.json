@@ -1,17 +1,17 @@
 {
-  "name": "@aicut/react",
+  "name": "@ipmotionmc/aicut-react",
   "version": "0.7.5",
-  "description": "React wrapper for the AiCut video editor + lighting picker — thin declarative shells over @aicut/core.",
+  "description": "React wrapper for the AiCut video editor + lighting picker — thin declarative shells over @ipmotionmc/aicut-core.",
   "license": "MIT",
   "author": "ziqiang <ziqiangytu@gmail.com>",
-  "homepage": "https://github.com/ziqiangai/AiCut#readme",
+  "homepage": "https://github.com/ipmotionmc/AiCut#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ziqiangai/AiCut.git",
+    "url": "git+https://github.com/ipmotionmc/AiCut.git",
     "directory": "packages/react"
   },
   "bugs": {
-    "url": "https://github.com/ziqiangai/AiCut/issues"
+    "url": "https://github.com/ipmotionmc/AiCut/issues"
   },
   "keywords": [
     "video-editor",
@@ -74,7 +74,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aicut/core": "workspace:*"
+    "@ipmotionmc/aicut-core": "workspace:*"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
@@ -89,6 +89,7 @@
     "typescript": "^5.7.2"
   },
   "publishConfig": {
-    "access": "public"
+    "registry": "https://iplex-883218392300.d.codeartifact.us-west-2.amazonaws.com/npm/iplex-npm/",
+    "access": "restricted"
   }
 }

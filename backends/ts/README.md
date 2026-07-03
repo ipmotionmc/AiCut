@@ -1,6 +1,6 @@
-# @aicut/backend-ts
+# @ipmotionmc/backend-ts
 
-Reference TypeScript export backend for **[@aicut/core](https://www.npmjs.com/package/@aicut/core)**. Receives a Project JSON, renders to mp4 via ffmpeg, **streams progress over Server-Sent Events**, and serves the finished file. Not published to npm — it's a reference implementation you copy or run locally next to the editor.
+Reference TypeScript export backend for **[@ipmotionmc/aicut-core](https://www.npmjs.com/package/@ipmotionmc/aicut-core)**. Receives a Project JSON, renders to mp4 via ffmpeg, **streams progress over Server-Sent Events**, and serves the finished file. Not published to npm — it's a reference implementation you copy or run locally next to the editor.
 
 The Go sibling at [`backends/go`](../go) implements the exact same wire contract on port 8788.
 

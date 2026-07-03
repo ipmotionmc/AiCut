@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { Project } from "@aicut/core";
+import type { Project } from "@ipmotionmc/aicut-core";
 import { renderProject } from "./render.js";
 
 /**

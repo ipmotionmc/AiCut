@@ -18,7 +18,7 @@ import {
   type PreviewLayout,
   type Project,
   type Theme,
-} from "@aicut/core";
+} from "@ipmotionmc/aicut-core";
 import { EditorProvider } from "./primitives.js";
 
 export type VideoEditorApi = EditorApi;
@@ -35,7 +35,7 @@ export interface VideoEditorProps {
   /**
    * UI string overrides (English default). Mirror prop — switching the
    * value calls `editor.setLocale` and the toolbar / canvas labels
-   * update in place. Use `localeZh` from `@aicut/core` for Chinese.
+   * update in place. Use `localeZh` from `@ipmotionmc/aicut-core` for Chinese.
    */
   locale?: Partial<Locale>;
 
@@ -197,7 +197,7 @@ export interface VideoEditorProps {
 }
 
 /**
- * Declarative React shell over `@aicut/core` `Editor`. Mounts the
+ * Declarative React shell over `@ipmotionmc/aicut-core` `Editor`. Mounts the
  * editor instance once, mirrors prop changes (`theme`) into it, and
  * forwards events as React-style callbacks.
  *

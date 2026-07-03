@@ -17,15 +17,15 @@ importers:
 
   backends/ts:
     dependencies:
-      '@aicut/core':
-        specifier: workspace:*
-        version: link:../../packages/core
       '@fastify/cors':
         specifier: ^10.0.1
         version: 10.1.0
       '@fastify/multipart':
         specifier: ^10.0.0
         version: 10.0.0
+      '@ipmotionmc/aicut-core':
+        specifier: workspace:*
+        version: link:../../packages/core
       fastify:
         specifier: ^5.2.0
         version: 5.8.5
@@ -54,10 +54,10 @@ importers:
 
   examples/react-demo:
     dependencies:
-      '@aicut/core':
+      '@ipmotionmc/aicut-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@aicut/react':
+      '@ipmotionmc/aicut-react':
         specifier: workspace:*
         version: link:../../packages/react
       react:
@@ -113,7 +113,7 @@ importers:
 
   packages/react:
     dependencies:
-      '@aicut/core':
+      '@ipmotionmc/aicut-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -138,7 +138,7 @@ importers:
 
   packages/vue:
     dependencies:
-      '@aicut/core':
+      '@ipmotionmc/aicut-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:

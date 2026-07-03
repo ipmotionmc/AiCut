@@ -1,26 +1,26 @@
-# @aicut/core
+# @ipmotionmc/aicut-core
 
 > Framework-agnostic engine for the AiCut video editor — canvas timeline, plain-JSON projects, pluggable playback. Main entry has zero runtime deps; opt-in sub-entries bundle their own (three.js for `/lighting`, mp4box.js for `/webcodecs`).
 
-[![npm](https://img.shields.io/npm/v/@aicut/core.svg)](https://www.npmjs.com/package/@aicut/core)
-[![License](https://img.shields.io/npm/l/@aicut/core.svg)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/@ipmotionmc/aicut-core.svg)](https://www.npmjs.com/package/@ipmotionmc/aicut-core)
+[![License](https://img.shields.io/npm/l/@ipmotionmc/aicut-core.svg)](./LICENSE)
 [![GitHub](https://img.shields.io/badge/repo-ziqiangai/AiCut-181717?logo=github)](https://github.com/ziqiangai/AiCut)
 
 ![AiCut editor](https://raw.githubusercontent.com/ziqiangai/AiCut/main/docs/screenshots/editor-dark.png)
 
-For React or Vue apps, prefer **[@aicut/react](https://www.npmjs.com/package/@aicut/react)** or **[@aicut/vue](https://www.npmjs.com/package/@aicut/vue)** — they wrap this same engine.
+For React or Vue apps, prefer **[@ipmotionmc/aicut-react](https://www.npmjs.com/package/@ipmotionmc/aicut-react)** or **[@ipmotionmc/aicut-vue](https://www.npmjs.com/package/@ipmotionmc/aicut-vue)** — they wrap this same engine.
 
 ## Install
 
 ```bash
-pnpm add @aicut/core
+pnpm add @ipmotionmc/aicut-core
 ```
 
 ## Quick start
 
 ```ts
-import { Editor } from "@aicut/core";
-import "@aicut/core/styles.css";
+import { Editor } from "@ipmotionmc/aicut-core";
+import "@ipmotionmc/aicut-core/styles.css";
 
 const editor = Editor.create({
   container: document.getElementById("app")!,
@@ -124,7 +124,7 @@ Every key is also a plain CSS custom property — `.aicut-root { --aicut-control
 English by default. Bundled `localeZh` covers the whole editor (toolbar tooltips, exit-fullscreen overlay, canvas track headers).
 
 ```ts
-import { Editor, localeZh } from "@aicut/core";
+import { Editor, localeZh } from "@ipmotionmc/aicut-core";
 
 Editor.create({ container, project, locale: localeZh });
 
@@ -171,7 +171,7 @@ import {
   Editor,
   type PlaybackEngine,
   type PlaybackEngineFactory,
-} from "@aicut/core";
+} from "@ipmotionmc/aicut-core";
 
 const myFactory: PlaybackEngineFactory = ({ host, project }) => {
   // host: a div the editor owns. Mount whatever surface you need.
@@ -214,7 +214,7 @@ code is unaffected by which engine is in use.
 | --- | --- | --- | --- | --- |
 | `HtmlVideoEngine` | main | browser | raw `<video>` | 0 deps |
 | `CanvasCompositorEngine` | main | browser | `ctx.drawImage` | 0 deps |
-| `WebCodecsEngine` | `@aicut/core/webcodecs` | `VideoDecoder` (frame-accurate) | `ctx.drawImage(VideoFrame)` | bundles mp4box.js (~200 KB) |
+| `WebCodecsEngine` | `@ipmotionmc/aicut-core/webcodecs` | `VideoDecoder` (frame-accurate) | `ctx.drawImage(VideoFrame)` | bundles mp4box.js (~200 KB) |
 
 The WebCodecs path is on its own sub-entry so consumers who don't ask for it pay nothing for the demuxer. Feature-detect before constructing:
 
@@ -222,7 +222,7 @@ The WebCodecs path is on its own sub-entry so consumers who don't ask for it pay
 import {
   WebCodecsEngine,
   isWebCodecsSupported,
-} from "@aicut/core/webcodecs";
+} from "@ipmotionmc/aicut-core/webcodecs";
 
 const factory: PlaybackEngineFactory = isWebCodecsSupported()
   ? (opts) => new WebCodecsEngine({ ...opts, debug: true })
@@ -259,7 +259,7 @@ Editor.create({
 For runtime control without an editor option, call the underlying setter directly:
 
 ```ts
-import { setTimelineMetrics } from "@aicut/core";
+import { setTimelineMetrics } from "@ipmotionmc/aicut-core";
 
 setTimelineMetrics({ trackHeight: 36, rulerHeight: 20 });
 ```
@@ -321,12 +321,12 @@ interface Clip {
 | **Snap** | Each keyframe contributes a timeline-absolute target — dragging snaps to other keyframes / clip edges / playhead. |
 | **Lossless split** | `splitClipAt` mid-segment inserts interpolated boundary keyframes per property so cutting and not moving the halves plays back identically to the un-cut clip. |
 | **All engines animate** | HTML5 (CSS transform on wrapper div), Canvas + WebCodecs (`ctx.clip()` + `ctx.translate/scale`), and the backend exporter all share the same interpolation. |
-| **Backend export** | `@aicut/backend-ts` and `@aicut/backend-go` both compile keyframes to ffmpeg `t`-expressions in `scale=…:eval=frame` + `overlay=…:eval=frame` filters. Pass `output: { width, height, fps }` in the request — required for the kf path. |
+| **Backend export** | `@ipmotionmc/backend-ts` and `@ipmotionmc/backend-go` both compile keyframes to ffmpeg `t`-expressions in `scale=…:eval=frame` + `overlay=…:eval=frame` filters. Pass `output: { width, height, fps }` in the request — required for the kf path. |
 
 Read the live transform anywhere (e.g. host-rendered thumbnails) via the pure helper:
 
 ```ts
-import { getEffectiveTransform, getTransformAtTimelineTime } from "@aicut/core";
+import { getEffectiveTransform, getTransformAtTimelineTime } from "@ipmotionmc/aicut-core";
 
 const t = getEffectiveTransform(clip, localMs);
 // → { panX: 100, panY: 0, scale: 1.5 }
@@ -339,8 +339,8 @@ A separate component for AI-relighting workflows — drag a light dot around a 3
 The library renders **only the picker** (scene + controls). Smart-mode UI (prompt textarea, preset thumbnails, Generate button, close handling) is host code laid out beside `<LightingEditor>`.
 
 ```ts
-import { LightingEditor } from "@aicut/core/lighting";
-import "@aicut/core/styles.css";
+import { LightingEditor } from "@ipmotionmc/aicut-core/lighting";
+import "@ipmotionmc/aicut-core/styles.css";
 
 const ed = LightingEditor.create({
   container: document.getElementById("light")!,
@@ -374,7 +374,7 @@ Locale extension `LightingLocale` (separate from the video editor's `Locale`) is
 ## Standalone Timeline
 
 ```ts
-import { Timeline } from "@aicut/core";
+import { Timeline } from "@ipmotionmc/aicut-core";
 
 const tl = Timeline.create({
   container: document.getElementById("strip")!,
@@ -415,4 +415,4 @@ type Ms = number;       // integer milliseconds; no frame-rate coupling
 
 ---
 
-[Full docs & demo](https://github.com/ziqiangai/AiCut) · [@aicut/react](https://www.npmjs.com/package/@aicut/react) · [@aicut/vue](https://www.npmjs.com/package/@aicut/vue)
+[Full docs & demo](https://github.com/ziqiangai/AiCut) · [@ipmotionmc/aicut-react](https://www.npmjs.com/package/@ipmotionmc/aicut-react) · [@ipmotionmc/aicut-vue](https://www.npmjs.com/package/@ipmotionmc/aicut-vue)

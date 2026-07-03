@@ -42,9 +42,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # Build the workspace packages first so the demo's
-      # `@aicut/core` / `@aicut/react` imports resolve to fresh dist.
+      # `@ipmotionmc/aicut-core` / `@ipmotionmc/aicut-react` imports resolve to fresh dist.
       - name: Build workspace packages
-        run: pnpm -r --filter "@aicut/core" --filter "@aicut/react" --filter "@aicut/vue" build
+        run: pnpm -r --filter "@ipmotionmc/aicut-core" --filter "@ipmotionmc/aicut-react" --filter "@ipmotionmc/aicut-vue" build
 
       - name: Build demo
         env:
@@ -61,7 +61,7 @@ jobs:
           # only the video editor is shown. Local dev (`pnpm dev`)
           # still has access to all routes.
           VITE_HIDE_LIGHTING: "1"
-        run: pnpm --filter "@aicut/react-demo" build
+        run: pnpm --filter "@ipmotionmc/aicut-react-demo" build
 
       - name: Add SPA fallback for hash router
         # The Router uses hash routes (#/lighting-v3 etc.), but Pages

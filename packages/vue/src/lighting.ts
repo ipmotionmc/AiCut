@@ -1,5 +1,5 @@
 /**
- * @aicut/vue/lighting — separate entry that pulls three.js.
+ * @ipmotionmc/aicut-vue/lighting — separate entry that pulls three.js.
  */
 export { default as LightingEditor } from "./LightingEditor.vue";
 
@@ -10,11 +10,11 @@ export {
   lightingLocaleZh,
   mergeLightingLocale,
   snapToPreset,
-} from "@aicut/core/lighting";
+} from "@ipmotionmc/aicut-core/lighting";
 export type {
   KeyPreset,
   LightingConfig,
   LightingEditorOptions,
   LightingLocale,
   LightingView,
-} from "@aicut/core/lighting";
+} from "@ipmotionmc/aicut-core/lighting";

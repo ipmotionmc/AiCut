@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot publisher for @aicut/* to npmjs.com.
+# One-shot publisher for @ipmotionmc/* to npmjs.com.
 #
 # Usage:
 #   NPM_TOKEN=npm_xxx ./scripts/publish.sh
@@ -8,7 +8,7 @@
 #
 # Behaviour:
 #   - Reads version from each packages/*/package.json.
-#   - Idempotent: skips any @aicut/<pkg>@<version> that's already on
+#   - Idempotent: skips any @ipmotionmc/<pkg>@<version> that's already on
 #     the registry. Re-run after a 2FA timeout / network failure and
 #     only the still-unpublished packages get pushed.
 #   - Writes auth to a TEMP npmrc outside the repo so the token never
