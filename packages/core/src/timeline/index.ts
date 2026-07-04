@@ -761,10 +761,15 @@ export class Timeline {
       // heartbeat: keep firing raf frames as long as anything's still
       // in flight. `buildDrawState` above already cleaned finished
       // entries, so a size check here is authoritative.
+      //
+      // Placeholder clips need the same heartbeat too — their diagonal
+      // scrolling stripes advance per frame from performance.now(), so
+      // the pattern only crawls while raf keeps ticking.
       if (
         this.clipAnimations.size > 0 ||
         this.flashes.length > 0 ||
-        this.splitAnimations.length > 0
+        this.splitAnimations.length > 0 ||
+        this.hasActivePlaceholders()
       ) {
         this.scheduleRender();
       }
@@ -804,6 +809,22 @@ export class Timeline {
       this.pxPerSec = fit;
       this.opts.onScaleChange?.(fit);
     }
+  }
+
+  /**
+   * True if the current project has any clip in placeholder mode.
+   * Placeholder clips paint diagonal scrolling stripes whose phase is
+   * read from `performance.now()`, so the raf loop must stay alive for
+   * the pattern to actually move. Cheap linear scan — projects with
+   * hundreds of clips still measure under a microsecond.
+   */
+  private hasActivePlaceholders(): boolean {
+    for (const t of this.project.tracks) {
+      for (const c of t.clips) {
+        if (c.placeholder) return true;
+      }
+    }
+    return false;
   }
 
   private buildDrawState(): DrawState {

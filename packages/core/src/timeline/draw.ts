@@ -563,6 +563,23 @@ function drawTrackRow(
     const renderStartMs = override?.startMs ?? clip.start;
     const renderTrackIndex = override?.trackIndex ?? trackIndex;
     const renderStartPxOffset = override?.startPxOffset ?? 0;
+    // Placeholder clips (no playable media) get a distinct look —
+    // diagonal scrolling stripes + label + badge — instead of thumbs.
+    // Domain-neutral: core only knows "there's nothing to render as
+    // media here"; the host supplies label / badge / progress text.
+    if (clip.placeholder) {
+      drawPlaceholderClipAt(
+        ctx,
+        clip,
+        renderTrackIndex,
+        renderStartMs,
+        state,
+        style,
+        dim,
+        renderStartPxOffset,
+      );
+      continue;
+    }
     drawClipAt(
       ctx,
       clip,
@@ -613,6 +630,195 @@ function drawFlashes(
     ctx.fillRect(x - 1, y, 2, h);
     ctx.restore();
   }
+}
+
+/**
+ * Paint a *placeholder* clip — a time slot with no playable media.
+ * Domain-neutral render: diagonal scrolling stripes over a deep-purple
+ * gradient, dashed border (signals "not solid content"), centred label
+ * text, optional top-right badge, and an optional bottom progress bar
+ * when `placeholder.progress` is set.
+ *
+ * The stripe phase advances from `performance.now()` so the pattern
+ * scrolls at a constant CSS px/sec regardless of zoom — the Timeline's
+ * raf heartbeat keeps this alive frame-by-frame while any placeholder
+ * clip is on screen (see index.ts `hasActivePlaceholders`).
+ */
+function drawPlaceholderClipAt(
+  ctx: CanvasRenderingContext2D,
+  clip: Clip,
+  trackIndex: number,
+  startMs: number,
+  state: DrawState,
+  style: DrawStyle,
+  dim: boolean,
+  startPxOffset = 0,
+): void {
+  const meta = clip.placeholder;
+  if (!meta) return;
+  const { pxPerSec, scrollLeft } = state;
+  const baseX = contentLeftX(state.showHeader);
+  const startX =
+    baseX + (startMs / 1000) * pxPerSec - scrollLeft + startPxOffset;
+  const widthPx = Math.max(2, ((clip.out - clip.in) / 1000) * pxPerSec);
+  const y = trackY(trackIndex) + CLIP_INSET;
+  const h = TRACK_HEIGHT - CLIP_INSET * 2;
+  if (startX + widthPx < baseX || startX > state.viewportWidth) return;
+
+  ctx.save();
+  if (dim) ctx.globalAlpha = 0.3;
+
+  // Body: deep purple gradient — subtly desaturated vs a real clip so
+  // the eye reads "less committed."
+  const bodyGrad = ctx.createLinearGradient(0, y, 0, y + h);
+  bodyGrad.addColorStop(0, "rgba(72, 40, 130, 0.85)");
+  bodyGrad.addColorStop(1, "rgba(48, 24, 92, 0.85)");
+  ctx.fillStyle = bodyGrad;
+  roundRect(ctx, startX, y, widthPx, h, 6);
+  ctx.fill();
+
+  // Diagonal scrolling stripes. 30° stripes rendered as parallelograms
+  // clipped to the clip body. Phase advances via performance.now() so
+  // the pattern crawls smoothly to the right at STRIPE_SCROLL_PX_PER_SEC.
+  const STRIPE_SPACING_PX = 22;
+  const STRIPE_WIDTH_PX = 8;
+  const STRIPE_SCROLL_PX_PER_SEC = 32;
+  const STRIPE_ANGLE_DEG = 30;
+  const nowMs =
+    typeof performance !== "undefined" ? performance.now() : Date.now();
+  const phase =
+    -((nowMs / 1000) * STRIPE_SCROLL_PX_PER_SEC) % STRIPE_SPACING_PX;
+  const angleRad = (STRIPE_ANGLE_DEG * Math.PI) / 180;
+  const skewX = Math.tan(angleRad);
+  // Slope offset so a stripe starting at the top-left doesn't leave a
+  // triangular gap at the bottom-right corner.
+  const slopeOffset = h * skewX;
+  ctx.save();
+  roundRect(ctx, startX, y, widthPx, h, 6);
+  ctx.clip();
+  ctx.fillStyle = "rgba(255, 255, 255, 0.13)";
+  // Iterate stripes across the clip's projected horizontal range plus
+  // enough overshoot to cover the diagonal slope.
+  const stripeCount =
+    Math.ceil((widthPx + slopeOffset + STRIPE_SPACING_PX * 2) /
+      STRIPE_SPACING_PX) + 1;
+  for (let i = 0; i < stripeCount; i++) {
+    const stripeLeft = startX + phase + i * STRIPE_SPACING_PX - slopeOffset;
+    // Parallelogram vertices — top edge shifted right by slopeOffset.
+    ctx.beginPath();
+    ctx.moveTo(stripeLeft, y + h);
+    ctx.lineTo(stripeLeft + STRIPE_WIDTH_PX, y + h);
+    ctx.lineTo(stripeLeft + STRIPE_WIDTH_PX + slopeOffset, y);
+    ctx.lineTo(stripeLeft + slopeOffset, y);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Dashed border — the "not solid content" cue.
+  ctx.save();
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = "rgba(220, 210, 255, 0.75)";
+  ctx.lineWidth = 1.25;
+  roundRect(ctx, startX + 0.5, y + 0.5, widthPx - 1, h - 1, 6);
+  ctx.stroke();
+  ctx.restore();
+
+  // Center label + animated dot cycle. Label is truncated with an
+  // ellipsis; dots (`.` `..` `...`) cycle every 400ms as a "still
+  // working" cue.
+  const dotCycleMs = 400;
+  const dotCount = (Math.floor(nowMs / dotCycleMs) % 3) + 1;
+  const dots = ".".repeat(dotCount);
+  const label = meta.label ?? "";
+  const centerY = y + h / 2;
+  ctx.font =
+    "600 12px system-ui, -apple-system, 'Segoe UI', sans-serif";
+  ctx.textBaseline = "middle";
+  const textPadX = 12;
+  const fullText = label ? `${label}${dots}` : dots;
+  const availableW = widthPx - textPadX * 2;
+  const drawText = fitLabel(ctx, fullText, availableW);
+  const textW = ctx.measureText(drawText).width;
+  const textX = startX + (widthPx - textW) / 2;
+  // Soft shadow so the label stays readable over the striped bg.
+  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+  ctx.fillText(drawText, textX + 1, centerY + 1);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.96)";
+  ctx.fillText(drawText, textX, centerY);
+
+  // Top-right badge, when the host supplied one.
+  if (meta.badge && widthPx > 60) {
+    ctx.font =
+      "600 9px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.textBaseline = "middle";
+    const badgeText = meta.badge;
+    const badgeW = ctx.measureText(badgeText).width + 10;
+    const badgeH = 14;
+    const badgeX = startX + widthPx - badgeW - 6;
+    const badgeY = y + 6;
+    ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+    roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 4);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(220, 200, 255, 0.55)";
+    ctx.lineWidth = 0.75;
+    ctx.stroke();
+    ctx.fillStyle = "rgba(240, 232, 255, 0.95)";
+    ctx.fillText(badgeText, badgeX + 5, badgeY + badgeH / 2);
+  }
+
+  // Optional bottom progress bar.
+  if (meta.progress != null) {
+    const p = Math.max(0, Math.min(1, meta.progress));
+    const barH = 3;
+    const barY = y + h - barH - 4;
+    const barPadX = 8;
+    const barW = Math.max(0, widthPx - barPadX * 2);
+    // Track (dim).
+    ctx.fillStyle = "rgba(255, 255, 255, 0.14)";
+    roundRect(ctx, startX + barPadX, barY, barW, barH, barH / 2);
+    ctx.fill();
+    // Fill.
+    ctx.fillStyle = "rgba(220, 200, 255, 0.95)";
+    roundRect(ctx, startX + barPadX, barY, barW * p, barH, barH / 2);
+    ctx.fill();
+  }
+
+  // Selection ring (matches drawClipAt's convention).
+  if (!dim && state.selectedClipId === clip.id) {
+    ctx.strokeStyle = style.selectedRing;
+    ctx.lineWidth = 2;
+    roundRect(ctx, startX - 1, y - 1, widthPx + 2, h + 2, 7);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Truncate `text` with an ellipsis so its measured width fits within
+ * `maxW`. Returns `text` unchanged when it already fits, or `""` if
+ * not even a single character + ellipsis fits.
+ */
+function fitLabel(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxW: number,
+): string {
+  if (maxW <= 0) return "";
+  if (ctx.measureText(text).width <= maxW) return text;
+  const ellipsis = "…";
+  const ellipsisW = ctx.measureText(ellipsis).width;
+  if (ellipsisW > maxW) return "";
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const candidate = text.slice(0, mid) + ellipsis;
+    if (ctx.measureText(candidate).width <= maxW) lo = mid;
+    else hi = mid - 1;
+  }
+  return text.slice(0, lo) + ellipsis;
 }
 
 /**

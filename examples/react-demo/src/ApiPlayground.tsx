@@ -145,6 +145,7 @@ export function ApiPlayground(): ReactElement {
             <DeleteCard />
             <AddClipCard />
             <BatchCard />
+            <PlaceholderCard />
             <CaptureFrameCard />
             <QueryCard />
           </aside>
@@ -446,6 +447,125 @@ function AddClipCard(): ReactElement {
         }}
         result={result}
       />
+    </Card>
+  );
+}
+
+function PlaceholderCard(): ReactElement {
+  const editor = useEditor();
+  const [trackId, setTrackId] = useState("track-1");
+  const [startMs, setStartMs] = useState(0);
+  const [durationMs, setDurationMs] = useState(3000);
+  const [label, setLabel] = useState(
+    "A dog surfing on a wave at sunset, cinematic",
+  );
+  const [badge, setBadge] = useState("SORA");
+  const [clipId, setClipId] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [result, setResult] = useState<unknown>(null);
+  // Simulated "generation progress" ticker — bumps progress every
+  // 220ms until the host either completes or cancels.
+  useEffect(() => {
+    if (!clipId) return;
+    const id = setInterval(() => {
+      setProgress((p) => {
+        const next = Math.min(0.95, p + 0.06 + Math.random() * 0.04);
+        editor.updatePlaceholder(clipId, { progress: next });
+        return next;
+      });
+    }, 220);
+    return () => clearInterval(id);
+  }, [clipId, editor]);
+  return (
+    <Card
+      title="addPlaceholderClip"
+      description="Reserve a timeline slot with no media — renders with diagonal scrolling stripes + label + optional badge/progress. Host swaps in real media via replaceClipSource when ready."
+      docTag="EditResult<{ clipId, sourceId }>"
+    >
+      <Field label="trackId">
+        <input value={trackId} onChange={(e) => setTrackId(e.target.value)} />
+      </Field>
+      <Field label="startMs">
+        <input
+          type="number"
+          value={startMs}
+          onChange={(e) => setStartMs(Number(e.target.value))}
+        />
+      </Field>
+      <Field label="durationMs">
+        <input
+          type="number"
+          value={durationMs}
+          onChange={(e) => setDurationMs(Number(e.target.value))}
+        />
+      </Field>
+      <Field label="label">
+        <input value={label} onChange={(e) => setLabel(e.target.value)} />
+      </Field>
+      <Field label="badge">
+        <input value={badge} onChange={(e) => setBadge(e.target.value)} />
+      </Field>
+      <RunRow
+        onClick={() => {
+          const r = editor.addPlaceholderClip({
+            trackId,
+            startMs,
+            durationMs,
+            label,
+            badge: badge || undefined,
+            progress: 0,
+            onOverlap: "auto",
+          });
+          setResult(r);
+          if (r.ok) {
+            setClipId(r.data.clipId);
+            setProgress(0);
+          }
+        }}
+        result={result}
+      />
+      {clipId ? (
+        <>
+          <div className="apiplay-hint" style={{ marginTop: 8 }}>
+            <strong>clipId:</strong> {clipId}
+            <br />
+            <strong>simulated progress:</strong> {Math.round(progress * 100)}%
+            (host would drive this from a real polling loop)
+          </div>
+          <button
+            type="button"
+            className="apiplay-secondary"
+            style={{ marginTop: 8 }}
+            onClick={async () => {
+              // Simulate "generation done" — swap the placeholder for
+              // the sample video.
+              const r = await editor.replaceClipSource({
+                clipId,
+                sourceUrl: SAMPLE_URL,
+              });
+              setResult(r);
+              if (r.ok) {
+                setClipId(null);
+                setProgress(0);
+              }
+            }}
+          >
+            complete → replace with sample.mp4
+          </button>
+          <button
+            type="button"
+            className="apiplay-secondary"
+            style={{ marginTop: 6 }}
+            onClick={() => {
+              editor.deleteClip({ clipId });
+              setClipId(null);
+              setProgress(0);
+            }}
+          >
+            cancel (deleteClip)
+          </button>
+        </>
+      ) : null}
     </Card>
   );
 }

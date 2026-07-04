@@ -302,7 +302,10 @@ export interface OperationEvent {
     | "moveClipTo"
     | "trimClip"
     | "deleteClip"
-    | "addClip";
+    | "addClip"
+    | "addPlaceholderClip"
+    | "updatePlaceholder"
+    | "replaceClipSource";
   /** Original method args, forwarded verbatim. Effect handlers use
    *  this to look up the affected clip / track / time. */
   args: unknown;
@@ -344,6 +347,10 @@ export type EditErrorReason =
   | "invalid-range"
   /** URL probe failed (couldn't load metadata; likely CORS or 404). */
   | "source-load-failed"
+  /** Operation requires real media but the target clip is a
+   *  placeholder (has `clip.placeholder` set). Used by `splitClip` and
+   *  other media-only ops. */
+  | "not-media"
   /** Generic fallback for internal invariant violations. */
   | "internal-error";
 
@@ -531,6 +538,69 @@ export interface EditorApi {
     onOverlap?: "error" | "auto";
     /** Forward-compat only in MVP; silently dropped. */
     meta?: Record<string, unknown>;
+  }): Promise<EditResult<{ clipId: string; sourceId: string }>>;
+
+  /**
+   * Reserve a time slot on the timeline without any playable media
+   * behind it. The clip renders with the placeholder look (diagonal
+   * scrolling stripes + `label` in the center + optional `badge` in the
+   * top-right + optional bottom progress bar) and rejects media-only
+   * operations (currently `splitClip`) with `not-media`.
+   *
+   * Move / trim / delete all work as normal.
+   *
+   * Domain-neutral by design: core doesn't know why the slot has no
+   * media. Common host use cases include reserving a slot for an
+   * in-flight AI generation, an upload that hasn't completed yet, or
+   * a queued render task. Poll updates flow through
+   * `updatePlaceholder`; when the media is ready call
+   * `replaceClipSource` to swap in the real source.
+   */
+  addPlaceholderClip(args: {
+    trackId: string;
+    startMs: Ms;
+    durationMs: Ms;
+    /** Center label. Truncated with an ellipsis when it doesn't fit. */
+    label?: string;
+    /** Top-right badge (short — kept ≤ ~8 chars). */
+    badge?: string;
+    /** Initial 0-1 progress. Omit for indeterminate. */
+    progress?: number;
+    onOverlap?: "error" | "auto";
+  }): EditResult<{ clipId: string; sourceId: string }>;
+
+  /**
+   * Update a placeholder clip's display fields — typically fired from
+   * a host's polling loop as generation / upload progress changes.
+   * Merges into the existing `placeholder` object; pass a field
+   * explicitly as `undefined` to unset it (progress removed → bar
+   * disappears again). No-op if `clipId` isn't a placeholder clip.
+   */
+  updatePlaceholder(
+    clipId: string,
+    updates: {
+      label?: string | undefined;
+      badge?: string | undefined;
+      progress?: number | undefined;
+    },
+  ): EditResult<{ clipId: string }>;
+
+  /**
+   * Swap the underlying source of an existing clip for a new one
+   * (loaded from a URL). Preserves the clip's `start` and track
+   * position. Clears `placeholder` if it was set, so the same call
+   * "completes" a generation / upload placeholder by pointing it at
+   * the real media.
+   *
+   * The clip's `in` becomes 0 and its `out` becomes the new source's
+   * probed duration, so the clip visually now covers the real
+   * material end-to-end. If you need to preserve the previous window
+   * (e.g. the placeholder slot was 3s but the new media is 5s) trim
+   * with `trimClip` afterwards.
+   */
+  replaceClipSource(args: {
+    clipId: string;
+    sourceUrl: string;
   }): Promise<EditResult<{ clipId: string; sourceId: string }>>;
 
   /**
@@ -1337,6 +1407,13 @@ export class Editor implements EditorApi {
     const trk = findTrackOfClip(this.project, args.clipId);
     const cl = trk?.clips.find((c) => c.id === args.clipId);
     if (!trk || !cl) return { ok: false, reason: "clip-not-found" };
+    if (cl.placeholder) {
+      return {
+        ok: false,
+        reason: "not-media",
+        hint: "splitClip needs real media; the target clip is a placeholder.",
+      };
+    }
     if (args.timeMs <= cl.start || args.timeMs >= clipEnd(cl)) {
       return {
         ok: false,
@@ -1644,6 +1721,212 @@ export class Editor implements EditorApi {
       ok: true,
       data: { clipId, sourceId: source.id },
     };
+  }
+
+  addPlaceholderClip(args: {
+    trackId: string;
+    startMs: Ms;
+    durationMs: Ms;
+    label?: string;
+    badge?: string;
+    progress?: number;
+    onOverlap?: "error" | "auto";
+  }): EditResult<{ clipId: string; sourceId: string }> {
+    const before = JSON.stringify(this.project);
+    const result = this.addPlaceholderClipInternal(args);
+    this.emitOperation("addPlaceholderClip", args, result, before);
+    return result;
+  }
+  private addPlaceholderClipInternal(args: {
+    trackId: string;
+    startMs: Ms;
+    durationMs: Ms;
+    label?: string;
+    badge?: string;
+    progress?: number;
+    onOverlap?: "error" | "auto";
+  }): EditResult<{ clipId: string; sourceId: string }> {
+    if (!Number.isFinite(args.startMs) || args.startMs < 0) {
+      return { ok: false, reason: "invalid-time" };
+    }
+    if (!Number.isFinite(args.durationMs) || args.durationMs <= 0) {
+      return {
+        ok: false,
+        reason: "invalid-range",
+        hint: `durationMs must be > 0; got ${args.durationMs}.`,
+      };
+    }
+    const target = this.project.tracks.find((t) => t.id === args.trackId);
+    if (!target) return { ok: false, reason: "track-not-found" };
+
+    const clipStart = args.startMs;
+    const clipEndT = clipStart + args.durationMs;
+    const conflict = target.clips.find((c) => {
+      const cEnd = clipEnd(c);
+      return !(clipEndT <= c.start || clipStart >= cEnd);
+    });
+    const onOverlap = args.onOverlap ?? "error";
+    let finalStart = clipStart;
+    if (conflict) {
+      if (onOverlap === "error") {
+        return {
+          ok: false,
+          reason: "overlap",
+          hint: `Insertion at [${clipStart}, ${clipEndT}) overlaps clip ${conflict.id}. Pass onOverlap: "auto" to append after existing clips.`,
+        };
+      }
+      // "auto" — append after the trailing edge of every existing clip
+      // on the target track (matches addClip's behaviour).
+      finalStart = target.clips.reduce(
+        (acc, c) => Math.max(acc, clipEnd(c)),
+        0,
+      );
+    }
+
+    this.pushHistory();
+    // Placeholder source: a synthetic MediaSource with the slot's
+    // duration and an empty URL. Kept in the sources array so the
+    // clip's `sourceId` is a valid reference and downstream code
+    // (including `replaceClipSource`) has a stable id to swap out.
+    const sourceId = createId("src-placeholder");
+    const source: MediaSource = {
+      id: sourceId,
+      url: "",
+      kind: "video",
+      name: args.label ?? "Placeholder",
+      duration: args.durationMs,
+    };
+    this.project.sources.push(source);
+    const clipId = createId("clip");
+    const placeholder: NonNullable<Clip["placeholder"]> = {};
+    if (args.label !== undefined) placeholder.label = args.label;
+    if (args.badge !== undefined) placeholder.badge = args.badge;
+    if (args.progress !== undefined) placeholder.progress = args.progress;
+    target.clips.push({
+      id: clipId,
+      sourceId,
+      in: 0,
+      out: args.durationMs,
+      start: finalStart,
+      placeholder,
+    });
+    target.clips.sort((a, b) => a.start - b.start);
+    this.afterMutation();
+    return { ok: true, data: { clipId, sourceId } };
+  }
+
+  updatePlaceholder(
+    clipId: string,
+    updates: {
+      label?: string | undefined;
+      badge?: string | undefined;
+      progress?: number | undefined;
+    },
+  ): EditResult<{ clipId: string }> {
+    const before = JSON.stringify(this.project);
+    const result = this.updatePlaceholderInternal(clipId, updates);
+    this.emitOperation(
+      "updatePlaceholder",
+      { clipId, updates },
+      result,
+      before,
+    );
+    return result;
+  }
+  private updatePlaceholderInternal(
+    clipId: string,
+    updates: {
+      label?: string | undefined;
+      badge?: string | undefined;
+      progress?: number | undefined;
+    },
+  ): EditResult<{ clipId: string }> {
+    const trk = findTrackOfClip(this.project, clipId);
+    const cl = trk?.clips.find((c) => c.id === clipId);
+    if (!trk || !cl) return { ok: false, reason: "clip-not-found" };
+    if (!cl.placeholder) {
+      return {
+        ok: false,
+        reason: "not-media",
+        hint: "updatePlaceholder targets clips with a `placeholder` field; this one has none.",
+      };
+    }
+    // Merge, treating an explicit `undefined` in updates as "clear this
+    // field" (progress cleared → bar disappears again). Only fields
+    // present as own-property in `updates` are considered.
+    this.pushHistory();
+    const merged: NonNullable<Clip["placeholder"]> = { ...cl.placeholder };
+    if ("label" in updates) {
+      if (updates.label === undefined) delete merged.label;
+      else merged.label = updates.label;
+    }
+    if ("badge" in updates) {
+      if (updates.badge === undefined) delete merged.badge;
+      else merged.badge = updates.badge;
+    }
+    if ("progress" in updates) {
+      if (updates.progress === undefined) delete merged.progress;
+      else merged.progress = updates.progress;
+    }
+    cl.placeholder = merged;
+    this.afterMutation();
+    return { ok: true, data: { clipId } };
+  }
+
+  async replaceClipSource(args: {
+    clipId: string;
+    sourceUrl: string;
+  }): Promise<EditResult<{ clipId: string; sourceId: string }>> {
+    const before = JSON.stringify(this.project);
+    const result = await this.replaceClipSourceInternal(args);
+    this.emitOperation("replaceClipSource", args, result, before);
+    return result;
+  }
+  private async replaceClipSourceInternal(args: {
+    clipId: string;
+    sourceUrl: string;
+  }): Promise<EditResult<{ clipId: string; sourceId: string }>> {
+    const trk = findTrackOfClip(this.project, args.clipId);
+    const cl = trk?.clips.find((c) => c.id === args.clipId);
+    if (!trk || !cl) return { ok: false, reason: "clip-not-found" };
+    if (!args.sourceUrl) {
+      return {
+        ok: false,
+        reason: "invalid-range",
+        hint: "sourceUrl is required.",
+      };
+    }
+
+    let probed: { durationMs: number; width: number; height: number };
+    try {
+      probed = await probeMediaSource(args.sourceUrl);
+    } catch (e) {
+      return {
+        ok: false,
+        reason: "source-load-failed",
+        hint: e instanceof Error ? e.message : String(e),
+      };
+    }
+
+    this.pushHistory();
+    const newSourceId = createId("src");
+    const newSource: MediaSource = {
+      id: newSourceId,
+      url: args.sourceUrl,
+      kind: "video",
+      name: args.sourceUrl.split("/").pop() ?? "media",
+      duration: probed.durationMs,
+    };
+    this.project.sources.push(newSource);
+    // Point the clip at the new source, clear placeholder, reset the
+    // in/out window to cover the whole new source. `start` stays put —
+    // the slot position is preserved.
+    cl.sourceId = newSourceId;
+    cl.in = 0;
+    cl.out = probed.durationMs;
+    delete cl.placeholder;
+    this.afterMutation();
+    return { ok: true, data: { clipId: args.clipId, sourceId: newSourceId } };
   }
 
   async captureFrame(args: {

@@ -23,6 +23,29 @@ export interface Clip {
   /** Position on the timeline. */
   start: Ms;
   /**
+   * When present, this clip is a *placeholder* — it reserves a slot on
+   * the timeline but has no playable media yet. The renderer paints a
+   * distinct look (diagonal scrolling stripes + a host-supplied label)
+   * instead of thumbnails, and operations that only make sense on real
+   * media (currently `splitClip`) reject with a `not-media` reason.
+   *
+   * The concept is intentionally domain-neutral. Core doesn't know why
+   * the slot has no media — could be an in-flight AI generation, a
+   * pending upload, a stale reference, etc. The host owns that
+   * semantics and passes it in via `label` / `badge` / `progress`.
+   *
+   * When the slot's media becomes available (generation completes,
+   * upload finishes, …) the host calls `editor.replaceClipSource(id,
+   * { sourceUrl })` — that swaps in a real `MediaSource` and clears
+   * the placeholder flag while keeping `start` / trackIndex / duration
+   * intact.
+   *
+   * `sourceId` may still be set (e.g. to the eventual source id the
+   * host reserved up front); the renderer ignores it while
+   * `placeholder` is present.
+   */
+  placeholder?: PlaceholderMeta;
+  /**
    * Playback rate. 1 = normal, 2 = 2× speed. Default 1.
    * Persisted in the project JSON so a host can restore exactly.
    */
@@ -52,6 +75,35 @@ export interface Clip {
    * (prop, time).
    */
   keyframes?: Keyframe[];
+}
+
+/**
+ * Metadata attached to a Clip while its time slot is reserved but
+ * has no playable media. Domain-neutral by design — the fields are
+ * generic display + progress values. Any host-specific semantics
+ * (why is this a placeholder? what triggered it? what will fill it?)
+ * live outside core.
+ */
+export interface PlaceholderMeta {
+  /**
+   * Optional label rendered inside the clip body. Hosts typically
+   * put a short human-readable description here (an AI prompt, an
+   * upload filename, a task title). Truncated with an ellipsis by
+   * the renderer when it doesn't fit.
+   */
+  label?: string;
+  /**
+   * Optional short badge rendered in the top-right corner. Hosts
+   * use this for a status tag ("SORA", "UPLOAD 62%", "QUEUED") —
+   * kept ≤ ~8 chars for visual balance.
+   */
+  badge?: string;
+  /**
+   * Completion progress in [0, 1]. When present the renderer paints
+   * a thin bar along the bottom edge. Omit for an indeterminate
+   * "in flight" look with no bar.
+   */
+  progress?: number;
 }
 
 /** Properties on a Clip that can be animated by keyframes. */

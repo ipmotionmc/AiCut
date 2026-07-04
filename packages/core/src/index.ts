@@ -28,6 +28,7 @@ export type {
   MediaSource,
   Track,
   Clip,
+  PlaceholderMeta,
   Keyframe,
   KeyframeProp,
   EasingKind,
