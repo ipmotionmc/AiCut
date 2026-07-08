@@ -27,6 +27,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  bindEditorHotkeys,
   Editor,
   ICONS,
   Timeline as CoreTimeline,
@@ -80,6 +81,15 @@ export interface EditorProviderProps
    * also present.
    */
   editor?: Editor | EditorApi;
+  /**
+   * Bind the standard editor keyboard map (Space, K, Q/W, ←/→, ⌘Z,
+   * Delete…) to `document` for the provider's lifetime. Off by
+   * default: a headless composition has no root element to scope keys
+   * to, so this is a page-level decision the host must opt into. Don't
+   * combine with a mounted `<VideoEditor>` — its built-in UI already
+   * listens on its own container and the two would double-fire.
+   */
+  hotkeys?: boolean;
   children: ReactNode;
 }
 
@@ -122,6 +132,7 @@ export function EditorProvider(props: EditorProviderProps): ReactElement {
       defaultProject,
       children: _children,
       editor: _e,
+      hotkeys: _h,
       ...rest
     } = optsRef.current;
     const e = Editor.createHeadless({
@@ -147,6 +158,14 @@ export function EditorProvider(props: EditorProviderProps): ReactElement {
     if (isAdoptMode || !editor) return;
     if (props.locale) editor.setLocale(props.locale);
   }, [isAdoptMode, editor, props.locale]);
+
+  // Page-level keyboard map — a headless composition has no built-in
+  // EditorUI (and therefore none of its root-scoped shortcuts), so
+  // Cmd+Z / Space / Delete are dead unless the host opts in here.
+  useEffect(() => {
+    if (!editor || !props.hotkeys) return;
+    return bindEditorHotkeys(document, editor);
+  }, [editor, props.hotkeys]);
 
   const value = useMemo<EditorContextValue | null>(
     () => (editor ? { editor } : null),
@@ -392,6 +411,10 @@ export function Timeline({
       selectedKeyframe: editor.getSelectedKeyframe(),
       onSeek: (t) => editor.seek(t),
       onSelectClip: (id) => editor.setSelection(id),
+      // Route deletions (Backspace / context menu) through the editor
+      // so they land in history — without this the timeline only edits
+      // its local copy and undo skips straight past the delete.
+      onDeleteClip: (id) => editor.removeClip(id),
       onDeleteTrack: (id) => editor.removeTrack(id),
       onMoveClip: (id, opts) => editor.moveClip(id, opts),
       onResizeClip: (id, edits) => editor.resizeClip(id, edits),

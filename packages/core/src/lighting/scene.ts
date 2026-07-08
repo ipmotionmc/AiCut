@@ -54,6 +54,15 @@ export class LightingScene {
   private subjectMesh: Mesh;
   private subjectMat: MeshBasicMaterial;
   private dotMesh: Mesh;
+  /** Contour-glow ring around the subject plane (the "轮廓光"). */
+  private rimMesh: Mesh;
+  private rimMat: MeshBasicMaterial;
+  private rimTexture: CanvasTexture;
+  /** "light" = bright halo (reads on dark backgrounds), "dark" =
+   *  luminance-cut halo (reads on the v3 white scene). */
+  private rimTone: "light" | "dark" = "light";
+  /** Current light color — rim tint derives from it. */
+  private lightColor = new Color(0xffffff);
   /**
    * Cone beam from the light position toward the subject. Apex at the
    * sphere-surface dot, base at a point partway toward origin. Length
@@ -152,6 +161,28 @@ export class LightingScene {
       this.subjectMat,
     );
     this.scene.add(this.subjectMesh);
+
+    // Rim / contour light ("轮廓光") — visualized as a flashlight
+    // parked BEHIND the subject image: a radial glow burst whose hot
+    // core sits hidden behind the plane, so what the user sees is the
+    // light spilling out around the subject's contour. A child of
+    // subjectMesh so it inherits the aspect-fit scale AND the
+    // setSubjectRotation spin for free; renderOrder puts it behind
+    // the image texture (both materials skip the depth buffer).
+    this.rimTexture = buildRimGlowTexture();
+    this.rimMat = new MeshBasicMaterial({
+      map: this.rimTexture,
+      transparent: true,
+      depthWrite: false,
+    });
+    this.rimMesh = new Mesh(
+      new PlaneGeometry(PLANE_SIDE * 1.65, PLANE_SIDE * 1.65),
+      this.rimMat,
+    );
+    this.rimMesh.position.z = -0.05;
+    this.rimMesh.visible = false;
+    this.subjectMesh.add(this.rimMesh);
+    this.updateRimColor();
 
     // Light position marker — small dark sphere on the surface.
     this.dotMesh = new Mesh(
@@ -296,16 +327,50 @@ export class LightingScene {
   setLightColor(hex: string): void {
     try {
       const c = new Color(hex);
+      this.lightColor.copy(c);
       if (this.beamMat instanceof ShaderMaterial) {
         (this.beamMat.uniforms.uColor.value as Color).copy(c);
       } else {
         this.beamMat.color = c;
         this.beamMat.needsUpdate = true;
       }
+      this.updateRimColor();
       this.requestRender();
     } catch {
       // invalid hex — leave the previous color
     }
+  }
+
+  /** Toggle the contour-glow ring around the subject ("轮廓光"). */
+  setRimEnabled(on: boolean): void {
+    if (this.rimMesh.visible === on) return;
+    this.rimMesh.visible = on;
+    this.requestRender();
+  }
+
+  /**
+   * Pick the rim's contrast direction. The glow tints with the light
+   * color, but a white-ish halo vanishes on the v3 white scene and a
+   * darkened one vanishes on dark backgrounds — the EDITOR knows which
+   * background it put behind the sphere, so it picks the tone:
+   * `"light"` = bright halo (dark bg), `"dark"` = luminance-cut halo
+   * (light bg).
+   */
+  setRimTone(tone: "light" | "dark"): void {
+    if (this.rimTone === tone) return;
+    this.rimTone = tone;
+    this.updateRimColor();
+    this.requestRender();
+  }
+
+  /** Rim tint = light color pushed toward white (light tone) or black
+   *  (dark tone) so the halo keeps the color-temperature hue while
+   *  staying visible against the scene background. */
+  private updateRimColor(): void {
+    const target = new Color(this.rimTone === "light" ? 0xffffff : 0x000000);
+    this.rimMat.color = this.lightColor.clone().lerp(target, 0.55);
+    this.rimMat.opacity = this.rimTone === "light" ? 0.95 : 0.6;
+    this.rimMat.needsUpdate = true;
   }
 
   /**
@@ -413,6 +478,9 @@ export class LightingScene {
     this.subjectMat.map?.dispose();
     this.dotMesh.geometry.dispose();
     (this.dotMesh.material as MeshBasicMaterial).dispose();
+    this.rimMesh.geometry.dispose();
+    this.rimMat.dispose();
+    this.rimTexture.dispose();
     this.beamMesh.geometry.dispose();
     // ShaderMaterial has no `.map` field; MeshBasicMaterial might
     // (the additive-glow v2 beam doesn't use one but earlier
@@ -531,6 +599,36 @@ export class LightingScene {
  * Built once per scene in the constructor and disposed in destroy().
  * Cost is trivial (~256 bytes of GPU memory).
  */
+/**
+ * Radial glow for the rim light — the "flashlight behind the image"
+ * schematic. Donut-shaped: transparent in the middle (that region is
+ * covered by the subject image; the loaded image material is opaque
+ * and renders in the earlier pass, so a hot core would paint OVER it),
+ * with the bright ring landing right at the subject's edge — the rim
+ * plane is 1.65× the subject, so the edge midpoint sits at ~0.61 of
+ * the texture radius. Reads as light from behind spilling out around
+ * the contour. Monochrome white; the material's `color` multiplies in
+ * the tint (light color pushed toward white or black depending on the
+ * scene background tone).
+ */
+function buildRimGlowTexture(): CanvasTexture {
+  const SIZE = 256;
+  const c = SIZE / 2;
+  const canvas = document.createElement("canvas");
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext("2d")!;
+  const grad = ctx.createRadialGradient(c, c, 0, c, c, c);
+  grad.addColorStop(0.0, "rgba(255, 255, 255, 0)");
+  grad.addColorStop(0.5, "rgba(255, 255, 255, 0.06)");
+  grad.addColorStop(0.62, "rgba(255, 255, 255, 0.9)");
+  grad.addColorStop(0.8, "rgba(255, 255, 255, 0.28)");
+  grad.addColorStop(1.0, "rgba(255, 255, 255, 0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  return new CanvasTexture(canvas);
+}
+
 function buildBeamGradientTexture(): CanvasTexture {
   const canvas = document.createElement("canvas");
   canvas.width = 1;

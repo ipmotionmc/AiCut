@@ -17,8 +17,10 @@ import type {
  *
  * Multi-track / PiP: when `setPictureInPictureEnabled(true)` flips
  * on, every video track's currently-active clip stays visible, with
- * track `0` on top (highest z-index). Audio policy: only the top
- * track stays unmuted so stacked playbacks don't double-pitch. When
+ * the LAST track in `project.tracks` on top (highest z-index — same
+ * convention as the canvas compositor and the ffmpeg export). Audio
+ * policy: only the primary (first video) track stays unmuted so
+ * stacked playbacks don't double-pitch. When
  * the flag is off (default) behaviour matches the historical single-
  * clip preview — only track `0`'s active clip paints.
  *

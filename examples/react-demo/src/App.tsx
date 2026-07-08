@@ -703,8 +703,22 @@ const PRELOAD_VIDEO_URL =
   (import.meta.env.VITE_PRELOAD_VIDEO_URL as string | undefined) || null;
 const PRELOAD_VIDEO_NAME =
   (import.meta.env.VITE_PRELOAD_VIDEO_NAME as string | undefined) ||
-  PRELOAD_VIDEO_URL?.split("/").pop() ||
+  decodeVideoName(PRELOAD_VIDEO_URL) ||
   "sample.mp4";
+
+/** Filename from a URL, minus query/hash, percent-decoded — a signed
+ *  OSS/S3 URL otherwise puts `%E8%A7%86%E9%A2%91.mp4?Expires=…` on the
+ *  timeline clip. */
+function decodeVideoName(url: string | null): string | null {
+  if (!url) return null;
+  const last = url.split(/[?#]/, 1)[0]!.split("/").pop();
+  if (!last) return null;
+  try {
+    return decodeURIComponent(last);
+  } catch {
+    return last;
+  }
+}
 
 export function App() {
   const apiRef = useRef<VideoEditorApi | null>(null);

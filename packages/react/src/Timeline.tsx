@@ -76,6 +76,7 @@ export interface TimelineProps {
   onSeek?: (timeMs: Ms) => void;
   onSelectClip?: (clipId: string | null) => void;
   onScaleChange?: (pxPerSec: number) => void;
+  onDeleteClip?: TimelineOptions["onDeleteClip"];
   onMoveClip?: TimelineOptions["onMoveClip"];
   onResizeClip?: TimelineOptions["onResizeClip"];
   onChange?: (project: Project) => void;
@@ -132,6 +133,7 @@ export function Timeline(props: TimelineProps) {
       onSeek: (t) => cbRef.current.onSeek?.(t),
       onSelectClip: (id) => cbRef.current.onSelectClip?.(id),
       onScaleChange: (s) => cbRef.current.onScaleChange?.(s),
+      onDeleteClip: (id) => cbRef.current.onDeleteClip?.(id),
       onMoveClip: (id, opts) => cbRef.current.onMoveClip?.(id, opts),
       onResizeClip: (id, e) => cbRef.current.onResizeClip?.(id, e),
       onChange: (p) => cbRef.current.onChange?.(p),

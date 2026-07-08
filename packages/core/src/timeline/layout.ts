@@ -95,21 +95,53 @@ export function contentWidth(project: Project, pxPerSec: number): number {
   return (max / 1000) * pxPerSec;
 }
 
-/** Top-edge y for a track at `index`. */
-export function trackY(index: number): number {
-  return RULER_HEIGHT + index * TRACK_HEIGHT;
+/**
+ * Display row (0 = directly under the ruler) for a track index.
+ *
+ * REVERSED relative to array order: the LAST track in `project.tracks`
+ * is the top compositing layer, so it gets the TOP row — matching the
+ * Premiere / CapCut convention where "visually higher in the panel =
+ * higher layer in the preview". Track 0 (the main/background track)
+ * sits on the bottom row.
+ *
+ * While a move-drag is in flight (`phantomRow`), the "+ new track"
+ * phantom occupies row 0 — a drop there appends a track, and an
+ * appended track IS the new top layer — and every real track shifts
+ * down one row. `index === trackCount` addresses the phantom itself.
+ */
+export function trackRow(
+  index: number,
+  trackCount: number,
+  phantomRow: boolean,
+): number {
+  if (index >= trackCount) return 0; // phantom "+ new track" row
+  return trackCount - 1 - index + (phantomRow ? 1 : 0);
+}
+
+/** Top-edge y for a track at `index` (content coords — caller applies
+ *  scroll). See `trackRow` for the reversed display order. */
+export function trackY(
+  index: number,
+  trackCount: number,
+  phantomRow = false,
+): number {
+  return RULER_HEIGHT + trackRow(index, trackCount, phantomRow) * TRACK_HEIGHT;
 }
 
 /** Inverse of trackY — which track index (or -1) does a given y fall in.
- *  `scrollTop` shifts the visible window down; pass 0 if not scrolling. */
+ *  `scrollTop` shifts the visible window down; pass 0 if not scrolling.
+ *  The phantom row (row 0 while `phantomRow`) maps to -1 — callers that
+ *  care about it detect it by y-range instead. */
 export function trackIndexAt(
   y: number,
   trackCount: number,
   scrollTop = 0,
+  phantomRow = false,
 ): number {
   if (y < RULER_HEIGHT) return -1;
   const contentY = y - RULER_HEIGHT + scrollTop;
-  const idx = Math.floor(contentY / TRACK_HEIGHT);
+  const row = Math.floor(contentY / TRACK_HEIGHT) - (phantomRow ? 1 : 0);
+  const idx = trackCount - 1 - row;
   if (idx < 0 || idx >= trackCount) return -1;
   return idx;
 }

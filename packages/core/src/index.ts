@@ -4,6 +4,11 @@ export { Editor } from "./editor.js";
 // toolbars without re-inventing icons.
 export { ICONS } from "./ui/icons.js";
 export type { IconName } from "./ui/icons.js";
+// Shared editor keyboard map (Space/K/Q/W/arrows/⌘Z/Delete…). The
+// built-in EditorUI binds it to its root element; headless hosts
+// (React primitives, custom shells) bind it to `document` themselves.
+export { bindEditorHotkeys } from "./ui/hotkeys.js";
+export type { HotkeyEditor, HotkeyTarget } from "./ui/hotkeys.js";
 export type {
   EditorOptions,
   HeadlessEditorOptions,

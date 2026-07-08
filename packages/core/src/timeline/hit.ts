@@ -132,7 +132,12 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
   }
 
   if (ctx.showHeader && x < HEADER_WIDTH && y >= RULER_HEIGHT) {
-    const ti = trackIndexAt(y, ctx.project.tracks.length, ctx.scrollTop);
+    const ti = trackIndexAt(
+      y,
+      ctx.project.tracks.length,
+      ctx.scrollTop,
+      ctx.isDragging,
+    );
     if (ti >= 0) {
       const track = ctx.project.tracks[ti]!;
       if (track.clips.length === 0) {
@@ -141,8 +146,7 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
         // Header rows are translated by -scrollTop when painted, so
         // their visible top in viewport coords is `trackY(i) - scrollTop`.
         const btnTop =
-          RULER_HEIGHT +
-          ti * TRACK_HEIGHT +
+          trackY(ti, ctx.project.tracks.length, ctx.isDragging) +
           (TRACK_HEIGHT - btnSize) / 2 -
           ctx.scrollTop;
         if (
@@ -161,7 +165,12 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
 
   if (y < RULER_HEIGHT) return { kind: "ruler" };
 
-  const ti = trackIndexAt(y, ctx.project.tracks.length, ctx.scrollTop);
+  const ti = trackIndexAt(
+    y,
+    ctx.project.tracks.length,
+    ctx.scrollTop,
+    ctx.isDragging,
+  );
   if (ti < 0) return { kind: "outside" };
   const track = ctx.project.tracks[ti]!;
   const ms = xToMs(x, ctx.pxPerSec, ctx.scrollLeft, ctx.showHeader);

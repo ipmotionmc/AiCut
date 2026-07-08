@@ -14,6 +14,7 @@ import {
   type DrawState,
   type DrawStyle,
 } from "./draw.js";
+import { ClipContextMenu } from "./context-menu.js";
 import { hitTest, type HitTarget } from "./hit.js";
 import {
   HEADER_WIDTH,
@@ -30,6 +31,7 @@ import {
   findClip,
   snapTargets,
   trackIndexAt,
+  trackY,
   wouldOverlap,
   xToMs,
 } from "./layout.js";
@@ -88,6 +90,15 @@ export interface TimelineOptions {
   onSelectClip?: (clipId: string | null) => void;
   onScaleChange?: (pxPerSec: number) => void;
   onDeleteTrack?: (trackId: string) => void;
+  /**
+   * A clip was deleted — via the Delete/Backspace key on the selected
+   * clip or the right-click context menu. Fires after the timeline
+   * removes the clip from its own project copy (alongside `onChange`).
+   * Embedded hosts (the Editor) use this to commit the deletion
+   * through their own history/event pipeline and re-sync via
+   * `setProject`.
+   */
+  onDeleteClip?: (clipId: string) => void;
   onMoveClip?: (
     clipId: string,
     opts: { start?: Ms; trackId?: string; newTrack?: boolean },
@@ -262,6 +273,7 @@ export class Timeline {
   private rafPending = false;
   private hasAutoFitted = false;
   private resizeObs: ResizeObserver | null = null;
+  private contextMenu: ClipContextMenu;
   private destroyed = false;
 
   static create(opts: TimelineOptions): Timeline {
@@ -345,7 +357,10 @@ export class Timeline {
     );
     this.thumbs.syncSources(this.project.sources);
 
+    this.contextMenu = new ClipContextMenu(this.root);
+
     this.attachPointer();
+    this.attachContextMenu();
     this.attachWheel();
     this.attachKeyboard();
     this.attachResize();
@@ -487,7 +502,7 @@ export class Timeline {
       for (const c of t.clips) {
         const x = baseX + (c.start / 1000) * this.pxPerSec - this.scrollLeft;
         const width = ((c.out - c.in) / 1000) * this.pxPerSec;
-        const y = RULER_HEIGHT + ti * TRACK_HEIGHT + 6;
+        const y = trackY(ti, this.project.tracks.length, this.drag?.kind === "move") + 6;
         clips.push({
           id: c.id,
           trackIndex: ti,
@@ -513,6 +528,7 @@ export class Timeline {
     if (this.destroyed) return;
     this.destroyed = true;
     this.resizeObs?.disconnect();
+    this.contextMenu.destroy();
     this.thumbs.destroy();
     this.root.innerHTML = "";
     this.root.classList.remove("aicut-timeline-canvas");
@@ -820,7 +836,8 @@ export class Timeline {
         target.kind === "clip" ||
         target.kind === "clip-handle-left" ||
         target.kind === "clip-handle-right" ||
-        target.kind === "track-empty"
+        target.kind === "track-empty" ||
+        this.isBlankContentArea(target, x, y)
       ) {
         this.drag = { kind: "scrub" };
         const ms = this.applySnap(
@@ -923,8 +940,12 @@ export class Timeline {
       return;
     }
 
-    if (target.kind === "track-empty") {
-      // Bare-track click = deselect + seek to clicked time.
+    if (
+      target.kind === "track-empty" ||
+      this.isBlankContentArea(target, x, y)
+    ) {
+      // Blank-area click (bare track OR the empty space below the last
+      // track) = deselect + seek to clicked time. Drag = scrub.
       this.selectedClipId = null;
       this.opts.onSelectClip?.(null);
       const ms = this.applySnap(
@@ -937,6 +958,22 @@ export class Timeline {
       this.scheduleRender();
       return;
     }
+  }
+
+  /**
+   * True when a hit landed in the timeline's content region but on no
+   * track row — i.e. the blank space below the last track (scrollbar
+   * and header hits resolve to their own kinds before "outside" and
+   * never reach here). Users read that space as part of the timeline,
+   * so clicking it should seek, same as an empty stretch of a track.
+   */
+  private isBlankContentArea(target: HitTarget, x: number, y: number): boolean {
+    return (
+      target.kind === "outside" &&
+      x >= contentLeftX(this.showHeader) &&
+      y >= RULER_HEIGHT &&
+      y < this.viewportHeight
+    );
   }
 
   private onPointerMove(e: PointerEvent): void {
@@ -1019,6 +1056,8 @@ export class Timeline {
         cursor = "ew-resize";
       } else if (target.kind === "track-empty") {
         nextHoverTrack = target.trackIndex;
+        cursor = "crosshair";
+      } else if (this.isBlankContentArea(target, x, y)) {
         cursor = "crosshair";
       } else if (target.kind === "header") {
         nextHoverTrack = target.trackIndex;
@@ -1157,20 +1196,13 @@ export class Timeline {
 
     const tiRaw = this.trackIndexAtY(y);
     const phantomIdx = this.project.tracks.length;
-    const phantomScreenY =
-      RULER_HEIGHT + phantomIdx * TRACK_HEIGHT - this.scrollTop;
-    // Hit zone for the "+ 新轨道" phantom row: anywhere below the last
-    // existing track up to the viewport bottom. Visually the phantom
-    // still draws at `phantomScreenY` (one row tall), but when the
-    // viewport is compact (small timelineHeight) the phantom is
-    // pushed below the visible area and the user can only reach it
-    // after auto-scrolling. Extending the hit zone all the way down
-    // means "drop anywhere in the empty space below the tracks" is
-    // interpreted as "create a new track" — matches the visual
-    // intent without requiring scroll gymnastics.
-    const viewportBottom = this.viewportHeight - SCROLLBAR_THICKNESS;
-    const onPhantom =
-      y >= phantomScreenY && y < Math.max(phantomScreenY + TRACK_HEIGHT, viewportBottom);
+    // The "+ new track" phantom occupies the TOP row (row 0) during a
+    // drag — an appended track is the new top compositing layer, and
+    // the reversed display order puts the top layer on the top row.
+    // Its hit zone is that one row, clamped under the ruler when the
+    // stack is scrolled.
+    const phantomScreenY = RULER_HEIGHT - this.scrollTop;
+    const onPhantom = y >= RULER_HEIGHT && y < phantomScreenY + TRACK_HEIGHT;
     const intendedTrackIndex = onPhantom
       ? phantomIdx
       : tiRaw >= 0
@@ -1326,6 +1358,15 @@ export class Timeline {
     this.canvas.tabIndex = -1;
     this.canvas.style.outline = "none"; // suppress the focus ring
     this.canvas.addEventListener("keydown", (e) => {
+      if (e.code === "Delete" || e.code === "Backspace") {
+        if (this.readOnly || !this.selectedClipId) return;
+        e.preventDefault();
+        // EditorUI listens for the same keys on its root — stop the
+        // bubble so an embedded timeline doesn't trigger two deletes.
+        e.stopPropagation();
+        this.deleteClip(this.selectedClipId);
+        return;
+      }
       if (e.code !== "ArrowLeft" && e.code !== "ArrowRight") return;
       // Frame-stepping nav — step size derived from Project.fps
       // (defaults to 30). Same helpers as EditorUI so behavior stays
@@ -1348,6 +1389,67 @@ export class Timeline {
     // feels broken.
     this.canvas.addEventListener("pointerdown", () => {
       if (document.activeElement !== this.canvas) this.canvas.focus();
+    });
+  }
+
+  /**
+   * Delete a clip from the local project copy, then notify the host.
+   * Mirrors how trim commits work: local mutation first, callbacks
+   * after. An embedded Editor re-commits through its own history and
+   * pushes the authoritative project back via `setProject` — the
+   * local removal just keeps a host-less standalone timeline honest.
+   */
+  private deleteClip(clipId: string): void {
+    let removed = false;
+    for (const t of this.project.tracks) {
+      const len = t.clips.length;
+      t.clips = t.clips.filter((c) => c.id !== clipId);
+      if (t.clips.length !== len) removed = true;
+    }
+    if (!removed) return;
+    if (this.selectedClipId === clipId) {
+      this.selectedClipId = null;
+      this.opts.onSelectClip?.(null);
+    }
+    this.opts.onDeleteClip?.(clipId);
+    this.opts.onChange?.(this.getProject());
+    this.scheduleRender();
+  }
+
+  /**
+   * Right-click on a clip → select it + open the delete menu at the
+   * pointer. Right-click anywhere else just dismisses. The browser
+   * menu is suppressed across the whole canvas — mixing native and
+   * custom menus on one surface reads as broken.
+   */
+  private attachContextMenu(): void {
+    this.canvas.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      if (this.readOnly) return;
+      const { x, y } = this.localCoords(e);
+      const target = this.hitTarget(x, y);
+      if (
+        target.kind !== "clip" &&
+        target.kind !== "clip-handle-left" &&
+        target.kind !== "clip-handle-right"
+      ) {
+        this.contextMenu.close();
+        return;
+      }
+      const clipId = target.clipId;
+      if (this.selectedClipId !== clipId) {
+        this.selectedClipId = clipId;
+        this.opts.onSelectClip?.(clipId);
+        this.scheduleRender();
+      }
+      this.contextMenu.open(e.clientX, e.clientY, [
+        {
+          label: this.locale.deleteClip,
+          kbd: "⌫",
+          danger: true,
+          onSelect: () => this.deleteClip(clipId),
+        },
+      ]);
     });
   }
 
@@ -1430,7 +1532,7 @@ export class Timeline {
 
   // ---- helpers --------------------------------------------------------
 
-  private localCoords(e: PointerEvent): { x: number; y: number } {
+  private localCoords(e: MouseEvent): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
