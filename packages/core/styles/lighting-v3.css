@@ -583,9 +583,14 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
-/* Sphere inner shadow needs a different alpha to read on dark bg. */
+/* Sphere outline on dark bg — a black inset shadow vanishes against
+   the #131316 scene, so the dark-mode bubble flips to a light rim: a
+   hairline border plus a faint white inner glow. */
 .aicut-lighting-v3[data-aicut-mode="dark"] .aicut-lighting-v3-scene-viewport::before {
-  box-shadow: inset 0 0 32px rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    inset 0 0 32px rgba(255, 255, 255, 0.08),
+    inset 0 0 2px rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.02);
 }
 

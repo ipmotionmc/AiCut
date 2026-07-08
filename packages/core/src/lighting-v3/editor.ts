@@ -195,6 +195,10 @@ export class LightingEditorV3 {
     this.scene.setLightDirection(this.config.keyDirection);
     this.scene.setBrightness(this.config.brightness);
     this.scene.setLightColor(this.config.color);
+    // Rim halo must contrast the scene bg: bright on the dark card,
+    // luminance-cut on the white one.
+    this.scene.setRimTone(this.mode === "dark" ? "light" : "dark");
+    this.scene.setRimEnabled(this.config.rim);
     // No real image? Feed a canvas-rendered placeholder as a data URL
     // so the WebGL subject plane has SOMETHING to show. Camera
     // perspective then tilts it naturally, matching v2.
@@ -263,6 +267,7 @@ export class LightingEditorV3 {
     this.scene.setBrightness(this.config.brightness);
     this.scene.setLightColor(this.config.color);
     this.scene.setSubjectRotation(this.config.rotation);
+    this.scene.setRimEnabled(this.config.rim);
     this.controls.render(this.config, this.colorTempKelvin);
     this.opts.onChange?.(this.getConfig());
   }
@@ -305,6 +310,8 @@ export class LightingEditorV3 {
     if (this.mode === mode) return;
     this.mode = mode;
     this.root.setAttribute("data-aicut-mode", mode);
+    // Scene bg flips with the mode — re-pick the rim contrast.
+    this.scene.setRimTone(mode === "dark" ? "light" : "dark");
   }
 
   getMode(): "light" | "dark" {
@@ -366,6 +373,9 @@ export class LightingEditorV3 {
     }
     if (partial.rotation !== undefined) {
       this.scene.setSubjectRotation(this.config.rotation);
+    }
+    if (partial.rim !== undefined) {
+      this.scene.setRimEnabled(this.config.rim);
     }
     this.controls.render(this.config, this.colorTempKelvin);
     this.opts.onChange?.(this.getConfig());
