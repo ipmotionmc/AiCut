@@ -593,15 +593,24 @@ function drawClipAt(
   roundRect(ctx, startX + 0.5, y + 0.5, widthPx - 1, h - 1, 6);
   ctx.stroke();
 
-  // Label.
+  // Label — decoded filename (or locale fallback), truncated to the
+  // clip body so long names never bleed onto the neighbouring clip.
   const src = sources.find((s) => s.id === clip.sourceId);
-  const label = src?.name ?? src?.url.split("/").pop() ?? clip.id;
+  const label = clipDisplayLabel(src, state.locale);
   ctx.font = "11px system-ui, -apple-system, sans-serif";
-  ctx.textBaseline = "top";
-  ctx.fillStyle = "rgba(0,0,0,0.6)";
-  ctx.fillText(label, startX + 9, y + 5);
-  ctx.fillStyle = "#fff";
-  ctx.fillText(label, startX + 8, y + 4);
+  const maxLabelW = widthPx - 14;
+  if (maxLabelW > 8) {
+    const fitted = truncateToWidth(ctx, label, maxLabelW);
+    ctx.save();
+    roundRect(ctx, startX, y, widthPx, h, 6);
+    ctx.clip();
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillText(fitted, startX + 9, y + 5);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(fitted, startX + 8, y + 4);
+    ctx.restore();
+  }
 
   // Selection ring (skip when dimmed — selection has no meaning on a
   // ghost source clip; the ghost itself draws its own ring if you add
@@ -1005,6 +1014,57 @@ function parseColor(s: string): [number, number, number] | null {
   const m = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
   if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
   return null;
+}
+
+/**
+ * Human-readable label for a clip's media source. Preference order:
+ *   1. `source.name` — the original filename the host recorded.
+ *   2. The URL's last path segment, percent-decoded — a raw
+ *      `%E8%A7%86%E9%A2%91.mp4` on the canvas reads as garbage, the
+ *      decoded `视频.mp4` is what the user actually named the file.
+ *      Query/hash (signed-URL tokens etc.) are stripped first.
+ *   3. `locale.unnamedClip` — blob:/data: URLs carry a random UUID (or
+ *      megabytes of base64) instead of a filename, so showing any part
+ *      of them is worse than an honest "Untitled clip".
+ */
+export function clipDisplayLabel(
+  src: MediaSource | undefined,
+  locale: Locale,
+): string {
+  if (src?.name) return src.name;
+  const url = src?.url ?? "";
+  if (url && !/^(blob|data):/i.test(url)) {
+    const path = url.split(/[?#]/, 1)[0]!;
+    const last = path.split("/").pop() ?? "";
+    if (last) {
+      try {
+        return decodeURIComponent(last);
+      } catch {
+        return last; // malformed escapes — show as-is rather than throw
+      }
+    }
+  }
+  return locale.unnamedClip;
+}
+
+/** Trim `text` (with a trailing ellipsis) until it fits `maxWidth` in
+ *  the ctx's current font. Binary search keeps this O(log n) even for
+ *  pathological filenames. */
+function truncateToWidth(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+): string {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  const ell = "…";
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (ctx.measureText(text.slice(0, mid) + ell).width <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo === 0 ? "" : text.slice(0, lo) + ell;
 }
 
 /**

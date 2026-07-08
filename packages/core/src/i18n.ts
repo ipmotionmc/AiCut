@@ -87,6 +87,13 @@ export interface Locale {
   videoTrackLabel: string;
   /** Same template format as videoTrackLabel. */
   audioTrackLabel: string;
+  /** Clip label fallback when the source has no `name` and no readable
+   *  filename can be derived from its URL (blob:/data: sources). */
+  unnamedClip: string;
+
+  // Clip context menu (right-click on a timeline clip)
+  /** "Delete clip" item. */
+  deleteClip: string;
 }
 
 /** English. The library default — chosen over Chinese as the OSS norm. */
@@ -133,6 +140,8 @@ export const localeEn: Locale = {
   newTrack: "+ New track",
   videoTrackLabel: "Video {n}",
   audioTrackLabel: "Audio {n}",
+  unnamedClip: "Untitled clip",
+  deleteClip: "Delete",
 };
 
 /** Simplified Chinese. */
@@ -179,6 +188,8 @@ export const localeZh: Locale = {
   newTrack: "+ 新轨道",
   videoTrackLabel: "视频 {n}",
   audioTrackLabel: "音频 {n}",
+  unnamedClip: "未命名片段",
+  deleteClip: "删除",
 };
 
 /** Spread defaults under host overrides — host can supply a partial. */

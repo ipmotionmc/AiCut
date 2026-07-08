@@ -185,6 +185,7 @@ export class EditorUI {
       onSelectKeyframe: cb.onSelectKeyframe,
       onMoveKeyframe: cb.onMoveKeyframe,
       onScaleChange: cb.onScaleChange,
+      onDeleteClip: cb.onDeleteClip,
       onDeleteTrack: (trackId) => editor.removeTrack(trackId),
       // Mirror the editor's smart routing into the drag preview so
       // the ghost lands on the same row the commit will pick.

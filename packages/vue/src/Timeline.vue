@@ -29,6 +29,7 @@ const emit = defineEmits<{
   (e: "seek", timeMs: Ms): void;
   (e: "selectClip", clipId: string | null): void;
   (e: "scaleChange", pxPerSec: number): void;
+  (e: "deleteClip", clipId: string): void;
   (e: "moveClip", clipId: string, opts: { start?: Ms; trackId?: string }): void;
   (
     e: "resizeClip",
@@ -57,6 +58,7 @@ onMounted(() => {
     onSeek: (t) => emit("seek", t),
     onSelectClip: (id) => emit("selectClip", id),
     onScaleChange: (s) => emit("scaleChange", s),
+    onDeleteClip: (id) => emit("deleteClip", id),
     onMoveClip: (id, opts) => emit("moveClip", id, opts),
     onResizeClip: (id, edits) => emit("resizeClip", id, edits),
     onChange: (p) => emit("change", p),
