@@ -146,6 +146,7 @@ export function CompositionDemo(): ReactElement {
       defaultProject={seedProject}
       theme={theme}
       locale={locale}
+      hotkeys
       keyframes={{ enabled: true }}
       pictureInPicture={{ enabled: true }}
       aspect={{ enabled: true }}

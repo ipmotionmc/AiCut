@@ -1,11 +1,10 @@
 import {
-  bigFrameStepMs,
   clipDuration,
   findClipContaining,
   findTrackOfClip,
-  frameStepMs,
 } from "../model.js";
 import type { Editor, PreviewLayout } from "../editor.js";
+import { bindEditorHotkeys } from "./hotkeys.js";
 import { Timeline } from "../timeline/index.js";
 import type { Clip, Ms } from "../types.js";
 import type { Locale } from "../i18n.js";
@@ -495,53 +494,25 @@ export class EditorUI {
 
   private attachKeyboard(cb: UICallbacks): void {
     this.root.tabIndex = 0;
-    this.root.addEventListener("keydown", (e) => {
-      const target = e.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA"].includes(target.tagName)) return;
-      if (e.code === "Space") {
-        e.preventDefault();
-        cb.onPlayToggle();
-      } else if (e.code === "KeyK") {
-        e.preventDefault();
-        cb.onSplit();
-      } else if (e.code === "KeyQ") {
-        e.preventDefault();
-        cb.onTrimLeft();
-      } else if (e.code === "KeyW") {
-        e.preventDefault();
-        cb.onTrimRight();
-      } else if (e.code === "KeyI" && this.editor.isClipEdgeNavEnabled()) {
-        e.preventDefault();
-        cb.onSeekClipStart();
-      } else if (e.code === "KeyO" && this.editor.isClipEdgeNavEnabled()) {
-        e.preventDefault();
-        cb.onSeekClipEnd();
-      } else if (e.code === "ArrowLeft" || e.code === "ArrowRight") {
-        // Frame-stepping nav — matches Premiere / Final Cut / CapCut /
-        // After Effects: ← / → = one frame, Shift+← / → = 10 frames.
-        // Step size derived from Project.fps (defaults to 30 when
-        // unset) so a 60 fps project nudges in half-frames relative
-        // to a 30 fps one.
-        e.preventDefault();
-        const project = this.editor.getProject();
-        const step = e.shiftKey ? bigFrameStepMs(project) : frameStepMs(project);
-        const dir = e.code === "ArrowLeft" ? -1 : 1;
-        const next = Math.max(
-          0,
-          Math.min(this.editor.getDuration(), this.editor.getTime() + dir * step),
-        );
-        cb.onSeek(next);
-      } else if ((e.metaKey || e.ctrlKey) && e.code === "KeyZ") {
-        e.preventDefault();
-        if (e.shiftKey) cb.onRedo();
-        else cb.onUndo();
-      } else if (e.code === "Delete" || e.code === "Backspace") {
-        const sel = this.editor.getSelection();
-        if (sel) {
-          e.preventDefault();
-          cb.onDeleteClip(sel);
-        }
-      }
+    // Shared hotkey map (ui/hotkeys.ts) — the same definition headless
+    // hosts bind to `document`. Command entries route through the
+    // UICallbacks layer, state reads go straight to the editor.
+    bindEditorHotkeys(this.root, {
+      togglePlay: () => cb.onPlayToggle(),
+      split: () => cb.onSplit(),
+      trimLeft: () => cb.onTrimLeft(),
+      trimRight: () => cb.onTrimRight(),
+      undo: () => cb.onUndo(),
+      redo: () => cb.onRedo(),
+      seek: (t) => cb.onSeek(t),
+      removeClip: (id) => cb.onDeleteClip(id),
+      seekToSelectedClipEdge: (edge) =>
+        edge === "start" ? cb.onSeekClipStart() : cb.onSeekClipEnd(),
+      isClipEdgeNavEnabled: () => this.editor.isClipEdgeNavEnabled(),
+      getSelection: () => this.editor.getSelection(),
+      getProject: () => this.editor.getProject(),
+      getTime: () => this.editor.getTime(),
+      getDuration: () => this.editor.getDuration(),
     });
   }
 }
