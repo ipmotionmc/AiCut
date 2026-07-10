@@ -50,9 +50,8 @@ export interface DrawState {
   hoveredClipId: string | null;
   hoveredTrackIndex: number | null;
   dropTargetTrackIndex: number | null;
-  /** While any drag is in flight, draw a "+ new track" phantom row at
-   *  the TOP (new top layer) that the user can drop into to explicitly
-   *  create a track; real tracks shift down one row for the duration. */
+  /** While any drag is in flight, draw a "+ 新轨道" phantom row at the
+   *  bottom that the user can drop into to explicitly create a track. */
   isDragging: boolean;
   snapX: number | null;
   showHeader: boolean;
@@ -292,7 +291,6 @@ function drawDragGhost(
     widthPx,
     style.info,
     overlap,
-    state,
   );
 
   // ---- Ghost clip body --------------------------------------------------
@@ -323,15 +321,11 @@ function drawDropOutline(
   widthPx: number,
   color: string,
   emphasized: boolean,
-  state: DrawState,
 ): void {
   // 1px solid info-tinted outline — present, but doesn't shout.
   // `emphasized` (used when the drop would land on the phantom new
   // track) bumps to a slightly thicker stroke + a faint glow halo.
-  const y =
-    trackY(trackIndex, state.project.tracks.length, state.isDragging) +
-    CLIP_INSET -
-    1;
+  const y = trackY(trackIndex) + CLIP_INSET - 1;
   const h = TRACK_HEIGHT - CLIP_INSET * 2 + 2;
   ctx.save();
   if (emphasized) {
@@ -346,10 +340,8 @@ function drawDropOutline(
 }
 
 /**
- * Hairline "+ new track" placeholder row, visible only while a drag is
- * active. Sits ABOVE the existing tracks (row 0) — an appended track
- * is the new top compositing layer, and top row = top layer in the
- * reversed display order. Deliberately understated — top + bottom
+ * Hairline placeholder row beneath the existing tracks, visible only
+ * while a drag is active. Deliberately understated — top + bottom
  * dashed borders + a tiny label, no fill — so it reads as "available
  * slot" rather than "selection target".
  */
@@ -360,7 +352,7 @@ function drawPhantomRow(
   state: DrawState,
   style: DrawStyle,
 ): void {
-  const y = trackY(trackIndex, state.project.tracks.length, state.isDragging);
+  const y = trackY(trackIndex);
   const w = state.viewportWidth - baseX;
   ctx.save();
   // Very faint background tint — keeps the row visually grouped with
@@ -488,7 +480,7 @@ function drawTrackRow(
 ): void {
   const { viewportWidth: W } = state;
   const baseX = contentLeftX(state.showHeader);
-  const y = trackY(trackIndex, state.project.tracks.length, state.isDragging);
+  const y = trackY(trackIndex);
 
   // Track surface: just the default tint. Drop-target highlight is now
   // limited to a 1px top + bottom info-tinted hairline (instead of a
@@ -562,9 +554,7 @@ function drawClipAt(
   const baseX = contentLeftX(state.showHeader);
   const startX = baseX + (startMs / 1000) * pxPerSec - scrollLeft;
   const widthPx = Math.max(2, ((clip.out - clip.in) / 1000) * pxPerSec);
-  const y =
-    trackY(trackIndex, state.project.tracks.length, state.isDragging) +
-    CLIP_INSET;
+  const y = trackY(trackIndex) + CLIP_INSET;
   const h = TRACK_HEIGHT - CLIP_INSET * 2;
   if (startX + widthPx < baseX || startX > state.viewportWidth) return;
 
@@ -735,7 +725,7 @@ function drawHeaders(
   ctx.font = "11px system-ui, -apple-system, sans-serif";
   for (let i = 0; i < state.project.tracks.length; i++) {
     const t = state.project.tracks[i]!;
-    const y = trackY(i, state.project.tracks.length, state.isDragging);
+    const y = trackY(i);
     // Track row separator.
     ctx.strokeStyle = style.border;
     ctx.beginPath();
