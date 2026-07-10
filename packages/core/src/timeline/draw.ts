@@ -50,8 +50,9 @@ export interface DrawState {
   hoveredClipId: string | null;
   hoveredTrackIndex: number | null;
   dropTargetTrackIndex: number | null;
-  /** While any drag is in flight, draw a "+ 新轨道" phantom row at the
-   *  bottom that the user can drop into to explicitly create a track. */
+  /** While any drag is in flight, draw the "+ new track" insertion
+   *  strip at the top of the stack (a new track is the new top
+   *  compositing layer). Overlay only — rows never shift. */
   isDragging: boolean;
   snapX: number | null;
   showHeader: boolean;
@@ -132,9 +133,7 @@ export function drawAll(
   ctx.clip();
   ctx.translate(0, -state.scrollTop);
   drawTracks(ctx, state, style, thumbs);
-  if (state.isDragging) {
-    drawPhantomRow(ctx, state.project.tracks.length, baseX, state, style);
-  }
+  if (state.isDragging) drawNewTrackStrip(ctx, baseX, state, style);
   if (state.dragGhost) drawDragGhost(ctx, state, style, thumbs);
   ctx.restore();
 
@@ -275,15 +274,12 @@ function drawDragGhost(
     baseX + (ghost.ghostStart / 1000) * state.pxPerSec - state.scrollLeft;
 
   // ---- Drop-slot outline ------------------------------------------------
-  // Always paint a dashed rectangle where the clip will land — the
-  // outline is the "slot" and the solid ghost above it is the clip.
-  // When the drop would overlap (→ Editor will auto-split onto a
-  // brand-new track below), draw an ADDITIONAL phantom row at the
-  // bottom + outline there, so the user sees the new track coming.
+  // Always paint an outline where the clip will land — the outline is
+  // the "slot" and the solid ghost above it is the clip. When the drop
+  // resolves to the new-track strip (explicit hover or auto-split on
+  // overlap), the outline anchors to the strip at the top instead of
+  // a row.
   const overlap = ghost.wouldOverlap;
-  // Phantom row is now drawn unconditionally during drag (see drawAll);
-  // we only need the dashed drop outline here, on whichever row the
-  // ghost is currently above.
   drawDropOutline(
     ctx,
     startX,
@@ -291,6 +287,7 @@ function drawDragGhost(
     widthPx,
     style.info,
     overlap,
+    state,
   );
 
   // ---- Ghost clip body --------------------------------------------------
@@ -321,11 +318,12 @@ function drawDropOutline(
   widthPx: number,
   color: string,
   emphasized: boolean,
+  state: DrawState,
 ): void {
   // 1px solid info-tinted outline — present, but doesn't shout.
-  // `emphasized` (used when the drop would land on the phantom new
-  // track) bumps to a slightly thicker stroke + a faint glow halo.
-  const y = trackY(trackIndex) + CLIP_INSET - 1;
+  // `emphasized` (used when the drop would land on the new-track
+  // strip) bumps to a slightly thicker stroke + a faint glow halo.
+  const y = ghostRowY(trackIndex, state) + CLIP_INSET - 1;
   const h = TRACK_HEIGHT - CLIP_INSET * 2 + 2;
   ctx.save();
   if (emphasized) {
@@ -340,42 +338,69 @@ function drawDropOutline(
 }
 
 /**
- * Hairline placeholder row beneath the existing tracks, visible only
- * while a drag is active. Deliberately understated — top + bottom
- * dashed borders + a tiny label, no fill — so it reads as "available
- * slot" rather than "selection target".
+ * Anchor y for a ghost/drop target: a real track's row, or the
+ * new-track insertion strip at the very top of the stack when the
+ * index addresses the not-yet-existing track (`index >= count`).
  */
-function drawPhantomRow(
+function ghostRowY(trackIndex: number, state: DrawState): number {
+  const count = state.project.tracks.length;
+  if (trackIndex >= count) return RULER_HEIGHT + 2;
+  return trackY(trackIndex, count);
+}
+
+/**
+ * "+ new track" insertion strip — a Premiere-style overlay line at the
+ * TOP of the track stack (a new track is appended = becomes the new
+ * top compositing layer = top row), visible only while a drag is
+ * active. Reserves no row height and never shifts existing rows:
+ * quiet dashed hairline by default, emphasized solid line + label
+ * chip while the drop would actually land there.
+ */
+function drawNewTrackStrip(
   ctx: CanvasRenderingContext2D,
-  trackIndex: number,
   baseX: number,
   state: DrawState,
   style: DrawStyle,
 ): void {
-  const y = trackY(trackIndex);
+  const active =
+    state.dragGhost != null &&
+    state.dragGhost.ghostTrackIndex >= state.project.tracks.length;
   const w = state.viewportWidth - baseX;
+  const y = RULER_HEIGHT + 1;
   ctx.save();
-  // Very faint background tint — keeps the row visually grouped with
-  // the rest of the timeline without competing with clip thumbnails.
-  ctx.fillStyle = withAlpha(style.info, 0.04);
-  ctx.fillRect(baseX, y, w, TRACK_HEIGHT);
-  // Dashed top + bottom hairlines so the eye reads it as a slot.
-  ctx.strokeStyle = withAlpha(style.info, 0.35);
-  ctx.lineWidth = 1;
-  ctx.setLineDash([3, 4]);
+  if (active) {
+    ctx.shadowColor = withAlpha(style.info, 0.5);
+    ctx.shadowBlur = 5;
+    ctx.strokeStyle = withAlpha(style.info, 0.95);
+    ctx.lineWidth = 2;
+  } else {
+    ctx.strokeStyle = withAlpha(style.info, 0.35);
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 4]);
+  }
   ctx.beginPath();
   ctx.moveTo(baseX, y + 0.5);
   ctx.lineTo(baseX + w, y + 0.5);
-  ctx.moveTo(baseX, y + TRACK_HEIGHT - 0.5);
-  ctx.lineTo(baseX + w, y + TRACK_HEIGHT - 0.5);
   ctx.stroke();
   ctx.setLineDash([]);
-  if (state.showHeader) {
-    ctx.fillStyle = withAlpha(style.info, 0.7);
-    ctx.font = "10px system-ui, -apple-system, sans-serif";
-    ctx.textBaseline = "middle";
-    ctx.fillText(state.locale.newTrack, 12, y + TRACK_HEIGHT / 2);
-  }
+  ctx.shadowBlur = 0;
+  // Label chip — always visible during the drag so the affordance is
+  // discoverable, brighter when active.
+  ctx.font = "10px system-ui, -apple-system, sans-serif";
+  ctx.textBaseline = "middle";
+  const label = state.locale.newTrack;
+  const padX = 6;
+  const chipW = ctx.measureText(label).width + padX * 2;
+  const chipH = 14;
+  const chipX = baseX + 8;
+  const chipY = y + 3;
+  ctx.fillStyle = active
+    ? withAlpha(style.info, 0.9)
+    : withAlpha(style.info, 0.18);
+  roundRect(ctx, chipX, chipY, chipW, chipH, 7);
+  ctx.fill();
+  ctx.fillStyle = active ? "#fff" : withAlpha(style.text, 0.75);
+  ctx.fillText(label, chipX + padX, chipY + chipH / 2 + 0.5);
   ctx.restore();
 }
 
@@ -480,7 +505,7 @@ function drawTrackRow(
 ): void {
   const { viewportWidth: W } = state;
   const baseX = contentLeftX(state.showHeader);
-  const y = trackY(trackIndex);
+  const y = trackY(trackIndex, state.project.tracks.length);
 
   // Track surface: just the default tint. Drop-target highlight is now
   // limited to a 1px top + bottom info-tinted hairline (instead of a
@@ -554,7 +579,7 @@ function drawClipAt(
   const baseX = contentLeftX(state.showHeader);
   const startX = baseX + (startMs / 1000) * pxPerSec - scrollLeft;
   const widthPx = Math.max(2, ((clip.out - clip.in) / 1000) * pxPerSec);
-  const y = trackY(trackIndex) + CLIP_INSET;
+  const y = ghostRowY(trackIndex, state) + CLIP_INSET;
   const h = TRACK_HEIGHT - CLIP_INSET * 2;
   if (startX + widthPx < baseX || startX > state.viewportWidth) return;
 
@@ -725,7 +750,7 @@ function drawHeaders(
   ctx.font = "11px system-ui, -apple-system, sans-serif";
   for (let i = 0; i < state.project.tracks.length; i++) {
     const t = state.project.tracks[i]!;
-    const y = trackY(i);
+    const y = trackY(i, state.project.tracks.length);
     // Track row separator.
     ctx.strokeStyle = style.border;
     ctx.beginPath();
@@ -852,7 +877,7 @@ function drawScrollbarV(
 ): void {
   if (state.scrollbarOpacityY <= 0.01) return;
   const visibleH = state.viewportHeight - RULER_HEIGHT - SCROLLBAR_THICKNESS;
-  const contentH = contentHeight(state.project.tracks, state.isDragging);
+  const contentH = contentHeight(state.project.tracks);
   if (contentH <= visibleH) return;
   const trackX = state.viewportWidth - SCROLLBAR_THICKNESS + SCROLLBAR_INSET;
   const trackY0 = RULER_HEIGHT + SCROLLBAR_INSET;

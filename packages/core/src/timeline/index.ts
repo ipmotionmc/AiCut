@@ -29,8 +29,10 @@ import {
   contentLeftX,
   contentWidth,
   findClip,
+  NEW_TRACK_ZONE_PX,
   snapTargets,
   trackIndexAt,
+  trackY,
   wouldOverlap,
   xToMs,
 } from "./layout.js";
@@ -501,7 +503,7 @@ export class Timeline {
       for (const c of t.clips) {
         const x = baseX + (c.start / 1000) * this.pxPerSec - this.scrollLeft;
         const width = ((c.out - c.in) / 1000) * this.pxPerSec;
-        const y = RULER_HEIGHT + ti * TRACK_HEIGHT + 6;
+        const y = trackY(ti, this.project.tracks.length) + 6;
         clips.push({
           id: c.id,
           trackIndex: ti,
@@ -583,7 +585,7 @@ export class Timeline {
   private maxScrollTop(): number {
     const visibleH =
       this.viewportHeight - RULER_HEIGHT - SCROLLBAR_THICKNESS;
-    const ch = contentHeight(this.project.tracks, this.drag?.kind === "move");
+    const ch = contentHeight(this.project.tracks);
     return Math.max(0, ch - visibleH);
   }
 
@@ -986,10 +988,7 @@ export class Timeline {
       if (this.scrollbarDrag.axis === "v") {
         const visibleH =
           this.viewportHeight - RULER_HEIGHT - SCROLLBAR_THICKNESS;
-        const contentH = contentHeight(
-          this.project.tracks,
-          this.drag?.kind === "move",
-        );
+        const contentH = contentHeight(this.project.tracks);
         const trackLen = visibleH - SCROLLBAR_INSET * 2;
         const thumbLen = Math.max(
           SCROLLBAR_MIN_THUMB,
@@ -1195,20 +1194,17 @@ export class Timeline {
 
     const tiRaw = this.trackIndexAtY(y);
     const phantomIdx = this.project.tracks.length;
-    const phantomScreenY =
-      RULER_HEIGHT + phantomIdx * TRACK_HEIGHT - this.scrollTop;
-    // Hit zone for the "+ 新轨道" phantom row: anywhere below the last
-    // existing track up to the viewport bottom. Visually the phantom
-    // still draws at `phantomScreenY` (one row tall), but when the
-    // viewport is compact (small timelineHeight) the phantom is
-    // pushed below the visible area and the user can only reach it
-    // after auto-scrolling. Extending the hit zone all the way down
-    // means "drop anywhere in the empty space below the tracks" is
-    // interpreted as "create a new track" — matches the visual
-    // intent without requiring scroll gymnastics.
-    const viewportBottom = this.viewportHeight - SCROLLBAR_THICKNESS;
+    // "+ new track" insertion strip — a thin band at the TOP of the
+    // track stack (an appended track is the new top compositing layer,
+    // and the reversed display order puts the top layer on the top
+    // row). Content-anchored: scrolling the stack down moves the band
+    // under the ruler and out of reach until the existing top-edge
+    // autoscroll brings it back. Rows never shift to make room — the
+    // band overlaps the top sliver of the first row, like Premiere's
+    // insertion zones.
+    const stripTopScreen = RULER_HEIGHT - this.scrollTop;
     const onPhantom =
-      y >= phantomScreenY && y < Math.max(phantomScreenY + TRACK_HEIGHT, viewportBottom);
+      y >= RULER_HEIGHT && y < stripTopScreen + NEW_TRACK_ZONE_PX;
     const intendedTrackIndex = onPhantom
       ? phantomIdx
       : tiRaw >= 0
