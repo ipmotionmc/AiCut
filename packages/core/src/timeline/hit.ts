@@ -79,7 +79,7 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
   // region resolves.
   const baseX = contentLeftX(ctx.showHeader);
   const visibleH = ctx.viewportHeight - RULER_HEIGHT - SCROLLBAR_THICKNESS;
-  const contentH = contentHeight(ctx.project.tracks);
+  const contentH = contentHeight(ctx.project.tracks, ctx.isDragging);
   // Vertical bar
   if (
     contentH > visibleH &&
@@ -141,7 +141,8 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
         // Header rows are translated by -scrollTop when painted, so
         // their visible top in viewport coords is `trackY(i) - scrollTop`.
         const btnTop =
-          trackY(ti, ctx.project.tracks.length) +
+          RULER_HEIGHT +
+          ti * TRACK_HEIGHT +
           (TRACK_HEIGHT - btnSize) / 2 -
           ctx.scrollTop;
         if (

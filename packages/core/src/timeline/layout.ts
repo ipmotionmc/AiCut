@@ -76,21 +76,12 @@ export function totalHeight(tracks: Track[]): number {
 
 /**
  * Track-stack content height — what the scrollbars compare against
- * the visible track region. The "+ new track" affordance is a thin
- * insertion strip overlaid at the top during drags, so it reserves
- * NO extra row height.
+ * the visible track region. Includes one extra TRACK_HEIGHT when a
+ * drag is in flight so the "+ 新轨道" phantom row is reachable.
  */
-export function contentHeight(tracks: Track[]): number {
-  return tracks.length * TRACK_HEIGHT;
+export function contentHeight(tracks: Track[], isDragging: boolean): number {
+  return tracks.length * TRACK_HEIGHT + (isDragging ? TRACK_HEIGHT : 0);
 }
-
-/**
- * Pointer band (px, in content coords measured from the top of the
- * track stack) that reads as "drop here to create a new top-layer
- * track" during a move drag. Overlaps the top sliver of the first
- * row — same trade Premiere makes for its insertion zones.
- */
-export const NEW_TRACK_ZONE_PX = 14;
 
 /** Pixels of timeline content along the X axis at the given zoom. */
 export function contentWidth(project: Project, pxPerSec: number): number {
@@ -104,24 +95,9 @@ export function contentWidth(project: Project, pxPerSec: number): number {
   return (max / 1000) * pxPerSec;
 }
 
-/**
- * Display row (0 = directly under the ruler) for a track index.
- *
- * REVERSED relative to array order: the LAST track in `project.tracks`
- * is the top compositing layer, so it gets the TOP row — the
- * Premiere / CapCut convention where "visually higher in the panel =
- * higher layer in the preview". Track 0 (the main track) sits on the
- * bottom row. Rows never shift — the "+ new track" affordance during
- * drags is an overlay strip, not a reserved row.
- */
-export function trackRow(index: number, trackCount: number): number {
-  return trackCount - 1 - index;
-}
-
-/** Top-edge y for a track at `index` (content coords — caller applies
- *  scroll). See `trackRow` for the reversed display order. */
-export function trackY(index: number, trackCount: number): number {
-  return RULER_HEIGHT + trackRow(index, trackCount) * TRACK_HEIGHT;
+/** Top-edge y for a track at `index`. */
+export function trackY(index: number): number {
+  return RULER_HEIGHT + index * TRACK_HEIGHT;
 }
 
 /** Inverse of trackY — which track index (or -1) does a given y fall in.
@@ -133,8 +109,7 @@ export function trackIndexAt(
 ): number {
   if (y < RULER_HEIGHT) return -1;
   const contentY = y - RULER_HEIGHT + scrollTop;
-  const row = Math.floor(contentY / TRACK_HEIGHT);
-  const idx = trackCount - 1 - row;
+  const idx = Math.floor(contentY / TRACK_HEIGHT);
   if (idx < 0 || idx >= trackCount) return -1;
   return idx;
 }
