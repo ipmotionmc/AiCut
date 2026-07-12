@@ -266,9 +266,9 @@ export class CanvasCompositorEngine implements PlaybackEngine {
     }
 
     // Seek (+ play if running) every newly-active source. Iterate
-    // 0 → N so the last (= top compositing layer) ends up last —
+    // N→0 so track 0 (= top compositing layer) seeks last —
     // same-source tie wins for the top layer's currentTime.
-    for (let i = 0; i < this.project.tracks.length; i++) {
+    for (let i = this.project.tracks.length - 1; i >= 0; i--) {
       const tid = this.project.tracks[i]!.id;
       const cid = next.get(tid);
       if (!cid) continue;
@@ -566,24 +566,24 @@ export class CanvasCompositorEngine implements PlaybackEngine {
     // halves of a split), each track would otherwise seek to its own
     // position but both drawImage calls return the LAST seek target.
     //
-    // Fix: collect active clips first, then paint each sourceId at most
-    // ONCE per frame, at the position of its HIGHEST-priority (last)
-    // track. Tracks that share the sourceId on lower layers skip drawing
-    // because their frame can't be correctly displayed anyway.
+    // Paint order: tracks[0] = TOP layer, tracks[N] = BOTTOM.
+    // Walk the paint loop in REVERSE (N→0) so track 0 draws last (on top).
+    // For same-source, paint each sourceId at most once — first encounter
+    // (track 0, top) wins.
     const sourceTopClip = new Map<string, { clip: Clip; trackIndex: number; clipId: string }>();
-    for (let i = 0; i < this.project.tracks.length; i++) {
+    for (let i = this.project.tracks.length - 1; i >= 0; i--) {
       const track = this.project.tracks[i]!;
       if (track.kind !== "video") continue;
       const clipId = this.activeByTrack.get(track.id);
       if (!clipId) continue;
       const clip = track.clips.find((c) => c.id === clipId);
       if (!clip) continue;
-      sourceTopClip.set(clip.sourceId, { clip, trackIndex: i, clipId });
+      if (!sourceTopClip.has(clip.sourceId)) {
+        sourceTopClip.set(clip.sourceId, { clip, trackIndex: i, clipId });
+      }
     }
-    // Second pass — paint each sourceId at most once (at its topmost
-    // track's position), but populate frameRectsByClip for every clip.
     this.frameRectsByClip.clear();
-    for (let i = 0; i < this.project.tracks.length; i++) {
+    for (let i = this.project.tracks.length - 1; i >= 0; i--) {
       const track = this.project.tracks[i]!;
       if (track.kind !== "video") continue;
       const clipId = this.activeByTrack.get(track.id);

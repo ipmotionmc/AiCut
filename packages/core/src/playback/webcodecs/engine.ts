@@ -444,12 +444,11 @@ export class WebCodecsEngine implements PlaybackEngine {
   }
 
   private clipAtTime(timeMs: Ms): Clip | null {
-    // Walk tracks top layer first (last in `project.tracks`) — this
-    // engine is single-stream, so where tracks overlap it must show
-    // the same clip the compositor / ffmpeg export put on top, not
-    // the bottom-layer clip it happened to find first.
-    for (let i = this.project.tracks.length - 1; i >= 0; i--) {
-      const t = this.project.tracks[i]!;
+    // Walk tracks top layer first — track 0 (the panel's first row) is
+    // the TOP compositing layer, so where tracks overlap this single-
+    // stream engine shows the same clip the compositor / ffmpeg export
+    // put on top.
+    for (const t of this.project.tracks) {
       if (t.kind !== "video") continue;
       for (const c of t.clips) {
         if (timeMs >= c.start && timeMs < c.start + (c.out - c.in)) return c;
@@ -460,10 +459,9 @@ export class WebCodecsEngine implements PlaybackEngine {
 
   private nextClipAfterTime(timeMs: Ms): Clip | null {
     // Same top-layer-first walk as clipAtTime; strict `<` makes a
-    // start-time tie resolve to the top layer.
+    // start-time tie resolve to the top layer (track 0).
     let best: Clip | null = null;
-    for (let i = this.project.tracks.length - 1; i >= 0; i--) {
-      const t = this.project.tracks[i]!;
+    for (const t of this.project.tracks) {
       if (t.kind !== "video") continue;
       for (const c of t.clips) {
         if (c.start >= timeMs && (!best || c.start < best.start)) best = c;
