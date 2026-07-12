@@ -45,6 +45,8 @@ export interface HitContext {
   isDragging: boolean;
   /** When true, hit-test keyframe diamonds before the broad clip body. */
   keyframesEnabled: boolean;
+  /** When false, edge hits resolve to the clip body — trim disabled. */
+  resizable: boolean;
 }
 
 /** Pixel half-width of the keyframe diamond hit zone — generous so a
@@ -199,18 +201,22 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
     }
   }
 
-  // Pass 2 — clip handles + body. Same logic as before.
+  // Pass 2 — clip handles + body. Handle zones only exist while
+  // `resizable` — with trim disabled an edge press selects/moves the
+  // clip like any other part of its body.
   for (const clip of track.clips) {
     const start = clip.start;
     const end = clip.start + (clip.out - clip.in);
     const startX = msToXLocal(start, ctx);
     const endX = msToXLocal(end, ctx);
 
-    if (x >= startX - HANDLE_PX && x <= startX + HANDLE_PX) {
-      return { kind: "clip-handle-left", trackIndex: ti, clipId: clip.id };
-    }
-    if (x >= endX - HANDLE_PX && x <= endX + HANDLE_PX) {
-      return { kind: "clip-handle-right", trackIndex: ti, clipId: clip.id };
+    if (ctx.resizable) {
+      if (x >= startX - HANDLE_PX && x <= startX + HANDLE_PX) {
+        return { kind: "clip-handle-left", trackIndex: ti, clipId: clip.id };
+      }
+      if (x >= endX - HANDLE_PX && x <= endX + HANDLE_PX) {
+        return { kind: "clip-handle-right", trackIndex: ti, clipId: clip.id };
+      }
     }
     if (ms >= start && ms < end) {
       return { kind: "clip", trackIndex: ti, clipId: clip.id };

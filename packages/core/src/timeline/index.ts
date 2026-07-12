@@ -65,6 +65,11 @@ export interface TimelineOptions {
   readOnly?: boolean;
   /** Snap to clip edges + playhead when dragging. Default true. */
   snap?: boolean;
+  /** Allow dragging clip edges to trim in/out points. Default FALSE —
+   *  opt in with `resizable: true`. When off the trim handles are
+   *  hidden and edge hits resolve to the clip body (select/move still
+   *  work). */
+  resizable?: boolean;
   /** Compute and apply fit-to-window on first project change. Default true. */
   autoFit?: boolean;
   /** UI string overrides (English defaults). Use `localeZh` for Chinese. */
@@ -210,6 +215,7 @@ export class Timeline {
   private timeMs: Ms;
   private selectedClipId: string | null;
   private snapEnabled: boolean;
+  private resizable: boolean;
   private showHeader: boolean;
   private readOnly: boolean;
   private autoFitEnabled: boolean;
@@ -287,6 +293,7 @@ export class Timeline {
     this.timeMs = opts.time ?? 0;
     this.selectedClipId = opts.selectedClipId ?? null;
     this.snapEnabled = opts.snap !== false;
+    this.resizable = opts.resizable === true;
     this.showHeader = opts.showHeader !== false;
     this.readOnly = opts.readOnly === true;
     this.autoFitEnabled = opts.autoFit !== false;
@@ -428,6 +435,17 @@ export class Timeline {
 
   setSnap(snap: boolean): void {
     this.snapEnabled = snap;
+  }
+
+  /** Toggle edge-trim handles at runtime. */
+  setResizable(on: boolean): void {
+    if (this.resizable === on) return;
+    this.resizable = on;
+    this.scheduleRender();
+  }
+
+  getResizable(): boolean {
+    return this.resizable;
   }
 
   getSnap(): boolean {
@@ -703,6 +721,7 @@ export class Timeline {
       locale: this.locale,
       rulerMinTickPx: this.rulerMinTickPx,
       keyframesEnabled: this.keyframesEnabled,
+      resizable: this.resizable,
       selectedKeyframe: this.selectedKeyframe,
       hoveredKeyframe: this.hoveredKeyframe,
       keyframeDragGhost:
@@ -1560,6 +1579,7 @@ export class Timeline {
       viewportHeight: this.viewportHeight,
       isDragging: this.drag?.kind === "move",
       keyframesEnabled: this.keyframesEnabled,
+      resizable: this.resizable,
     });
   }
 

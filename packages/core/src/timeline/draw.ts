@@ -71,6 +71,8 @@ export interface DrawState {
   /** When true, paint a diamond marker on each clip per keyframe.
    *  Wired to `Editor.isKeyframesEnabled()`. */
   keyframesEnabled: boolean;
+  /** When false, edge-trim handles are not painted (trim disabled). */
+  resizable: boolean;
   /** Currently selected keyframe (rendered with brand-color fill). */
   selectedKeyframe: { clipId: string; keyframeId: string } | null;
   /** Currently hovered keyframe (rendered with brand outline). */
@@ -622,9 +624,11 @@ function drawClipAt(
     ctx.stroke();
   }
 
-  // Edge handles on hover or selection.
+  // Edge handles on hover or selection — only while trim is enabled.
   const showHandles =
-    !dim && (state.selectedClipId === clip.id || state.hoveredClipId === clip.id);
+    !dim &&
+    state.resizable &&
+    (state.selectedClipId === clip.id || state.hoveredClipId === clip.id);
   if (showHandles) {
     ctx.fillStyle = "rgba(255,255,255,0.75)";
     ctx.fillRect(startX + 2, y + 12, 2, h - 24);

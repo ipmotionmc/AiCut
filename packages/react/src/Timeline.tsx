@@ -29,6 +29,7 @@ export interface TimelineApi {
   setSelection(id: string | null): void;
   getSelection(): string | null;
   setSnap(snap: boolean): void;
+  setResizable(on: boolean): void;
   fitToWindow(): void;
   setTheme(theme: Theme): void;
   getDebugInfo(): ReturnType<CoreTimeline["getDebugInfo"]>;
@@ -50,6 +51,9 @@ export interface TimelineProps {
   readOnly?: boolean;
   /** Snap to clip edges + playhead when dragging. Default true. */
   snap?: boolean;
+  /** Allow dragging clip edges to trim. Default false. Reactive —
+   *  flipping the prop calls `timeline.setResizable(...)`. */
+  resizable?: boolean;
   /** Apply fit-to-window on mount once duration is known. Default true. */
   autoFit?: boolean;
   /** UI string overrides (English default). */
@@ -126,6 +130,7 @@ export function Timeline(props: TimelineProps) {
       showHeader: cbRef.current.showHeader,
       readOnly: cbRef.current.readOnly,
       snap: cbRef.current.snap,
+      resizable: cbRef.current.resizable,
       autoFit: cbRef.current.autoFit,
       locale: cbRef.current.locale,
       theme: cbRef.current.theme,
@@ -156,6 +161,9 @@ export function Timeline(props: TimelineProps) {
   useEffect(() => {
     if (props.theme) tlRef.current?.setTheme(props.theme);
   }, [props.theme]);
+  useEffect(() => {
+    if (props.resizable != null) tlRef.current?.setResizable(props.resizable);
+  }, [props.resizable]);
 
   useImperativeHandle<TimelineApi | null, TimelineApi | null>(
     props.apiRef,
@@ -172,6 +180,7 @@ export function Timeline(props: TimelineProps) {
         setSelection: (id) => tl.setSelection(id),
         getSelection: () => tl.getSelection(),
         setSnap: (s) => tl.setSnap(s),
+        setResizable: (on) => tl.setResizable(on),
         fitToWindow: () => tl.fitToWindow(),
         setTheme: (t) => tl.setTheme(t),
         getDebugInfo: () => tl.getDebugInfo(),

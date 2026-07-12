@@ -172,6 +172,7 @@ export class EditorUI {
       time: editor.getTime(),
       selectedClipId: editor.getSelection(),
       snap: editor.getSnap(),
+      resizable: editor.isClipResizeEnabled(),
       autoFit: true,
       locale,
       rulerMinTickPx: editor.getRulerMinTickPx(),
@@ -222,6 +223,12 @@ export class EditorUI {
     this.keyframeOverlay = new KeyframeOverlay(this.preview, editor);
 
     this.attachKeyboard(cb);
+  }
+
+  /** Forwarded from Editor.setClipResizeEnabled — flips the timeline's
+   *  edge-trim handles at runtime. */
+  setClipResizable(on: boolean): void {
+    this.timeline.setResizable(on);
   }
 
   // ---- fullscreen -----------------------------------------------------
