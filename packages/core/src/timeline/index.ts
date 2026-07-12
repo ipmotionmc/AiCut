@@ -1166,10 +1166,16 @@ export class Timeline {
         c.in = nextIn;
         c.start = adjStart;
       } else {
-        // trim-right — move out only.
+        // trim-right — move out only. Clamp to the source's known
+        // duration so the clip can't extend past real content (the
+        // preview would freeze on the last frame and the export would
+        // desync). Sources without metadata yet stay unclamped.
+        const src = this.project.sources.find((s) => s.id === c.sourceId);
+        const maxOut =
+          src?.duration != null && src.duration > 0 ? src.duration : Infinity;
         const nextOut = Math.max(
           this.drag.originalIn + 50,
-          this.drag.originalOut + dxMs,
+          Math.min(this.drag.originalOut + dxMs, maxOut),
         );
         c.out = nextOut;
       }

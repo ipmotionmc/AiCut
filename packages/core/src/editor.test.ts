@@ -215,3 +215,69 @@ describe("Editor playback engine injection", () => {
     editor.destroy();
   });
 });
+
+describe("Editor resizeClip out-point clamping", () => {
+  let container: HTMLDivElement;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+  });
+  afterEach(() => {
+    container.remove();
+  });
+
+  function projectWithDuration(duration?: Ms): Project {
+    return {
+      version: 1,
+      sources: [
+        { id: "s1", url: "blob:fake", kind: "video", name: "a", duration },
+      ],
+      tracks: [
+        {
+          id: "t1",
+          kind: "video",
+          clips: [{ id: "c1", sourceId: "s1", in: 0, out: 4000, start: 0 }],
+        },
+      ],
+    };
+  }
+
+  it("clamps out to the source duration when known", () => {
+    const editor = Editor.create({
+      container,
+      project: projectWithDuration(5000),
+      playbackEngine: () => makeStubEngine(),
+    });
+    expect(editor.resizeClip("c1", { out: 9000 })).toBe(true);
+    const clip = editor.getProject().tracks[0]!.clips[0]!;
+    expect(clip.out).toBe(5000);
+    editor.destroy();
+  });
+
+  it("leaves out unclamped when the source duration is unknown", () => {
+    const editor = Editor.create({
+      container,
+      project: projectWithDuration(undefined),
+      playbackEngine: () => makeStubEngine(),
+    });
+    expect(editor.resizeClip("c1", { out: 9000 })).toBe(true);
+    const clip = editor.getProject().tracks[0]!.clips[0]!;
+    expect(clip.out).toBe(9000);
+    editor.destroy();
+  });
+
+  it("rejects a resize that would collapse the clip after clamping", () => {
+    const editor = Editor.create({
+      container,
+      project: projectWithDuration(5000),
+      playbackEngine: () => makeStubEngine(),
+    });
+    // in beyond the clamped out → invalid, no mutation.
+    expect(editor.resizeClip("c1", { in: 5200, out: 9000 })).toBe(false);
+    const clip = editor.getProject().tracks[0]!.clips[0]!;
+    expect(clip.in).toBe(0);
+    expect(clip.out).toBe(4000);
+    editor.destroy();
+  });
+});

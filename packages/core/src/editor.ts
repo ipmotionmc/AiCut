@@ -1234,6 +1234,13 @@ export class Editor implements EditorApi {
     const cl = trk?.clips.find((c) => c.id === clipId);
     if (!trk || !cl) return false;
     const next: Clip = { ...cl, ...edits };
+    // Clamp the out-point to the source's known duration — a clip
+    // extended past real content freezes the preview on the last
+    // frame and desyncs the export. Unknown duration = no clamp.
+    const src = this.project.sources.find((s) => s.id === cl.sourceId);
+    if (src?.duration != null && src.duration > 0 && next.out > src.duration) {
+      next.out = src.duration;
+    }
     if (next.out <= next.in) return false;
     if (next.start < 0) return false;
     this.pushHistory();
