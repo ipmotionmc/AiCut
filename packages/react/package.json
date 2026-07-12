@@ -1,6 +1,6 @@
 {
   "name": "@iplex/aicut-react",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "React wrapper for the AiCut video editor + lighting picker — thin declarative shells over @iplex/aicut-core.",
   "license": "MIT",
   "author": "ziqiang <ziqiangytu@gmail.com>",
