@@ -21,6 +21,7 @@ const props = defineProps<{
   showHeader?: boolean;
   readOnly?: boolean;
   snap?: boolean;
+  resizable?: boolean;
   autoFit?: boolean;
   locale?: Partial<Locale>;
 }>();
@@ -53,6 +54,7 @@ onMounted(() => {
     showHeader: props.showHeader,
     readOnly: props.readOnly,
     snap: props.snap,
+    resizable: props.resizable,
     autoFit: props.autoFit,
     locale: props.locale,
     onSeek: (t) => emit("seek", t),

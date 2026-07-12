@@ -57,6 +57,7 @@ const props = defineProps<{
    * entirely (no toolbar space cost).
    */
   clipEdgeNav?: { enabled?: boolean };
+  clipResize?: { enabled?: boolean };
   /**
    * Dashed outline of the output canvas on top of the preview.
    * Defaults to `{ enabled: true }` — purely visual. Set
@@ -139,6 +140,7 @@ onMounted(() => {
       : {}),
     ...(props.keyframes != null ? { keyframes: props.keyframes } : {}),
     ...(props.clipEdgeNav != null ? { clipEdgeNav: props.clipEdgeNav } : {}),
+    ...(props.clipResize != null ? { clipResize: props.clipResize } : {}),
     ...(props.previewFrame != null
       ? { previewFrame: props.previewFrame }
       : {}),

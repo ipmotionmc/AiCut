@@ -85,6 +85,10 @@ export interface HeadlessEditorOptions {
   rulerMinTickPx?: number;
   keyframes?: { enabled?: boolean };
   clipEdgeNav?: { enabled?: boolean };
+  /** Clip edge-trim handles on the timeline. Default DISABLED — pass
+   *  `{ enabled: true }` to show the handles and allow dragging clip
+   *  edges to trim (clips can always be selected and moved). */
+  clipResize?: { enabled?: boolean };
   previewFrame?: { enabled?: boolean };
   pictureInPicture?: { enabled?: boolean; toolbarAdd?: boolean };
   aspect?: { enabled?: boolean };
@@ -171,6 +175,10 @@ export interface EditorOptions extends HeadlessEditorOptions {
    * space, and the I / O keys fall through to the page.
    */
   clipEdgeNav?: { enabled?: boolean };
+  /** Clip edge-trim handles on the timeline. Default DISABLED — pass
+   *  `{ enabled: true }` to show the handles and allow dragging clip
+   *  edges to trim (clips can always be selected and moved). */
+  clipResize?: { enabled?: boolean };
   /**
    * Dashed output-frame outline on top of the preview. Independent
    * of keyframes mode — the frame is purely visual (it shows the
@@ -411,6 +419,10 @@ export interface EditorApi {
   isKeyframesEnabled(): boolean;
   setKeyframesEnabled(enabled: boolean): void;
   isClipEdgeNavEnabled(): boolean;
+  /** Whether timeline clip edges can be dragged to trim. */
+  isClipResizeEnabled(): boolean;
+  /** Toggle timeline edge-trim handles at runtime. */
+  setClipResizeEnabled(enabled: boolean): void;
   setClipEdgeNavEnabled(enabled: boolean): void;
   /** Dashed output-frame outline visibility. Defaults to true. */
   isPreviewFrameEnabled(): boolean;
@@ -670,6 +682,7 @@ export class Editor implements EditorApi {
     null;
   private keyframesEnabled: boolean;
   private clipEdgeNavEnabled: boolean;
+  private clipResizeEnabled: boolean;
   private aspectEnabled: boolean;
   private previewFrameEnabled: boolean;
   private pictureInPictureEnabled: boolean;
@@ -694,6 +707,7 @@ export class Editor implements EditorApi {
     this.rulerMinTickPx = Math.max(20, Math.round(opts.rulerMinTickPx ?? 80));
     this.keyframesEnabled = opts.keyframes?.enabled === true;
     this.clipEdgeNavEnabled = opts.clipEdgeNav?.enabled === true;
+    this.clipResizeEnabled = opts.clipResize?.enabled === true;
     this.aspectEnabled = opts.aspect?.enabled === true;
     // Default true — the dashed frame is purely visual and harmless
     // even when keyframe editing is off; hosts who want a clean
@@ -1234,6 +1248,13 @@ export class Editor implements EditorApi {
     const cl = trk?.clips.find((c) => c.id === clipId);
     if (!trk || !cl) return false;
     const next: Clip = { ...cl, ...edits };
+    // Clamp the out-point to the source's known duration — a clip
+    // extended past real content freezes the preview on the last
+    // frame and desyncs the export. Unknown duration = no clamp.
+    const src = this.project.sources.find((s) => s.id === cl.sourceId);
+    if (src?.duration != null && src.duration > 0 && next.out > src.duration) {
+      next.out = src.duration;
+    }
     if (next.out <= next.in) return false;
     if (next.start < 0) return false;
     this.pushHistory();
@@ -1498,6 +1519,16 @@ export class Editor implements EditorApi {
     }
     this.bus.emit("keyframesEnabledChange", { enabled });
     this.ui?.render();
+  }
+
+  isClipResizeEnabled(): boolean {
+    return this.clipResizeEnabled;
+  }
+
+  setClipResizeEnabled(enabled: boolean): void {
+    if (this.clipResizeEnabled === enabled) return;
+    this.clipResizeEnabled = enabled;
+    this.ui?.setClipResizable(enabled);
   }
 
   isClipEdgeNavEnabled(): boolean {

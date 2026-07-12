@@ -147,6 +147,9 @@ export interface VideoEditorProps {
    * fall through to the page.
    */
   clipEdgeNav?: { enabled?: boolean };
+  /** Timeline edge-trim handles. Default DISABLED — pass
+   *  `{ enabled: true }` to allow dragging clip edges. */
+  clipResize?: { enabled?: boolean };
   /**
    * Multi-track picture-in-picture compositing in the preview. Off
    * by default (today's single-clip behaviour). Reactive — flip
@@ -258,6 +261,9 @@ export function VideoEditor(props: VideoEditorProps) {
         : {}),
       ...(cbRef.current.clipEdgeNav != null
         ? { clipEdgeNav: cbRef.current.clipEdgeNav }
+        : {}),
+      ...(cbRef.current.clipResize != null
+        ? { clipResize: cbRef.current.clipResize }
         : {}),
       ...(cbRef.current.previewFrame != null
         ? { previewFrame: cbRef.current.previewFrame }
