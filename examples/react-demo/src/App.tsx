@@ -84,8 +84,11 @@ const SRC_B = {
 };
 
 function seed(): Project {
-  // Two empty video tracks so multi-track layout is visible from
-  // first paint; uploads land on the first empty one by default.
+  // Single main video track — the timeline shows the main track on
+  // the bottom row with overlays stacking upward, so a pre-seeded
+  // empty second track would just be dead space above the content.
+  // More tracks come from the "+ new track" drag strip, the "+ Video
+  // track" button, or PiP uploads.
   // Preload via env var is local-dev convenience — when set, the
   // source lands here and the `ready`-event handler in onReady
   // creates the clip as soon as metadata resolves.
@@ -102,10 +105,7 @@ function seed(): Project {
   return {
     version: 1,
     sources,
-    tracks: [
-      { id: createId("track"), kind: "video", clips: [] },
-      { id: createId("track"), kind: "video", clips: [] },
-    ],
+    tracks: [{ id: createId("track"), kind: "video", clips: [] }],
   };
 }
 

@@ -79,7 +79,7 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
   // region resolves.
   const baseX = contentLeftX(ctx.showHeader);
   const visibleH = ctx.viewportHeight - RULER_HEIGHT - SCROLLBAR_THICKNESS;
-  const contentH = contentHeight(ctx.project.tracks, ctx.isDragging);
+  const contentH = contentHeight(ctx.project.tracks);
   // Vertical bar
   if (
     contentH > visibleH &&
@@ -132,12 +132,7 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
   }
 
   if (ctx.showHeader && x < HEADER_WIDTH && y >= RULER_HEIGHT) {
-    const ti = trackIndexAt(
-      y,
-      ctx.project.tracks.length,
-      ctx.scrollTop,
-      ctx.isDragging,
-    );
+    const ti = trackIndexAt(y, ctx.project.tracks.length, ctx.scrollTop);
     if (ti >= 0) {
       const track = ctx.project.tracks[ti]!;
       if (track.clips.length === 0) {
@@ -146,7 +141,7 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
         // Header rows are translated by -scrollTop when painted, so
         // their visible top in viewport coords is `trackY(i) - scrollTop`.
         const btnTop =
-          trackY(ti, ctx.project.tracks.length, ctx.isDragging) +
+          trackY(ti, ctx.project.tracks.length) +
           (TRACK_HEIGHT - btnSize) / 2 -
           ctx.scrollTop;
         if (
@@ -165,12 +160,7 @@ export function hitTest(x: number, y: number, ctx: HitContext): HitTarget {
 
   if (y < RULER_HEIGHT) return { kind: "ruler" };
 
-  const ti = trackIndexAt(
-    y,
-    ctx.project.tracks.length,
-    ctx.scrollTop,
-    ctx.isDragging,
-  );
+  const ti = trackIndexAt(y, ctx.project.tracks.length, ctx.scrollTop);
   if (ti < 0) return { kind: "outside" };
   const track = ctx.project.tracks[ti]!;
   const ms = xToMs(x, ctx.pxPerSec, ctx.scrollLeft, ctx.showHeader);

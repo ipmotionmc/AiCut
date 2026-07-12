@@ -1,5 +1,18 @@
 # @iplex/aicut-vue
 
+## 0.8.1
+
+### Patch Changes
+
+- 4a7b8f1: Timeline drag interactions: keep the industry row convention (top compositing layer on the top row, main track at the bottom — Premiere/CapCut style) with proper feedback:
+
+  - Top insertion strip: thin Premiere-style overlay line + label chip at the top of the track stack during drags; dropping there appends a new top-layer track.
+  - Bottom phantom row: full-height dashed slot at the bottom of the track stack during drags (scrollbar accounts for the extra height); dropping there prepends a new bottom-layer track at index 0.
+  - Dragging a clip to the bottom empty area no longer creates a top-layer track (the 0.8.0 bug) but a bottom-layer track, matching the visual expectation.
+
+- Updated dependencies [4a7b8f1]
+  - @iplex/aicut-core@0.8.1
+
 ## 0.8.0
 
 ### Minor Changes

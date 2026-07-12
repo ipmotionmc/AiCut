@@ -320,9 +320,11 @@ function buildTimelineFilterComplex(a: BuildArgs): {
     `color=c=black:s=${w}x${h}:r=${a.fps}:d=${fmt(a.totalDurationSec)}[bg]`,
   );
 
-  // Walk tracks bottom→top in `project.tracks` order. Within each
-  // track, we paint clips in start-time order so any sneaky reverse
-  // sort upstream doesn't reverse z within the track.
+  // Walk tracks array-order (0 → N). Track 0 paints first (bottom
+  // compositing layer), track N paints last (top layer), matching
+  // the frontend canvas compositor. Within each track, clips are
+  // start-time ordered so any sneaky reverse sort upstream doesn't
+  // reverse z within the track.
   const trackClipLabels: Array<{
     track: Track;
     trackIndex: number;

@@ -74,6 +74,10 @@ function makeSeedProject(): Project {
       },
     ],
     tracks: [
+      // Single main track — overlay tracks are created on demand by
+      // dragging a clip onto the "+ new track" strip at the top of the
+      // timeline (an empty seeded track would just sit above the main
+      // track as dead space in the reversed row order).
       {
         id: createId("track"),
         kind: "video",
@@ -87,7 +91,6 @@ function makeSeedProject(): Project {
           },
         ],
       },
-      { id: createId("track"), kind: "video", clips: [] },
     ],
   };
 }
