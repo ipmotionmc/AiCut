@@ -568,8 +568,8 @@ export class CanvasCompositorEngine implements PlaybackEngine {
     //
     // Paint order: tracks[0] = TOP layer, tracks[N] = BOTTOM.
     // Walk the paint loop in REVERSE (N→0) so track 0 draws last (on top).
-    // For same-source, paint each sourceId at most once — first encounter
-    // (track 0, top) wins.
+    // For same-source, paint each sourceId at most once — iterating N→0
+    // with unconditional set, the LAST write (i = 0, the top layer) wins.
     const sourceTopClip = new Map<string, { clip: Clip; trackIndex: number; clipId: string }>();
     for (let i = this.project.tracks.length - 1; i >= 0; i--) {
       const track = this.project.tracks[i]!;
@@ -578,9 +578,7 @@ export class CanvasCompositorEngine implements PlaybackEngine {
       if (!clipId) continue;
       const clip = track.clips.find((c) => c.id === clipId);
       if (!clip) continue;
-      if (!sourceTopClip.has(clip.sourceId)) {
-        sourceTopClip.set(clip.sourceId, { clip, trackIndex: i, clipId });
-      }
+      sourceTopClip.set(clip.sourceId, { clip, trackIndex: i, clipId });
     }
     this.frameRectsByClip.clear();
     for (let i = this.project.tracks.length - 1; i >= 0; i--) {
