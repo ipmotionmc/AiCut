@@ -1,6 +1,6 @@
 {
   "name": "@iplex/aicut-core",
-  "version": "0.8.2",
+  "version": "0.8.4",
   "description": "Framework-agnostic core for the AiCut video editor — canvas timeline, data model, pluggable PlaybackEngine (HTML5 / Canvas / WebCodecs), plus opt-in 3D lighting picker.",
   "license": "MIT",
   "author": "ziqiang <ziqiangytu@gmail.com>",

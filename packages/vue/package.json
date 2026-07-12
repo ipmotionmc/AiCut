@@ -1,6 +1,6 @@
 {
   "name": "@iplex/aicut-vue",
-  "version": "0.8.2",
+  "version": "0.8.4",
   "description": "Vue 3 wrapper for the AiCut video editor + lighting picker — thin declarative shells over @iplex/aicut-core.",
   "license": "MIT",
   "author": "ziqiang <ziqiangytu@gmail.com>",

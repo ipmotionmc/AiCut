@@ -1,5 +1,17 @@
 # @iplex/aicut-core
 
+## 0.8.4
+
+### Patch Changes
+
+- 783386f: Canvas compositor: same-source overlaps picked the BOTTOM track's clip as the paint target (an if-absent guard on a reverse iteration locked the first encounter = highest index). Unconditional set makes the last write — track 0, the top layer — win, so split-clip overlaps show the top row's segment as intended.
+
+## 0.8.3
+
+### Patch Changes
+
+- fbc1262: Fix playback stutter introduced in 0.8.2: the canvas compositor snapped `video.currentTime` to the rAF clock every frame (10ms tolerance), forcing a re-seek per frame — choppy video and audio even with a single clip. The correction now only fires while paused (frame-accurate scrubbing) or when drift exceeds 0.3s (same-source segment switch), so normal playback runs on the video's own clock again.
+
 ## 0.8.2
 
 ### Patch Changes
