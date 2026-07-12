@@ -69,8 +69,8 @@ export interface ProgressEvent {
  * mirrors the editor's compositor — black canvas of the output size,
  * each clip trimmed and shifted to its timeline `start`, transformed
  * (scale / pan / keyframes), then overlaid bottom-track-first so the
- * last track in `project.tracks` reads as the top layer (matches the
- * frontend's PiP z-order).
+ * FIRST track in `project.tracks` reads as the top layer (matches the
+ * frontend's z-order: panel row 0 = top).
  *
  * Audio: only the topmost video track's clips contribute audio (the
  * editor's PiP policy — lower tracks mute). Multiple clips on the
@@ -182,7 +182,9 @@ export async function renderProject(
     height = height % 2 === 0 ? height : height - 1;
     const fps =
       opts.fps ?? project.output?.fps ?? project.fps ?? 30;
-    const topTrackIndex = videoTracks.length - 1;
+    // Track 0 is the TOP compositing layer (panel's first row) — its
+    // audio is the one that plays, matching the preview engines.
+    const topTrackIndex = 0;
 
     const { fc, audioOut } = buildTimelineFilterComplex({
       videoTracks,
@@ -320,11 +322,11 @@ function buildTimelineFilterComplex(a: BuildArgs): {
     `color=c=black:s=${w}x${h}:r=${a.fps}:d=${fmt(a.totalDurationSec)}[bg]`,
   );
 
-  // Walk tracks array-order (0 → N). Track 0 paints first (bottom
-  // compositing layer), track N paints last (top layer), matching
-  // the frontend canvas compositor. Within each track, clips are
-  // start-time ordered so any sneaky reverse sort upstream doesn't
-  // reverse z within the track.
+  // Walk tracks in REVERSE (N → 0). Track N overlays first (bottom
+  // compositing layer), track 0 overlays last (top layer) — track 0
+  // is the panel's first row and the TOP layer, matching the preview
+  // engines. Within each track, clips are start-time ordered so any
+  // sneaky reverse sort upstream doesn't reverse z within the track.
   const trackClipLabels: Array<{
     track: Track;
     trackIndex: number;
@@ -334,7 +336,7 @@ function buildTimelineFilterComplex(a: BuildArgs): {
     endSec: number;
   }> = [];
   let clipNum = 0;
-  for (let ti = 0; ti < a.videoTracks.length; ti += 1) {
+  for (let ti = a.videoTracks.length - 1; ti >= 0; ti -= 1) {
     const track = a.videoTracks[ti]!;
     const ordered = [...track.clips].sort((c1, c2) => c1.start - c2.start);
     for (const clip of ordered) {

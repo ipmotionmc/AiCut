@@ -1136,8 +1136,10 @@ export class Editor implements EditorApi {
     const nextStart = Math.max(0, opts.start ?? clip.start);
     const nextEnd = nextStart + clipDuration(clip);
 
-    // Explicit "new track" intent from the UI's phantom-row drop —
-    // bypass smart routing entirely, append a fresh track, move there.
+    // Explicit "new track" intent from the UI's drag drop.
+    // `true` = append a new top-layer track (shows on the top row);
+    // `"bottom"` = insert a new bottom-layer track at index 0
+    // (shows on the bottom row, behind everything else).
     if (opts.newTrack) {
       this.pushHistory();
       const created = this.appendTrack({ kind: fromTrack.kind });

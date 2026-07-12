@@ -4,42 +4,39 @@ import {
   TRACK_HEIGHT,
   contentHeight,
   trackIndexAt,
-  trackRow,
   trackY,
 } from "./layout.js";
 
-describe("reversed track display order", () => {
-  it("puts the top compositing layer (last track) on the top row", () => {
-    // 3 tracks: index 2 = top layer = row 0, index 0 = main = bottom row.
-    expect(trackRow(2, 3)).toBe(0);
-    expect(trackRow(1, 3)).toBe(1);
-    expect(trackRow(0, 3)).toBe(2);
-    expect(trackY(2, 3)).toBe(RULER_HEIGHT);
-    expect(trackY(0, 3)).toBe(RULER_HEIGHT + 2 * TRACK_HEIGHT);
+describe("array-order track display", () => {
+  it("track 0 is on the first row, tracks grow downward", () => {
+    expect(trackY(0)).toBe(RULER_HEIGHT);
+    expect(trackY(1)).toBe(RULER_HEIGHT + TRACK_HEIGHT);
   });
 
   it("trackIndexAt is the inverse of trackY", () => {
     for (let i = 0; i < 3; i++) {
-      const y = trackY(i, 3) + TRACK_HEIGHT / 2;
+      const y = trackY(i) + TRACK_HEIGHT / 2;
       expect(trackIndexAt(y, 3, 0)).toBe(i);
     }
   });
 
-  it("maps the ruler and the space below the stack to -1", () => {
+  it("maps the ruler and space below to -1", () => {
     expect(trackIndexAt(RULER_HEIGHT - 1, 3)).toBe(-1);
     expect(trackIndexAt(RULER_HEIGHT + 3 * TRACK_HEIGHT + 1, 3)).toBe(-1);
   });
 
   it("honours scrollTop", () => {
-    const y = trackY(0, 3) + 4 - 30; // scrolled down by 30px
-    expect(trackIndexAt(y, 3, 30)).toBe(0);
+    // Track 2 in content coords; scrolled down 30px so its visible y is lower.
+    const visibleY = trackY(2) + 4 - 30;
+    expect(trackIndexAt(visibleY, 3, 30)).toBe(2);
   });
 
-  it("reserves no extra row height during drags (strip is an overlay)", () => {
+  it("reserves extra row height during drags", () => {
     const tracks = [
       { id: "a", kind: "video" as const, clips: [] },
       { id: "b", kind: "video" as const, clips: [] },
     ];
-    expect(contentHeight(tracks)).toBe(2 * TRACK_HEIGHT);
+    expect(contentHeight(tracks, false)).toBe(2 * TRACK_HEIGHT);
+    expect(contentHeight(tracks, true)).toBe(3 * TRACK_HEIGHT);
   });
 });

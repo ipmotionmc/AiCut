@@ -17,9 +17,9 @@ import type {
  *
  * Multi-track / PiP: when `setPictureInPictureEnabled(true)` flips
  * on, every video track's currently-active clip stays visible, with
- * the LAST track in `project.tracks` on top (highest z-index — same
- * convention as the canvas compositor and the ffmpeg export). Audio
- * policy: only the primary (first video) track stays unmuted so
+ * track 0 (the panel's first row) on top — highest z-index, same
+ * convention as the canvas compositor and the ffmpeg export. Audio
+ * policy: only the primary (track 0 = top layer) stays unmuted so
  * stacked playbacks don't double-pitch. When
  * the flag is off (default) behaviour matches the historical single-
  * clip preview — only track `0`'s active clip paints.
@@ -306,7 +306,11 @@ export class HtmlVideoEngine implements PlaybackEngine {
       const clipId = this.activeByTrack.get(track.id);
       if (clipId) {
         const clip = track.clips.find((c) => c.id === clipId);
-        if (clip) activeBySource.set(clip.sourceId, { trackIndex: i, clip });
+        // First encounter wins — track 0 is the TOP compositing layer,
+        // so for same-source ties its clip drives the wrapper.
+        if (clip && !activeBySource.has(clip.sourceId)) {
+          activeBySource.set(clip.sourceId, { trackIndex: i, clip });
+        }
       }
       i++;
     }
@@ -317,15 +321,16 @@ export class HtmlVideoEngine implements PlaybackEngine {
         const { trackIndex, clip } = entry;
         // Wrapper covers the full output canvas; overflow: hidden
         // clips any transform-overflow at the output bounds.
-        // Z-order convention: higher track index = higher z. That's
-        // the Premiere / After Effects model and what users expect
-        // when they upload PiP overlays onto track 1 / 2 / etc.
+        // Z-order convention: track 0 (the panel's FIRST row) is the
+        // TOP compositing layer; later tracks stack underneath. Matches
+        // the timeline's "higher row = higher layer" reading and the
+        // canvas compositor / ffmpeg export.
         Object.assign(src.wrapper.style, {
           left: `${outRect.x}px`,
           top: `${outRect.y}px`,
           width: `${outRect.w}px`,
           height: `${outRect.h}px`,
-          zIndex: String(trackIndex + 1),
+          zIndex: String(this.project.tracks.length - trackIndex),
         });
         const t = getEffectiveTransform(clip, this.timeMs - clip.start);
         // panX/panY are CANVAS pixels — convert to CSS px via the

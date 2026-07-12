@@ -266,8 +266,8 @@ export class CanvasCompositorEngine implements PlaybackEngine {
     }
 
     // Seek (+ play if running) every newly-active source. Iterate
-    // bottom-up so track 0 ends up last — same-source tie wins for
-    // the primary clip's currentTime.
+    // N→0 so track 0 (= top compositing layer) seeks last —
+    // same-source tie wins for the top layer's currentTime.
     for (let i = this.project.tracks.length - 1; i >= 0; i--) {
       const tid = this.project.tracks[i]!.id;
       const cid = next.get(tid);
@@ -559,23 +559,56 @@ export class CanvasCompositorEngine implements PlaybackEngine {
     const ccx = cw / 2;
     const ccy = ch / 2;
 
-    // Z-order convention: tracks[0] paints FIRST (bottom) and the
-    // last track paints LAST (top). This matches Premiere / After
-    // Effects — uploads land on the first empty track, so the second
-    // upload (track 1) naturally becomes the PiP overlay sitting on
-    // top of the track-0 background. While painting, also cache each
-    // clip's post-transform content rect so the overlay can latch
-    // onto whichever clip the user selects.
-    this.frameRectsByClip.clear();
-    for (let i = 0; i < this.project.tracks.length; i++) {
+    // Paint all active tracks in z-order (tracks[0] = bottom, tracks[N] = top).
+    // IMPORTANT: HTMLVideoElement.currentTime setter is asynchronous —
+    // calling drawImage() immediately after seeking still paints the
+    // PREVIOUS frame. When two clips share the same sourceId (e.g. two
+    // halves of a split), each track would otherwise seek to its own
+    // position but both drawImage calls return the LAST seek target.
+    //
+    // Paint order: tracks[0] = TOP layer, tracks[N] = BOTTOM.
+    // Walk the paint loop in REVERSE (N→0) so track 0 draws last (on top).
+    // For same-source, paint each sourceId at most once — first encounter
+    // (track 0, top) wins.
+    const sourceTopClip = new Map<string, { clip: Clip; trackIndex: number; clipId: string }>();
+    for (let i = this.project.tracks.length - 1; i >= 0; i--) {
       const track = this.project.tracks[i]!;
       if (track.kind !== "video") continue;
       const clipId = this.activeByTrack.get(track.id);
       if (!clipId) continue;
       const clip = track.clips.find((c) => c.id === clipId);
       if (!clip) continue;
+      if (!sourceTopClip.has(clip.sourceId)) {
+        sourceTopClip.set(clip.sourceId, { clip, trackIndex: i, clipId });
+      }
+    }
+    this.frameRectsByClip.clear();
+    for (let i = this.project.tracks.length - 1; i >= 0; i--) {
+      const track = this.project.tracks[i]!;
+      if (track.kind !== "video") continue;
+      const clipId = this.activeByTrack.get(track.id);
+      if (!clipId) continue;
+      const clip = track.clips.find((c) => c.id === clipId) as Clip;
+      if (!clip) continue;
       const v = this.videos.get(clip.sourceId);
       if (!v || v.videoWidth === 0 || v.videoHeight === 0) continue;
+
+      // Only paint the topmost clip per sourceId. When two clips share
+      // the same video element (e.g. two halves of a split),
+      // HTMLVideoElement.currentTime is asynchronous, so drawImage()
+      // after seeking still returns the previous frame. Painting each
+      // source once avoids this — and the lower-layer clip can't
+      // display its own frame correctly anyway.
+      const top = sourceTopClip.get(clip.sourceId);
+      const isPaintTarget = top && top.clipId === clipId && top.trackIndex === i;
+
+      if (isPaintTarget) {
+        const clipOffset = this.timeMs - clip.start;
+        const target = Math.max(0, (clip.in + clipOffset) / 1000);
+        if (Math.abs(v.currentTime - target) > 0.01) {
+          v.currentTime = target;
+        }
+      }
 
       const vw = v.videoWidth;
       const vh = v.videoHeight;
@@ -584,21 +617,19 @@ export class CanvasCompositorEngine implements PlaybackEngine {
       const vidH = vh * vidContain;
       const t = getEffectiveTransform(clip, this.timeMs - clip.start);
 
-      // pan values are in CANVAS pixels (= units of `aw`/`ah`).
-      // Convert into preview-canvas backbuffer pixels by multiplying
-      // by `canvasScale` — that's the ratio of preview-canvas space
-      // per project-canvas unit.
-      this.ctx.save();
-      this.ctx.beginPath();
-      this.ctx.rect(outX, outY, dw, dh);
-      this.ctx.clip();
-      this.ctx.translate(
-        ccx + t.panX * canvasScale,
-        ccy + t.panY * canvasScale,
-      );
-      this.ctx.scale(t.scale, t.scale);
-      this.ctx.drawImage(v, -vidW / 2, -vidH / 2, vidW, vidH);
-      this.ctx.restore();
+      if (isPaintTarget) {
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(outX, outY, dw, dh);
+        this.ctx.clip();
+        this.ctx.translate(
+          ccx + t.panX * canvasScale,
+          ccy + t.panY * canvasScale,
+        );
+        this.ctx.scale(t.scale, t.scale);
+        this.ctx.drawImage(v, -vidW / 2, -vidH / 2, vidW, vidH);
+        this.ctx.restore();
+      }
 
       // Cache this clip's content rect in CSS px for the overlay.
       // CSS-px conversion: backbuffer / dpr; pan in canvas-px → CSS
