@@ -1,5 +1,21 @@
 # @iplex/aicut-vue
 
+## 0.8.5
+
+### Patch Changes
+
+- d6ddc70: Clip edge-trimming is now behind a switch, DISABLED by default. Dragging a clip's edges to trim in/out points requires opting in:
+
+  - Editor: `clipResize: { enabled: true }` option + `isClipResizeEnabled()` / `setClipResizeEnabled(on)` runtime API (React/Vue `VideoEditor` accept the same `clipResize` prop).
+  - Standalone Timeline: `resizable: true` option + `setResizable(on)` (React `Timeline` prop is reactive; also on `TimelineApi`).
+
+  When off, the trim handles are hidden and edge presses select/move the clip like any other part of its body. Toolbar/hotkey trim (Q/W, trim-to-playhead) is unaffected by this switch.
+
+- b90b6de: Right-edge trim is now clamped to the source's known duration — a clip could previously be stretched past real content, freezing the preview on the last frame and desyncing the export. Clamped both live during the drag (timeline) and at commit (`Editor.resizeClip`). Sources without duration metadata remain unclamped until it arrives.
+- Updated dependencies [d6ddc70]
+- Updated dependencies [b90b6de]
+  - @iplex/aicut-core@0.8.5
+
 ## 0.8.4
 
 ### Patch Changes
