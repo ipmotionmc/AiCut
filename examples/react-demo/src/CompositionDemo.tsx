@@ -47,6 +47,7 @@ import {
   useEditorState,
   useLocale,
   createId,
+  canvasCompositorEngineFactory,
   type Project,
   type Theme,
   type Locale,
@@ -153,6 +154,7 @@ export function CompositionDemo(): ReactElement {
       keyframes={{ enabled: true }}
       pictureInPicture={{ enabled: true }}
       aspect={{ enabled: true }}
+      playbackEngine={canvasCompositorEngineFactory}
     >
       <div className="composition-shell">
         <header className="composition-header">
