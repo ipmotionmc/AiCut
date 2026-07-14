@@ -490,6 +490,11 @@ export class WebCodecsEngine implements PlaybackEngine {
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;
       this.canvas.height = h;
+      // Backing-store resize resets 2d context state — re-apply the
+      // smoothing flags so upscaled frames use high-quality filtering
+      // (the default "low" looks soft/blocky on Retina).
+      this.ctx.imageSmoothingEnabled = true;
+      this.ctx.imageSmoothingQuality = "high";
     }
   }
 
