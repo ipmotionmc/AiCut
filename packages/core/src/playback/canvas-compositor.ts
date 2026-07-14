@@ -434,6 +434,14 @@ export class CanvasCompositorEngine implements PlaybackEngine {
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;
       this.canvas.height = h;
+      // Resizing the backing store resets ALL 2d context state,
+      // including the smoothing flags — re-apply them here (the
+      // constructor's initial call lands in this branch too). Without
+      // "high", drawImage upscaling uses fast bilinear and Retina
+      // displays show visibly soft / blocky frames vs the html-video
+      // engine's native scaler.
+      this.ctx.imageSmoothingEnabled = true;
+      this.ctx.imageSmoothingQuality = "high";
     }
   }
 
@@ -604,15 +612,30 @@ export class CanvasCompositorEngine implements PlaybackEngine {
         const clipOffset = this.timeMs - clip.start;
         const target = Math.max(0, (clip.in + clipOffset) / 1000);
         const drift = Math.abs(v.currentTime - target);
-        // While PLAYING the <video> advances on its own clock — the
-        // rAF clock always drifts a few ms from it, and snapping
-        // currentTime every frame forces a re-seek per frame, which
-        // stutters both video and audio. Only correct when paused
-        // (frame-accurate scrubbing) or when badly off (>0.3s =
-        // same-source segment switch / desync), where a one-off seek
-        // is the right call.
-        if ((!this.playing && drift > 0.01) || drift > 0.3) {
-          v.currentTime = target;
+        if (!this.playing) {
+          // Paused / scrubbing — hard seek for frame accuracy.
+          if (drift > 0.01) v.currentTime = target;
+        } else if (drift > 0.3) {
+          if (primaryClip && clip.id === primaryClip.id) {
+            // The AUDIBLE video is the master clock. Seeking a playing
+            // <video> flushes its audio pipeline (audible dropout,
+            // worst on Safari) and re-decodes from the previous
+            // keyframe (transient macroblocks) — and on stall-prone
+            // remote sources it loops: stall → rAF clock runs ahead →
+            // seek into an unbuffered range → longer stall. Instead,
+            // silently resync the ENGINE clock to where the audio
+            // actually is; the playhead follows the sound.
+            this.timeMs = Math.max(
+              0,
+              v.currentTime * 1000 - clip.in + clip.start,
+            );
+            this.onTimeUpdate?.(this.timeMs);
+          } else {
+            // Muted lower-layer source — a one-off seek is silent and
+            // must happen so the layer shows the right content (e.g.
+            // same-source segment switches).
+            v.currentTime = target;
+          }
         }
       }
 
